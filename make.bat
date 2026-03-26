@@ -1,0 +1,2 @@
+@echo off
+"D:\0_software\msys64\mingw64\bin\mingw32-make.exe" %*

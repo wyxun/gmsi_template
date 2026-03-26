@@ -1,0 +1,9 @@
+*.o
+*.elf
+*.bin
+*.log
+*.hex
+*.out
+*.map
+build
+reference

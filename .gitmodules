@@ -1,0 +1,7 @@
+[submodule "gmsi"]
+	path = gmsi
+	url = https://github.com/wyxun/gmsi.git
+[submodule "chiplib/AT32F421_Firmware_Library"]
+	path = chiplib/AT32F421_Firmware_Library
+	url = https://github.com/ArteryTek/AT32F421_Firmware_Library.git
+	ignore = untracked
