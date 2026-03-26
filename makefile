@@ -11,6 +11,7 @@ MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 # Project
 # ------------------------------------------------------------------------------
 TARGET = template
+TARGET_CHIP ?= at32f421
 
 # ------------------------------------------------------------------------------
 # Toolchain  (Windows LLVM path)
@@ -45,6 +46,7 @@ else
 endif
 
 # ---- Chip library paths (all inside chiplib/AT32F421_Firmware_Library) -------
+ifeq ($(TARGET_CHIP),at32f421)
 CHIPLIB_ROOT  = chiplib/AT32F421_Firmware_Library/libraries
 
 CMSIS_CORE    = $(CHIPLIB_ROOT)/cmsis/cm4/core_support
@@ -143,6 +145,8 @@ ifeq ($(USE_DRV_PWC),1)
     DRV_SOURCES += $(DRV_SRC)/at32f421_pwc.c
 endif
 
+endif
+    
 # ------------------------------------------------------------------------------
 # GMSI / Middleware sources
 # ------------------------------------------------------------------------------
@@ -161,6 +165,7 @@ GMSI_SOURCES = \
     $(LIB_PERF_DIR)/perf_counter.c
 
 PERIPHERAL_SOURCES = $(wildcard peripheral/*.c)
+PERIPHERAL_SOURCES += $(wildcard peripheral/$(TARGET_CHIP)/*.c)
 CLASS_SOURCES      = $(wildcard class/*.c)
 
 # FOC framework — per-layer wildcard
@@ -190,8 +195,6 @@ ASM_SOURCES = $(STARTUP_S)
 # Defines
 # ------------------------------------------------------------------------------
 C_DEFS = \
-    -DAT32F421F8P7 \
-    -DUSE_STDPERIPH_DRIVER \
     -D__PERFC_USE_USER_CUSTOM_PORTING__=1 \
     -D__C_LANGUAGE_EXTENSIONS_PERFC_PT__=1 \
     -D__PERFC_CFG_PORTING_INCLUDE__=\"perfc_port_user.h\" \
@@ -214,6 +217,7 @@ C_INCLUDES = \
     -I$(LIB_PLOOC_DIR) \
     -I$(LIB_PERF_DIR) \
     -Iperipheral \
+    -Iperipheral/$(TARGET_CHIP) \
     -Iclass \
     -Ifoc \
     -Ifoc/math \
@@ -235,6 +239,13 @@ endif
 # ------------------------------------------------------------------------------
 # Flags
 # ------------------------------------------------------------------------------
+ifeq ($(TARGET_CHIP),at32f421)
+C_DEFS  += -DAT32F421F8P7 -DUSE_STDPERIPH_DRIVER
+LDSCRIPT = chiplib/AT32F421_Firmware_Library/libraries/cmsis/cm4/device_support/startup/gcc/linker/AT32F421x8_FLASH.ld
+OPENOCD_IF     = interface/cmsis-dap.cfg
+OPENOCD_TARGET = target/at32f421xx.cfg
+endif
+
 CFLAGS  = $(TARGET_TRIPLE) $(CPU_FLAGS) $(C_DEFS) $(C_INCLUDES) $(OPT) -g
 CFLAGS += -Wall -Wextra -std=gnu11
 CFLAGS += -fdata-sections -ffunction-sections
@@ -290,12 +301,8 @@ clean:
 	$(RMDIR)
 
 # ------------------------------------------------------------------------------
-# Flash / Debug (OpenOCD — AT32F421 target)
+# Flash / Debug
 # ------------------------------------------------------------------------------
-OPENOCD_IF     = interface/cmsis-dap.cfg
-# AT32F407xx/AT32F421xx 使用 artery 官方 OpenOCD target，常见文件名如下
-# 若你有 AT32 专用 openocd，请确认 target cfg 文件名
-OPENOCD_TARGET = target/at32f421xx.cfg
 
 ifeq ($(OS),Windows_NT)
     OPENOCD_BIN     = $(SW_ROOT)/msys64/mingw64/bin/openocd.exe

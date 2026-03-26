@@ -1,6 +1,7 @@
 /*============================ INCLUDES ======================================*/
 #include <stdio.h>
-#include "at32f421.h"
+#include "peripheral.h"
+#include "gdi_hw.h"
 #include "gmsi.h"
 #include "SEGGER_RTT.h"
 #include "perf_counter.h"
@@ -16,7 +17,6 @@
 
 /*============================ TYPES =========================================*/
 /*============================ PROTOTYPES ====================================*/
-static void SystemClock_Config(void);
 
 /*============================ GLOBAL VARIABLES ==============================*/
 
@@ -53,56 +53,14 @@ void user_trace_output(const char *str)
     SEGGER_RTT_WriteString(0, str);
 }
 
-/**
- * @brief 系统时钟配置：HICK 48 MHz（无 PLL）
- *
- *  AT32F421 内置 HICK 支持两种工作频率：
- *    - 默认 8 MHz（复位后）
- *    - 48 MHz（通过 misc2.hick_to_sclk=1 + misc1.hickdiv=1 使能）
- *
- *  步骤：
- *  1. 确认 HICK 稳定
- *  2. 配置 Flash 等待周期（48 MHz 需 1WS）
- *  3. 使能 HICK 直接 48 MHz 输出
- *  4. 切换系统时钟到 HICK
- *  5. 更新 system_core_clock 变量
- */
-static void SystemClock_Config(void)
-{
-    /* 1. 等待 HICK 稳定 */
-    while (crm_flag_get(CRM_HICK_STABLE_FLAG) == RESET);
-
-    /* 2. Flash 等待周期：48 MHz 需 ≥1WS（使用宏 flash_psr_set） */
-    flash_psr_set(FLASH_WAIT_CYCLE_1);
-
-    /* 3. 使能 HICK 48 MHz 模式：
-     *    misc2.hick_to_sclk = 1  → 允许 HICK 以 48 MHz 供给系统时钟
-     *    misc1.hickdiv       = 1  → HICK 48 MHz 不分频（NODIV）
-     */
-    CRM->misc2_bit.hick_to_sclk = TRUE;
-    CRM->misc1_bit.hickdiv       = TRUE;
-
-    /* 4. AHB/APB 总线不分频 */
-    crm_ahb_div_set(CRM_AHB_DIV_1);
-    crm_apb1_div_set(CRM_APB1_DIV_1);
-    crm_apb2_div_set(CRM_APB2_DIV_1);
-
-    /* 5. 切换系统时钟 → HICK */
-    crm_sysclk_switch(CRM_SCLK_HICK);
-    while (crm_sysclk_switch_status_get() != CRM_SCLK_HICK);
-
-    /* 6. 更新全局时钟变量 */
-    system_core_clock_update();
-}
-
 /*============================ MAIN ==========================================*/
 
 int main(void)
 {
     /* ------------------------------------------------------------------ */
-    /* 1. 系统时钟：HICK 48 MHz                                           */
+    /* 1. 底层硬件初始化 (时钟/GPIO/外部中断等)                           */
     /* ------------------------------------------------------------------ */
-    SystemClock_Config();
+    peripheral_Init();
 
     /* ------------------------------------------------------------------ */
     /* 2. perf_counter 初始化（自动接管/配置 SysTick）                   */
@@ -144,7 +102,7 @@ int main(void)
             snprintf(buf, sizeof(buf),
                 "[TICK] %lu s  SYSCLK=%lu Hz\r\n",
                 (unsigned long)wCounter,
-                (unsigned long)system_core_clock);
+                (unsigned long)get_system_core_clock_hz());
             SEGGER_RTT_WriteString(0, buf);
         }
     }
