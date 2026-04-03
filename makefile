@@ -166,7 +166,7 @@ GMSI_SOURCES = \
 
 PERIPHERAL_SOURCES = $(wildcard peripheral/*.c)
 PERIPHERAL_SOURCES += $(wildcard peripheral/$(TARGET_CHIP)/*.c)
-CLASS_SOURCES      = $(wildcard class/*.c)
+CLASS_SOURCES      = $(wildcard class/*.c) $(wildcard class/*/*.c)
 
 # FOC framework — per-layer wildcard
 FOC_SOURCES = $(wildcard foc/math/*.c)       \
@@ -232,6 +232,7 @@ C_INCLUDES = \
 BUILD ?= debug
 ifeq ($(BUILD),release)
     OPT = -Oz
+    C_DEFS += -D__NO_USE_LOG__
 else
     OPT = -O0
 endif
@@ -241,9 +242,7 @@ endif
 # ------------------------------------------------------------------------------
 ifeq ($(TARGET_CHIP),at32f421)
 C_DEFS  += -DAT32F421F8P7 -DUSE_STDPERIPH_DRIVER
-LDSCRIPT = chiplib/AT32F421_Firmware_Library/libraries/cmsis/cm4/device_support/startup/gcc/linker/AT32F421x8_FLASH.ld
-OPENOCD_IF     = interface/cmsis-dap.cfg
-OPENOCD_TARGET = target/at32f421xx.cfg
+LDSCRIPT = AT32F421x8_FLASH.ld
 endif
 
 CFLAGS  = $(TARGET_TRIPLE) $(CPU_FLAGS) $(C_DEFS) $(C_INCLUDES) $(OPT) -g
@@ -256,7 +255,6 @@ CFLAGS += -Wno-unused-variable -Wno-unused-parameter -Wno-sign-compare \
 ASFLAGS = $(TARGET_TRIPLE) $(CPU_FLAGS) -g
 
 # AT32F421F8P7: 64K Flash, 16K RAM (x8 density → use AT32F421x8_FLASH.ld)
-LDSCRIPT = chiplib/AT32F421_Firmware_Library/libraries/cmsis/cm4/device_support/startup/gcc/linker/AT32F421x8_FLASH.ld
 LDFLAGS  = $(TARGET_TRIPLE) $(CPU_FLAGS)
 LDFLAGS += -T$(LDSCRIPT)
 LDFLAGS += -Wl,--gc-sections
@@ -307,10 +305,11 @@ clean:
 ifeq ($(OS),Windows_NT)
     OPENOCD_BIN     = $(SW_ROOT)/msys64/mingw64/bin/openocd.exe
     OPENOCD_SCRIPTS = $(SW_ROOT)/msys64/mingw64/share/openocd/scripts
-    OPENOCD_CMD = $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f $(OPENOCD_IF) -f $(OPENOCD_TARGET) -c "reset_config none" -c "adapter speed 2000" -c "tcl_port disabled"
+    #OPENOCD_CMD = $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f $(OPENOCD_IF) -f $(OPENOCD_TARGET) -c "reset_config none" -c "adapter speed 2000" -c "tcl_port disabled"
+    OPENOCD_CMD = $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f openocd.cfg -c "reset_config none" -c "adapter speed 2000" -c "tcl_port 0"
 else
     OPENOCD_BIN = openocd
-    OPENOCD_CMD = $(OPENOCD_BIN) -f $(OPENOCD_IF) -f $(OPENOCD_TARGET)
+    OPENOCD_CMD = $(OPENOCD_BIN) -f openocd.cfg
 endif
 
 flash: $(BUILD_DIR)/$(TARGET).hex
