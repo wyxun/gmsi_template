@@ -29,6 +29,9 @@ void SVC_Handler(void)              {}
 void DebugMon_Handler(void)         {}
 void PendSV_Handler(void)           {}
 
+#include "port_gdi.h"
+extern at32_usart_priv_t s_tUsart1Priv;
+
 /**
  * @brief SysTick 1ms 定时中断
  *        驱动 perf_counter tick 及 GMSI 框架时钟
@@ -38,10 +41,8 @@ void SysTick_Handler(void)
     /* perf_counter 内部溢出处理（必须第一个调用） */
     perfc_port_insert_to_system_timer_insert_ovf_handler();
 
-    if (s_bInitDone) {
-        gmsi_Clock();
-        /* peripheral_Clock(); */   /* 如有外设时钟驱动需求，取消注释 */
-    }
+    gmsi_Clock();
+    at32_usart_timer_1ms(&s_tUsart1Priv);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -72,7 +73,7 @@ void I2C1_EVT_IRQHandler(void)              {}
 void I2C2_EVT_IRQHandler(void)              {}
 void SPI1_IRQHandler(void)                  {}
 void SPI2_IRQHandler(void)                  {}
-void USART1_IRQHandler(void)                {}
+void USART1_IRQHandler(void)                { at32_usart_irq_handler(&s_tUsart1Priv); }
 void USART2_IRQHandler(void)                {}
 void I2C1_ERR_IRQHandler(void)              {}
 void I2C2_ERR_IRQHandler(void)              {}

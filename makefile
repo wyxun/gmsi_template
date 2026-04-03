@@ -73,7 +73,7 @@ USE_DRV_MISC   ?= 1
 USE_DRV_FLASH  ?= 1
 USE_DRV_SCFG   ?= 0
 USE_DRV_TMR    ?= 0
-USE_DRV_USART  ?= 0
+USE_DRV_USART  ?= 1
 USE_DRV_SPI    ?= 0
 USE_DRV_I2C    ?= 0
 USE_DRV_DMA    ?= 0
@@ -327,8 +327,7 @@ debug: $(BUILD_DIR)/$(TARGET).elf
 # RTT
 # ------------------------------------------------------------------------------
 ifeq ($(OS),Windows_NT)
-    RTT_ADDR = $(shell $(LLVM_PATH)llvm-nm.exe $(BUILD_DIR)/$(TARGET).elf 2>nul | \
-        powershell -NoProfile -Command "$$input | Select-String '_SEGGER_RTT$$' | ForEach-Object { '0x' + ($$_ -split ' ')[0] } | Select-Object -First 1")
+    RTT_ADDR = $(shell powershell -NoProfile -Command "$$nm = & '$(LLVM_PATH)llvm-nm.exe' $(BUILD_DIR)/$(TARGET).elf 2>$$null | Select-String '_SEGGER_RTT$$'; if ($$nm) { '0x' + ($$nm -split ' ')[0] }" 2>nul)
 else
     RTT_ADDR = $(shell $(LLVM_PATH)llvm-nm $(BUILD_DIR)/$(TARGET).elf 2>/dev/null | awk '/_SEGGER_RTT$$/ {print "0x"$$1}')
 endif

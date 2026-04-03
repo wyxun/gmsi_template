@@ -1,5 +1,8 @@
 /*============================ INCLUDES ======================================*/
 #include "template_class.h"
+#include "peripheral.h"
+#include "gdi_hw.h"
+#include <string.h>
 
 /*============================ MACROS ========================================*/
 /*============================ MACROFIED FUNCTIONS ===========================*/
@@ -63,6 +66,7 @@ static void template_class_EventHandle(template_class_t *ptThis, uint32_t wEvent
     (void)wEvent;
 }
 
+const char *msg = "Hello from template_class via USART1 GDI!\r\n";
 /* Called in the GMSI while(1) main loop */
 int template_class_Run(uintptr_t wObjectAddr)
 {
@@ -79,7 +83,20 @@ int template_class_Run(uintptr_t wObjectAddr)
         template_class_EventHandle(ptThis, wEvent);
     }
 
-    /* TODO: add periodic logic or state machine here */
+    /* Demonstration: Print to UART every 500ms using the GDI stream interface */
+
+    if (perfc_is_time_out_ms(1000))
+    {
+        GDI_Write(HW.ptSerial, (const uint8_t*)msg, strlen(msg));
+    }
+
+    // echo
+    uint8_t chData[128];
+    int     hwReadLen = GDI_Read(HW.ptSerial, chData, sizeof(chData));
+    if (hwReadLen > 0) {
+        GDI_Write(HW.ptSerial, chData, hwReadLen);
+    }
+
 
     return wRet;
 }
@@ -128,3 +145,9 @@ int template_class_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
 
     return gbase_Init(ptThis->ptBase, &s_tTemplateClassBaseCfg);
 }
+
+// 加载模块
+GMSI_DECLARE_OBJECT(template_class, TemplateClass, 
+    .pchRingBuffer = NULL, 
+    .hwRingSize = 0
+)

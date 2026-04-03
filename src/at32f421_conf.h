@@ -28,7 +28,9 @@ extern "C" {
 
 /* Enable below as needed:
 #define TMR_MODULE_ENABLED
+*/
 #define USART_MODULE_ENABLED
+/*
 #define SPI_MODULE_ENABLED
 #define I2C_MODULE_ENABLED
 #define DMA_MODULE_ENABLED

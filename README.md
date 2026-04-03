@@ -94,51 +94,71 @@
      };
      ```
 
-### 步骤 2：上层应用业务逻辑 (Application Logic)
-1. 在你的业务逻辑文件（如 `src/main.c` 或自定义应用 `class`）中，**只需要包含 `peripheral.h` 或 `gdi_hw.h`**。
-2. 业务第一行无脑调用 `peripheral_Init()` 加载一切芯片底层。
-3. 利用正交多态宏操控硬件：'GDI_Write'、'GDI_Read'、'GDI_Toggle'操作硬件：
-   ```c
-   // 操控继电器（应用层对引脚/厂家毫无感知，完全解耦）
-   GDI_Write(HW.ptRelay1, GDI_GPIO_HIGH); 
-   ```
-4. **状态机开发规范**：应用层模块的状态机统一采用 **`perf_counter` 库的 PERF_COUNTER_FSM**框架，禁止使用裸 `switch-case`。
-   ```c
-   #undef  this
-   #define this (*ptThis)   /* 启用 this 语法糖 */
+### 步骤 2：上层应用业务逻辑与模块化 (Application Logic & Modularization)
 
-   fsm_rt_t my_module_Run(my_module_t *ptThis)
-   {
-   PERFC_PT_BEGIN(this.chState)
+本工程采用 **面向对象 C 语言 (OOPC)** 的思想。每个业务模块（如 `template_class.c`）都被视为一个独立功能的“类”。
 
-        /* 步骤 1：等待某个条件 */
-        PERFC_PT_WAIT_UNTIL(some_condition_is_true())
+#### 1. 核心接口分工 (Lifecycle)
+每个业务模块应遵循标准的接口实现规范：
+- **`Init`**: 初始化入口。在 `gmsi_Init()` 时被自动调用，用于挂载配置、初始化私有变量等。
+- **`Run`**: 轮询入口。在 `main` 循环的 `gmsi_Run()` 中被调用。适合执行非阻塞的状态机或后台任务。
+- **`Clock`**: 定时入口。由 `SysTick` (1ms) 驱动，在 `gmsi_Clock()` 中被调用。适合处理高精度计数或定时逻辑。
 
-        /* 步骤 2：执行动作后挂起，下次从这里继续 */
-        PERFC_PT_ENTRY(
-            do_something();
-        )
-        PERFC_PT_YIELD(fsm_rt_on_going);
+#### 2. OOPC 语法糖：使用 `this` 指针
+为了提高代码可读性，建议在模块 `.c` 文件头部定义 `this` 宏：
+```c
+#undef  this
+#define this (*ptThis)   /* 启用语法糖：this.member 等同于 ptThis->member */
+```
 
-        /* 步骤 3：延时 500ms */
-        PERFC_PT_DELAY_MS(500)
+#### 3. 模块自动加载 (GMSI_DECLARE_OBJECT)
+**禁止在 `main.c` 中显式创建大量业务对象。** 统一在模块内部通过 `GMSI_DECLARE_OBJECT` 宏完成实例化与注册。
+```c
+// 在模块末尾一键加载：系统启动时会自动调用 template_class_Init
+GMSI_DECLARE_OBJECT(template_class, TemplateClass, 
+    .pchRingBuffer = s_chBuffer, 
+    .hwRingSize = 128
+)
+```
+- **机制**：通过 `init_infos` 内存段实现自动注册，无需修改 `main.c` 即可增加新功能模块。
 
-   PERFC_PT_END()
-       return fsm_rt_cpl;
-   }
-   ```
+#### 4. 状态机开发规范 (FSM)
+应用层模块的状态机**必须**采用 **`perf_counter` 库的 PERF_COUNTER_FSM** 框架，**严禁使用裸 `switch-case`**。
+```c
+fsm_rt_t template_class_Run(template_class_t *ptThis)
+{
+    PERFC_PT_BEGIN(this.chState)    /* 恢复上次挂起点 */
+    
+    PERFC_PT_DELAY_MS(500)         /* 非阻塞延时 500ms */
+    
+    PERFC_PT_ENTRY(
+        do_work();                  /* 进入该状态时执行一次 */
+    )
+    PERFC_PT_WAIT_UNTIL(is_done()); /* 等待条件成立 */
+    
+    PERFC_PT_YIELD(fsm_rt_on_going);/* 挂起并让出 CPU */
+    
+    PERFC_PT_END()                  /* 结束重置状态并返回 fsm_rt_cpl */
+    return fsm_rt_cpl;
+}
+```
 
-    | 宏 | 作用 |
-    |----|------|
-    | `PERFC_PT_BEGIN(chState)` | 状态机入口，恢复上次挂起点 |
-    | `PERFC_PT_ENTRY(...)` | 定义一个挂起/恢复锚点，括号内为进入时执行一次的初始化代码 |
-    | `PERFC_PT_YIELD(val)` | 挂起并返回 `val`，下次从此处继续 |
-    | `PERFC_PT_WAIT_UNTIL(cond)` | 轮询直到 `cond` 为真时才继续 |
-    | `PERFC_PT_DELAY_MS(ms)` | 非阻塞延时 `ms` 毫秒 |
-    | `PERFC_PT_RETURN(val)` | 提前结束状态机并返回 `val` |
-    | `PERFC_PT_END()` | 状态机结束，重置 `chState=0` |
+#### 5. 硬件调用：GDI 接口
+业务层与硬件交互时，必须通过 `gdi_hw.h` 获取全局资源池 `HW`，并使用通用 GDI 宏：
+```c
+// 示例：操控继电器或串口（与特定芯片引脚解耦）
+GDI_Write(HW.ptRelay1, GDI_GPIO_HIGH); 
+GDI_Write(HW.ptSerial, "Hello", 5);
+```
 
-    > 参考实现：`foc/app/foc_app.c::foc_app_Run()`，完整宏定义见 `gmsi/lib/perf_counter/perfc_task_pt.h`。
+| 常用宏 | 对应操作 |
+|----|------|
+| `GDI_Write(ptObj, val)` | 写入状态/数据 |
+| `GDI_Read(ptObj)` | 读取状态/接收数据 |
+| `GDI_Toggle(ptObj)` | 翻转 GPIO 状态 |
+| `GDI_IsBusy(ptObj)` | 查询外设是否忙碌（针对 UART/I2C 等） |
+
+> 完整宏定义参考 `gmsi/gmsi/gdi/gdi.h`。
  
  ### 步骤 3：项目依赖与功能伸缩调整 (Makefile Toggling)
  工程采用了灵活自由的 Makefile 管理。如果你在开发中启用了诸如 I2C 或 SPI 这种原本关闭的内置外设：
@@ -181,9 +201,43 @@ TARGET_CHIP ?= at32f421
 ```
 此时将弹出独立监控视窗，所有 `LOG_OUT()` 等通过 `SEGGER_RTT_WriteString` 输送的心跳日志将清晰呈现在这里。
 
+### 4. 自动化测试
+如果你希望一次性完成“清理、编译、烧录、启动 RTT 服务器、打开 RTT 监视器”的全流程，可以使用一键自动化指令：
+```powershell
+.\make.bat auto
+```
+该脚本将严格按照以下顺序执行：
+1. **clean**: 清除旧的编译文件。
+2. **build**: 重新编译生成最新的固件。
+3. **flash**: 自动通过 OpenOCD 烧录到目标板。
+4. **rtt**: 在后台静默启动 `openocd` 作为 RTT 代理。
+5. **rtt_viewer**: 自动弹出 PowerShell 监视窗口显示实时日志。
+6. **auto**: 一键执行以上所有步骤。
+7. **release**: 生成 release 版本(-os 无调试信息)。
+
 ---
 
-## 5. Git 子模块管理 (Git Submodules Configuration)
+## 5. VSCode Cortex-Debug 调试说明
+
+本工程已完美适配 VSCode 的 **Cortex-Debug** 插件，通过集成 RTT console 与 SVD 寄存器描述文件，实现极其便捷的图形化断点调试。
+
+### 1. 环境准备
+- **插件安装**：请从 VSCode 插件市场安装 [Cortex-Debug](https://marketplace.visualstudio.com/items?itemName=marus25.cortex-debug)。
+- **路径确认**：确保 `.vscode/launch.json` 中的 `serverpath` (OpenOCD 路径) 与 `armToolchainPath` (LLVM 环境路径) 指向你电脑上的实际安装目录。
+
+### 2. 开发与调试流程
+1. **启动调试**：按下快捷键 **`F5`**。
+2. **自动构建**：系统会自动触发 `Build ELF` 任务（调用 `make.bat build`）确保代码是最新的。
+3. **固件植入**：底层自动启动 OpenOCD 将编译好的 `.elf` 固件下载至 AT32F421 芯片，并默认停在 `main` 函数入口。
+4. **实时日志**：在 VSCode 的 **DEBUG CONSOLE (调试控制台)** 或 **Output (输出)** 面板的 RTT 通道中，可以直接实时查看 `LOG_OUT` 产生的日志。
+
+### 3. 特色高级功能
+- **外设寄存器查看**：在调试模式下，左侧侧边栏底部会出现 **CORTEX PERIPHERALS** 面板。依靠项目自带的 `AT32F421xx_v2.svd` 文件，你可以直观查看所有外设（如 CRM, TMR, USART, GPIO）的实时寄存器位。
+- **变量监控与断点**：支持标准的断点调试、全路径调用堆栈跟踪以及变量 Watch 监视。
+
+---
+
+## 6. Git 子模块管理 (Git Submodules Configuration)
 由于外设底层、核心 CMSIS、GMSI 均属于独立外链依赖仓库。
 
 **首次克隆本仓库架构：**

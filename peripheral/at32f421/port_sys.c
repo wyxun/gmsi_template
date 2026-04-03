@@ -1,5 +1,6 @@
 #include "peripheral.h"
 #include "at32f421.h"
+#include "at32f421_usart.h"
 
 /**
  * @brief 内部调用：AT32F421 系统时钟配置
@@ -37,17 +38,72 @@ static void SystemClock_Config(void)
 }
 
 /**
+ * @brief USART1 初始化
+ */
+static void usart1_init(void)
+{
+    gpio_init_type gpio_init_struct;
+
+    crm_periph_clock_enable(CRM_USART1_PERIPH_CLOCK, TRUE);
+    crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
+    gpio_default_para_init(&gpio_init_struct);
+
+    /* USART1 TX (PA9) */
+    gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MODERATE;
+    gpio_init_struct.gpio_out_type  = GPIO_OUTPUT_PUSH_PULL;
+    gpio_init_struct.gpio_mode      = GPIO_MODE_MUX;
+    gpio_init_struct.gpio_pins      = GPIO_PINS_9;
+    gpio_init_struct.gpio_pull      = GPIO_PULL_NONE;
+    gpio_init(GPIOA, &gpio_init_struct);
+
+    /* USART1 RX (PA10) */
+    gpio_init_struct.gpio_pins = GPIO_PINS_10;
+    gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
+    gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
+    gpio_init(GPIOA, &gpio_init_struct);
+
+    gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE9, GPIO_MUX_1);
+    gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE10, GPIO_MUX_1);
+
+    nvic_irq_enable(USART1_IRQn, 1, 2);
+
+    usart_init(USART1, 115200, USART_DATA_8BITS, USART_STOP_1_BIT);
+    usart_transmitter_enable(USART1, TRUE);
+    usart_receiver_enable(USART1, TRUE);
+    usart_parity_selection_config(USART1, USART_PARITY_NONE);
+    usart_hardware_flow_control_set(USART1, USART_HARDWARE_FLOW_NONE);
+
+    /* The reference setup: */
+    usart_interrupt_enable(USART1, USART_RDBF_INT, TRUE);
+    usart_enable(USART1, TRUE);
+
+    usart_flag_clear(USART1, USART_TDBE_FLAG);
+    usart_flag_clear(USART1, USART_TDC_FLAG);
+    usart_flag_clear(USART1, USART_RDBF_FLAG);
+    usart_interrupt_enable(USART1, USART_TDC_INT, TRUE);
+
+    extern void at32_usart1_init(void);
+    at32_usart1_init();
+}
+
+/**
  * @brief 系统级别的底层外设初始化总入口 (实现)
  *
  * 包装了所有针对当前平台（AT32F421）的初始化代码，将 main 函数与底层解耦。
  */
 void peripheral_Init(void)
 {
+    /* 中断优先级分组：4位抢占优先级，0位响应优先级 */
+    nvic_priority_group_config(NVIC_PRIORITY_GROUP_4);
+
     /* 1. 初始化系统时钟 HICK 48 MHz */
     SystemClock_Config();
 
-    /* 2. 在这里添加其他底层外设的时钟、GPIO、中断初始化等 */
-    /* TODO: gpio_init(), usart_init() ... */
+    /* 2. USART1 调试串口初始化 */
+    usart1_init();
+
+    /* 3. 启动 SysTick 1ms 中断 (48MHz / 1000 = 48000) */
+    SysTick_Config(system_core_clock / 1000U);
 }
 
 /**
