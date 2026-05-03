@@ -2,12 +2,8 @@
 #define __USERCONFIG_H__
 
 /*============================ INCLUDES ======================================*/
-#include "at32f421.h"
 #include "gmsi.h"
 /*============================ MACROS ========================================*/
-
-/* System clock frequency (Hz) — HICK 48 MHz */
-#define SYSTEM_CLOCK_HZ         48000000UL
 
 /* Debug output: 1 = enable GLOG/RTT output, 0 = disable */
 #define USERCONFIG_DEBUG_ENABLE 1

@@ -22,19 +22,16 @@ extern "C" {
 
 /**
  * @brief 平台底层外设初始化总入口
- * 
- * 必须在 main() 的开头被调用。包括了系统时钟（如 HICK 48MHz 等）、
- * 各种硬件 IO、外设时钟使能、中断以及 GDI 硬件对象池实例化过程等所有底层操作。
  */
 void peripheral_Init(void);
 
 /**
+ * @brief 外设 1ms 时钟节拍（SysTick_Handler 中调用）
+ */
+void peripheral_Clock(void);
+
+/**
  * @brief 获取当前的系统内核时钟频率 (Hz)
- * 
- * 抽象了对裸机 `system_core_clock` 或 `SystemCoreClock` 全局变量的底层直接访问。
- * 供 `perfc_init` 等计算时钟 Tick 的中间件使用。
- * 
- * @return uint32_t 当前的系统频率，单位 Hz (如 48000000)
  */
 uint32_t get_system_core_clock_hz(void);
 

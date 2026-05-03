@@ -3,51 +3,47 @@
 #include "peripheral.h"
 #include "gdi_hw.h"
 #include "gmsi.h"
+#include "gstorage.h"
 #include "SEGGER_RTT.h"
 #include "perf_counter.h"
-#include "util_debug.h"     /* LOG_OUT */
+#include "util_debug.h"
+
+#if FOC_SUPPORT
+#include "foc.h"
+#endif
 
 /*============================ MACROS ========================================*/
-/*
- * DEBUG_MINIMAL = 1 : 最小模式 — 仅时钟 + perf_counter + RTT 心跳
- *                     用于验证最小启动链路
- * DEBUG_MINIMAL = 0 : 完整模式（接入 gmsi 框架 + 外设）
- */
 #define DEBUG_MINIMAL   0
 
-/*============================ TYPES =========================================*/
 /*============================ PROTOTYPES ====================================*/
 
 /*============================ GLOBAL VARIABLES ==============================*/
 
-/* 初始化完成标志：SysTick_Handler 中用于保护 gmsi_Clock 等调用 */
 volatile uint8_t s_bInitDone = 0;
 
 /*============================ LOCAL VARIABLES ===============================*/
 
 #if !DEBUG_MINIMAL
-/* ---------- GMSI 存储桩（无 flash 时只做 RAM 缓存） --------- */
-static void s_StorageWrite(uint16_t *phwAddr, uint16_t hwLen)
-    { (void)phwAddr; (void)hwLen; }
-static void s_StorageRead(uint16_t *phwAddr, uint16_t hwLen)
-    { (void)phwAddr; (void)hwLen; }
-
-static uint16_t       s_hwSysDataArray[16];
+/* RAM buffer for storage (optional, no flash device for now) */
+static uint8_t s_chSysDataBuf[32];
 static gstorage_data_t s_tSysData = {
-    .phwStorageStartAddr = s_hwSysDataArray,
-    .hwStorageLength     = 16,
-    .hwCrcFlag           = 0,
-    .fcnWrite            = s_StorageWrite,
-    .fcnRead             = s_StorageRead,
+    .ptFlash              = NULL,               /* no flash backend yet */
+    .wFlashAddr           = 0,
+    .pchStorageStartAddr  = s_chSysDataBuf,
+    .hwStorageLength      = sizeof(s_chSysDataBuf),
 };
-static gmsi_t s_tGmsi = { &s_tSysData };
+static gmsi_t s_tGmsi = { .ptAppFlash = NULL };
+
+#if FOC_SUPPORT
+/* FOC motor object */
+static motor_handle_t s_tMotor;
+static foc_app_t      s_tFocApp;
+static foc_app_cfg_t  s_tFocAppCfg = { .ptMotor = &s_tMotor };
+#endif
 #endif
 
 /*============================ IMPLEMENTATION ================================*/
 
-/**
- * @brief RTT 输出桥接函数（由 TRACE_MCU_WRITE_STRING 宏调用）
- */
 void user_trace_output(const char *str)
 {
     SEGGER_RTT_WriteString(0, str);
@@ -57,53 +53,41 @@ void user_trace_output(const char *str)
 
 int main(void)
 {
-    /* ------------------------------------------------------------------ */
-    /* 1. 底层硬件初始化 (时钟/GPIO/外部中断等)                           */
-    /* ------------------------------------------------------------------ */
+    /* 1. Low-level hardware init */
     peripheral_Init();
 
-    /* ------------------------------------------------------------------ */
-    /* 2. perf_counter 初始化（自动接管/配置 SysTick）                   */
-    /*    传入 false → perf_counter 自行配置 SysTick 为 1ms 节拍          */
-    /* ------------------------------------------------------------------ */
+    /* 2. perf_counter init */
     perfc_init(false);
 
-    /* ------------------------------------------------------------------ */
-    /* 3. RTT 初始化                                                       */
-    /* ------------------------------------------------------------------ */
+    /* 3. RTT init */
     SEGGER_RTT_Init();
-    LOG_OUT("\r\n=== AT32F421F8P7 BOOT OK @ HICK 48 MHz ===\r\n");
+    GLOG(I, "\r\n=== GMSI Template BOOT OK ===\r\n");
 
 #if !DEBUG_MINIMAL
-    /* ------------------------------------------------------------------ */
-    /* 4. [完整模式] 外设初始化 + GMSI 框架                               */
-    /* ------------------------------------------------------------------ */
-    /* peripheral_Init(); */          /* 取消注释以启用外设层 */
+    /* 4. GMSI framework init */
     gmsi_Init(&s_tGmsi);
+
+#if FOC_SUPPORT
+    /* 5. FOC app init */
+    foc_app_Init((uintptr_t)&s_tFocApp, (uintptr_t)&s_tFocAppCfg);
+#endif
 #endif
 
-    /* 允许 SysTick_Handler 中调用 gmsi_Clock */
+    /* Allow SysTick_Handler to call gmsi_Clock */
     s_bInitDone = 1;
 
-    /* ------------------------------------------------------------------ */
-    /* 5. 主循环                                                           */
-    /* ------------------------------------------------------------------ */
+    /* 6. Main loop */
     uint32_t wCounter = 0;
 
     while (1) {
 #if !DEBUG_MINIMAL
         gmsi_Run();
-        /* peripheral 业务放这里 */
 #endif
-        /* 每 1000ms 打印一次心跳，验证时钟和 perf_counter 工作正常 */
         if (perfc_is_time_out_ms(1000)) {
             wCounter++;
-            char buf[64];
-            snprintf(buf, sizeof(buf),
-                "[TICK] %lu s  SYSCLK=%lu Hz\r\n",
-                (unsigned long)wCounter,
-                (unsigned long)get_system_core_clock_hz());
-            SEGGER_RTT_WriteString(0, buf);
+            GLOGF(T, "[TICK] %lu s  SYSCLK=%lu Hz\r\n",
+                  (unsigned long)wCounter,
+                  (unsigned long)get_system_core_clock_hz());
         }
     }
     return 0;

@@ -103,7 +103,7 @@ void peripheral_Init(void)
     usart1_init();
 
     /* 3. 启动 SysTick 1ms 中断 (48MHz / 1000 = 48000) */
-    SysTick_Config(system_core_clock / 1000U);
+    SysTick_Config(SystemCoreClock / 1000U);
 }
 
 /**
@@ -111,5 +111,5 @@ void peripheral_Init(void)
  */
 uint32_t get_system_core_clock_hz(void)
 {
-    return system_core_clock; /* 返回系统固件库全局变量 */
+    return SystemCoreClock; /* 返回系统时钟（AT32: #define 到 system_core_clock） */
 }

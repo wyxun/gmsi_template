@@ -1,5 +1,5 @@
 @echo off
-set MAKE_EXE="D:\0_software\msys64\mingw64\bin\mingw32-make.exe"
+set MAKE_EXE="D:\01SoftwareInstall\msys64\mingw64\bin\mingw32-make.exe"
 
 if "%1"=="auto" goto auto_flow
 if "%1"=="rttv" goto gui_flow

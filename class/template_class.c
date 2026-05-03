@@ -123,7 +123,7 @@ int template_class_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
     template_class_cfg_t *ptCfg  = (template_class_cfg_t *)wObjectCfgAddr;
 
     if (ptThis == NULL || ptCfg == NULL) {
-        GLOG_PRINTF("template_class_Init: NULL pointer.");
+        GLOGF(E, "template_class_Init: NULL pointer.\n");
         return GMSI_EFAIL;
     }
 
