@@ -30,9 +30,12 @@ void PendSV_Handler(void)           {}
 
 void SysTick_Handler(void)
 {
-    perfc_port_insert_to_system_timer_insert_ovf_handler();
-    gmsi_Clock();
-    peripheral_Clock();
+    HAL_IncTick();   /* 必须第一个调用，驱动所有 HAL 超时机制 */
+    if (s_bInitDone) {
+        perfc_port_insert_to_system_timer_insert_ovf_handler();
+        gmsi_Clock();
+        peripheral_Clock();
+    }
 }
 
 /* --------------------------------------------------------------------------

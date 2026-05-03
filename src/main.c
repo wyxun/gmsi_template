@@ -53,15 +53,16 @@ void user_trace_output(const char *str)
 
 int main(void)
 {
-    /* 1. Low-level hardware init */
+    /* 1. Low-level HAL, Clock & all peripherals init */
     peripheral_Init();
 
-    /* 2. perf_counter init */
-    perfc_init(false);
+    /* 2. perf_counter init — must be after Clock setup */
+    perfc_init(true);
 
-    /* 3. RTT init */
+    /* 3. RTT init — print BEFORE complex peripheral init */
     SEGGER_RTT_Init();
     GLOG(I, "\r\n=== GMSI Template BOOT OK ===\r\n");
+
 
 #if !DEBUG_MINIMAL
     /* 4. GMSI framework init */
@@ -83,7 +84,8 @@ int main(void)
 #if !DEBUG_MINIMAL
         gmsi_Run();
 #endif
-        if (perfc_is_time_out_ms(1000)) {
+        if (perfc_is_time_out_ms(500)) {
+            GDI_Toggle(HW.ptLedStatus);
             wCounter++;
             GLOGF(T, "[TICK] %lu s  SYSCLK=%lu Hz\r\n",
                   (unsigned long)wCounter,

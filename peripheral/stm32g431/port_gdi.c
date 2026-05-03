@@ -20,17 +20,26 @@
 static int32_t gpiog_set(void *pPriv, gdi_gpio_level_t eLevel)
 {
     void **ap = (void **)pPriv;
+    /* Active-low logic: HIGH -> ON -> RESET(LOW) */
     HAL_GPIO_WritePin((GPIO_TypeDef *)ap[0],
                       (uint16_t)(uintptr_t)ap[1],
-                      (eLevel == GDI_GPIO_HIGH) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+                      (eLevel == GDI_GPIO_HIGH) ? GPIO_PIN_RESET : GPIO_PIN_SET);
     return 0;
 }
 
 static int32_t gpiog_get(void *pPriv)
 {
     void **ap = (void **)pPriv;
-    return (int32_t)HAL_GPIO_ReadPin((GPIO_TypeDef *)ap[0],
-                                     (uint16_t)(uintptr_t)ap[1]);
+    GPIO_PinState state = HAL_GPIO_ReadPin((GPIO_TypeDef *)ap[0], (uint16_t)(uintptr_t)ap[1]);
+    /* Active-low logic: RESET(LOW) -> HIGH(ON) */
+    return (state == GPIO_PIN_RESET) ? GDI_GPIO_HIGH : GDI_GPIO_LOW;
+}
+
+static int32_t gpiog_toggle(void *pPriv)
+{
+    void **ap = (void **)pPriv;
+    HAL_GPIO_TogglePin((GPIO_TypeDef *)ap[0], (uint16_t)(uintptr_t)ap[1]);
+    return 0;
 }
 
 /* LED — PC6 */
@@ -38,7 +47,8 @@ static void *s_apvLedPriv[] = { GPIOC, (void *)(uintptr_t)GPIO_PIN_6 };
 static gdi_gpio_t s_tGpioLed = {
     .pPriv   = s_apvLedPriv,
     .fnSet   = gpiog_set,
-    .fnGet   = NULL,
+    .fnGet   = gpiog_get,
+    .fnToggle = gpiog_toggle,
 };
 
 /* COMP1 — PA1 (input only) */

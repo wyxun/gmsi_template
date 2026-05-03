@@ -1,39 +1,7 @@
 #include "gdi_hw.h"
 #include "at32f421.h"
 
-/*============================================================================
- * AT32F421 GPIO 适配 (目前作为示范)
- *===========================================================================*/
-
-static int32_t at32_gpio_Set(void *pPriv, gdi_gpio_level_t eLevel)
-{
-    /* (void)pPriv;
-     * TODO: gpio_bits_write((gpio_type *)pPriv->port, pPriv->pin, (confirm_state)eLevel);
-     */
-    return 0;
-}
-
-static int32_t at32_gpio_Get(void *pPriv)
-{
-    return GDI_GPIO_LOW;
-}
-
-static int32_t at32_gpio_Toggle(void *pPriv)
-{
-    return 0;
-}
-
-/*============================================================================
- * 外设实例（静态分配）
- * 这里将具体的引脚、寄存器通过 pPriv 与操作函数绑定
- *===========================================================================*/
-
-static gdi_gpio_t s_tLedGpio = {
-    .pPriv    = NULL, /* 未来可以填入如 GPIOB 及其 Pin 号等私有结构体指针 */
-    .fnSet    = at32_gpio_Set,
-    .fnGet    = at32_gpio_Get,
-    .fnToggle = at32_gpio_Toggle,
-};
+#include "port_gdi.h"
 
 /*============================================================================
  * AT32F421 USART1 (RS232/Dwin) 适配
@@ -53,7 +21,36 @@ static gdi_gpio_t s_tLedGpio = {
 static uint8_t s_chUsart1TxBuf[USART1_TX_BUFFER_SIZE];
 static uint8_t s_chUsart1RxBuf[USART1_RX_BUFFER_SIZE];
 
-#include "port_gdi.h"
+static int32_t at32_gpio_Set(void *pPriv, gdi_gpio_level_t eLevel)
+{
+    void **ap = (void **)pPriv;
+    gpio_bits_write((gpio_type *)ap[0], (uint16_t)(uintptr_t)ap[1], (confirm_state)eLevel);
+    return 0;
+}
+
+static int32_t at32_gpio_Get(void *pPriv)
+{
+    return GDI_GPIO_LOW;
+}
+
+static int32_t at32_gpio_Toggle(void *pPriv)
+{
+    void **ap = (void **)pPriv;
+    gpio_bits_toggle((gpio_type *)ap[0], (uint16_t)(uintptr_t)ap[1]);
+    return 0;
+}
+
+/*============================================================================
+ * 外设实例（静态分配）
+ * 这里将具体的引脚、寄存器通过 pPriv 与操作函数绑定
+ *===========================================================================*/
+static void *s_apvLedPriv[] = { GPIOF, (void *)(uintptr_t)GPIO_PINS_7 };
+static gdi_gpio_t s_tLedGpio = {
+    .pPriv    = s_apvLedPriv,
+    .fnSet    = at32_gpio_Set,
+    .fnGet    = at32_gpio_Get,
+    .fnToggle = at32_gpio_Toggle,
+};
 
 at32_usart_priv_t s_tUsart1Priv = {
     .ptUsart = NULL,
@@ -190,5 +187,6 @@ void at32_usart_irq_handler(at32_usart_priv_t *ptPriv)
  *===========================================================================*/
 
 const gdi_hardware_t HW = {
+    .ptLedStatus   = &s_tLedGpio,
     .ptSerial      = &s_tStreamSerial,
 };

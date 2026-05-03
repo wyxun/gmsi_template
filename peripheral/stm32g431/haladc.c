@@ -2,122 +2,214 @@
  * @file  haladc.c
  * @brief ADC1/ADC2 init — regular + injected, TIM1_CH4 trigger
  *
- * ADC1 Regular:   CH1(busV), CH5(temp), CH11(pot)
- * ADC1 Injected:  CH3(U-phase via OPAMP1), CH12(W-phase via OPAMP3)
- * ADC2 Injected:  OPAMP3 internal (V-phase via OPAMP2 internal), CH3(V-phase)
+ * ADC clock from PLL_P (42.5 MHz), requires PLLP output enabled in
+ * SystemClock_Config (__HAL_RCC_PLLCLKOUT_ENABLE(RCC_PLL_ADCCLK)).
  *
- * Trigger: TIM1_CH4 rising edge for injected groups.
+ * Calibration and enable are inside MX_ADCx_Init (no separate Activate step).
  */
 
 #include "haladc.h"
-#include "stm32g4xx_hal.h"
 #include "stm32g4xx_ll_adc.h"
 #include "stm32g4xx_ll_rcc.h"
 #include "stm32g4xx_ll_bus.h"
+#include "stm32g4xx_ll_gpio.h"
 
-void haladc_Init(void)
+/* Post-calibration delay from ST example formula */
+#define ADC_DELAY_CALIB_ENABLE_CPU_CYCLES  (LL_ADC_DELAY_CALIB_ENABLE_ADC_CYCLES * 32UL)
+
+/*----------------------------------------------------------------------------*/
+/* Helpers                                                                    */
+/*----------------------------------------------------------------------------*/
+
+static void regulator_stabilize(void)
 {
-    /* ---- Clock ---- */
+    uint32_t wait_loop_index;
+    wait_loop_index = ((LL_ADC_DELAY_INTERNAL_REGUL_STAB_US *
+                       (SystemCoreClock / (100000UL * 2UL))) / 10UL);
+    while (wait_loop_index != 0U) { wait_loop_index--; }
+}
+
+static void post_calib_delay(void)
+{
+    uint32_t wait_loop_index = (ADC_DELAY_CALIB_ENABLE_CPU_CYCLES >> 1);
+    while (wait_loop_index != 0U) { wait_loop_index--; }
+}
+
+/*----------------------------------------------------------------------------*/
+/* ADC1                                                                       */
+/*----------------------------------------------------------------------------*/
+
+static void MX_ADC1_Init(void)
+{
+    LL_ADC_InitTypeDef      ADC_Init      = {0};
+    LL_ADC_REG_InitTypeDef  ADC_REG_Init  = {0};
+    LL_ADC_CommonInitTypeDef ADC_Common   = {0};
+    LL_ADC_INJ_InitTypeDef  ADC_INJ_Init  = {0};
+    LL_GPIO_InitTypeDef     GPIO_Init     = {0};
+
+    /* ---- Clock source ---- */
     LL_RCC_SetADCClockSource(LL_RCC_ADC12_CLKSOURCE_PLL);
     LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_ADC12);
     LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOA);
     LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOB);
-    LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOC);
 
     /* ---- Analog GPIO ---- */
-    GPIO_InitTypeDef gpio = {0};
-    gpio.Mode = GPIO_MODE_ANALOG;
-    gpio.Pull = GPIO_NOPULL;
-    gpio.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_Init.Pin  = LL_GPIO_PIN_0;         /* PA0 = ADC1_IN1 busV */
+    GPIO_Init.Mode = LL_GPIO_MODE_ANALOG;
+    GPIO_Init.Pull = LL_GPIO_PULL_NO;
+    LL_GPIO_Init(GPIOA, &GPIO_Init);
 
-    gpio.Pin = GPIO_PIN_0 | GPIO_PIN_3;         /* PA0=ADC1_IN1, PA2=ADC1_IN3 */
-    HAL_GPIO_Init(GPIOA, &gpio);
-    gpio.Pin = GPIO_PIN_14;                      /* PB14=ADC1_IN5 */
-    HAL_GPIO_Init(GPIOB, &gpio);
-    gpio.Pin = GPIO_PIN_12;                      /* PB12=ADC1_IN11 */
-    HAL_GPIO_Init(GPIOB, &gpio);
-    gpio.Pin = GPIO_PIN_1;                       /* PB1=ADC1_IN12 */
-    HAL_GPIO_Init(GPIOB, &gpio);
-    gpio.Pin = GPIO_PIN_6;                       /* PA6=ADC2_IN3 */
-    HAL_GPIO_Init(GPIOA, &gpio);
+    GPIO_Init.Pin = LL_GPIO_PIN_12;         /* PB12 = ADC1_IN11 pot */
+    LL_GPIO_Init(GPIOB, &GPIO_Init);
 
-    /* ---- ADC1 ---- */
-    /* Common: async clock, div1 */
-    LL_ADC_SetCommonClock(ADC12_COMMON, LL_ADC_CLOCK_ASYNC_DIV1);
-    LL_ADC_SetResolution(ADC1, LL_ADC_RESOLUTION_12B);
-    LL_ADC_SetLowPowerMode(ADC1, 0);
+    GPIO_Init.Pin = LL_GPIO_PIN_14;         /* PB14 = ADC1_IN5 temp */
+    LL_GPIO_Init(GPIOB, &GPIO_Init);
 
-    /* Regular: software trigger, 3-rank scan, single conversion */
-    LL_ADC_REG_SetTriggerSource(ADC1, LL_ADC_REG_TRIG_SOFTWARE);
-    LL_ADC_REG_SetSequencerLength(ADC1, LL_ADC_REG_SEQ_SCAN_ENABLE_3RANKS);
-    LL_ADC_REG_SetContinuousMode(ADC1, LL_ADC_REG_CONV_SINGLE);
-    LL_ADC_REG_SetDMATransfer(ADC1, LL_ADC_REG_DMA_TRANSFER_NONE);
-    LL_ADC_REG_SetOverrun(ADC1, LL_ADC_REG_OVR_DATA_PRESERVED);
+    /* PA2 (ADC1_IN3, U) and PB1 (ADC1_IN12, W) set ANALOG by halopamp_Init */
 
+    /* ---- Core config ---- */
+    ADC_Init.Resolution    = LL_ADC_RESOLUTION_12B;
+    ADC_Init.DataAlignment  = LL_ADC_DATA_ALIGN_RIGHT;
+    ADC_Init.LowPowerMode   = LL_ADC_LP_MODE_NONE;
+    LL_ADC_Init(ADC1, &ADC_Init);
+
+    /* ---- Regular group ---- */
+    ADC_REG_Init.TriggerSource    = LL_ADC_REG_TRIG_SOFTWARE;
+    ADC_REG_Init.SequencerLength  = LL_ADC_REG_SEQ_SCAN_ENABLE_3RANKS;
+    ADC_REG_Init.SequencerDiscont = LL_ADC_REG_SEQ_DISCONT_DISABLE;
+    ADC_REG_Init.ContinuousMode   = LL_ADC_REG_CONV_SINGLE;
+    ADC_REG_Init.DMATransfer      = LL_ADC_REG_DMA_TRANSFER_NONE;
+    ADC_REG_Init.Overrun          = LL_ADC_REG_OVR_DATA_PRESERVED;
+    LL_ADC_REG_Init(ADC1, &ADC_REG_Init);
+
+    LL_ADC_SetGainCompensation(ADC1, 0);
+    LL_ADC_SetOverSamplingScope(ADC1, LL_ADC_OVS_DISABLE);
+
+    /* ---- Common config ---- */
+    ADC_Common.CommonClock = LL_ADC_CLOCK_ASYNC_DIV1;
+    ADC_Common.Multimode   = LL_ADC_MULTI_INDEPENDENT;
+    LL_ADC_CommonInit(__LL_ADC_COMMON_INSTANCE(ADC1), &ADC_Common);
+
+    /* ---- Injected group ---- */
+    ADC_INJ_Init.TriggerSource    = LL_ADC_INJ_TRIG_EXT_TIM1_CH4;
+    ADC_INJ_Init.SequencerLength  = LL_ADC_INJ_SEQ_SCAN_ENABLE_2RANKS;
+    ADC_INJ_Init.SequencerDiscont = LL_ADC_INJ_SEQ_DISCONT_DISABLE;
+    ADC_INJ_Init.TrigAuto         = LL_ADC_INJ_TRIG_INDEPENDENT;
+    LL_ADC_INJ_Init(ADC1, &ADC_INJ_Init);
+    LL_ADC_INJ_SetQueueMode(ADC1, LL_ADC_INJ_QUEUE_DISABLE);
+    LL_ADC_INJ_SetTriggerEdge(ADC1, LL_ADC_INJ_TRIG_EXT_RISING);
+
+    /* ---- Exit deep power down, enable regulator, wait ---- */
+    LL_ADC_DisableDeepPowerDown(ADC1);
+    LL_ADC_EnableInternalRegulator(ADC1);
+    regulator_stabilize();
+
+    /* ---- Channel config (AFTER regulator stable) ---- */
     /* Regular ranks */
     LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, LL_ADC_CHANNEL_1);
-    LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_2, LL_ADC_CHANNEL_5);
-    LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_3, LL_ADC_CHANNEL_11);
     LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_1, LL_ADC_SAMPLINGTIME_47CYCLES_5);
-    LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_5, LL_ADC_SAMPLINGTIME_47CYCLES_5);
-    LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_11, LL_ADC_SAMPLINGTIME_47CYCLES_5);
     LL_ADC_SetChannelSingleDiff(ADC1, LL_ADC_CHANNEL_1, LL_ADC_SINGLE_ENDED);
+
+    LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_2, LL_ADC_CHANNEL_5);
+    LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_5, LL_ADC_SAMPLINGTIME_47CYCLES_5);
     LL_ADC_SetChannelSingleDiff(ADC1, LL_ADC_CHANNEL_5, LL_ADC_SINGLE_ENDED);
+
+    LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_3, LL_ADC_CHANNEL_11);
+    LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_11, LL_ADC_SAMPLINGTIME_47CYCLES_5);
     LL_ADC_SetChannelSingleDiff(ADC1, LL_ADC_CHANNEL_11, LL_ADC_SINGLE_ENDED);
 
-    /* Injected: TIM1_CH4 rising edge, 2-rank */
-    LL_ADC_INJ_SetTriggerSource(ADC1, LL_ADC_INJ_TRIG_EXT_TIM1_TRGO2);
-    LL_ADC_INJ_SetSequencerLength(ADC1, LL_ADC_INJ_SEQ_SCAN_ENABLE_2RANKS);
-    LL_ADC_INJ_SetTrigAuto(ADC1, LL_ADC_INJ_TRIG_INDEPENDENT);
-    LL_ADC_INJ_SetQueueMode(ADC1, LL_ADC_INJ_QUEUE_DISABLE);
-
+    /* Injected ranks */
     LL_ADC_INJ_SetSequencerRanks(ADC1, LL_ADC_INJ_RANK_1, LL_ADC_CHANNEL_3);
-    LL_ADC_INJ_SetSequencerRanks(ADC1, LL_ADC_INJ_RANK_2, LL_ADC_CHANNEL_12);
     LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_3, LL_ADC_SAMPLINGTIME_6CYCLES_5);
-    LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_12, LL_ADC_SAMPLINGTIME_6CYCLES_5);
     LL_ADC_SetChannelSingleDiff(ADC1, LL_ADC_CHANNEL_3, LL_ADC_SINGLE_ENDED);
+
+    LL_ADC_INJ_SetSequencerRanks(ADC1, LL_ADC_INJ_RANK_2, LL_ADC_CHANNEL_12);
+    LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_12, LL_ADC_SAMPLINGTIME_6CYCLES_5);
     LL_ADC_SetChannelSingleDiff(ADC1, LL_ADC_CHANNEL_12, LL_ADC_SINGLE_ENDED);
 
-    /* Enable regulator, wait */
-    LL_ADC_EnableInternalRegulator(ADC1);
-    for (volatile uint32_t i = 0; i < 10000; i++) {}
-
-    /* Calibration */
+    /* ---- Calibration ---- */
     LL_ADC_StartCalibration(ADC1, LL_ADC_SINGLE_ENDED);
-    while (LL_ADC_IsCalibrationOnGoing(ADC1)) {}
+    while (LL_ADC_IsCalibrationOnGoing(ADC1) != 0) {}
 
-    /* Enable */
+    /* Post-calibration delay (required by STM32G4 spec) */
+    post_calib_delay();
+
+    /* ---- Enable ---- */
     LL_ADC_Enable(ADC1);
     while (!LL_ADC_IsActiveFlag_ADRDY(ADC1)) {}
+}
 
-    /* ---- ADC2 (injected only) ---- */
-    LL_ADC_SetResolution(ADC2, LL_ADC_RESOLUTION_12B);
-    LL_ADC_SetLowPowerMode(ADC2, 0);
+/*----------------------------------------------------------------------------*/
+/* ADC2                                                                       */
+/*----------------------------------------------------------------------------*/
 
-    /* Regular disabled */
-    LL_ADC_REG_SetTriggerSource(ADC2, LL_ADC_REG_TRIG_SOFTWARE);
-    LL_ADC_REG_SetSequencerLength(ADC2, LL_ADC_REG_SEQ_SCAN_DISABLE);
+static void MX_ADC2_Init(void)
+{
+    LL_ADC_InitTypeDef     ADC_Init     = {0};
+    LL_ADC_REG_InitTypeDef ADC_REG_Init = {0};
+    LL_ADC_INJ_InitTypeDef ADC_INJ_Init = {0};
 
-    /* Injected: TIM1_CH4 rising edge, 2-rank */
-    LL_ADC_INJ_SetTriggerSource(ADC2, LL_ADC_INJ_TRIG_EXT_TIM1_TRGO2);
-    LL_ADC_INJ_SetSequencerLength(ADC2, LL_ADC_INJ_SEQ_SCAN_ENABLE_2RANKS);
-    LL_ADC_INJ_SetTrigAuto(ADC2, LL_ADC_INJ_TRIG_INDEPENDENT);
+    /* Clock already enabled by ADC1 init */
+
+    /* ---- Core config ---- */
+    ADC_Init.Resolution    = LL_ADC_RESOLUTION_12B;
+    ADC_Init.DataAlignment  = LL_ADC_DATA_ALIGN_RIGHT;
+    ADC_Init.LowPowerMode   = LL_ADC_LP_MODE_NONE;
+    LL_ADC_Init(ADC2, &ADC_Init);
+
+    /* ---- Regular (disabled) ---- */
+    ADC_REG_Init.SequencerLength  = LL_ADC_REG_SEQ_SCAN_DISABLE;
+    ADC_REG_Init.SequencerDiscont = LL_ADC_REG_SEQ_DISCONT_DISABLE;
+    ADC_REG_Init.ContinuousMode   = LL_ADC_REG_CONV_SINGLE;
+    ADC_REG_Init.DMATransfer      = LL_ADC_REG_DMA_TRANSFER_NONE;
+    ADC_REG_Init.Overrun          = LL_ADC_REG_OVR_DATA_PRESERVED;
+    LL_ADC_REG_Init(ADC2, &ADC_REG_Init);
+
+    LL_ADC_SetGainCompensation(ADC2, 0);
+    LL_ADC_SetOverSamplingScope(ADC2, LL_ADC_OVS_DISABLE);
+
+    /* ---- Injected group ---- */
+    ADC_INJ_Init.TriggerSource    = LL_ADC_INJ_TRIG_EXT_TIM1_CH4;
+    ADC_INJ_Init.SequencerLength  = LL_ADC_INJ_SEQ_SCAN_ENABLE_2RANKS;
+    ADC_INJ_Init.SequencerDiscont = LL_ADC_INJ_SEQ_DISCONT_DISABLE;
+    ADC_INJ_Init.TrigAuto         = LL_ADC_INJ_TRIG_INDEPENDENT;
+    LL_ADC_INJ_Init(ADC2, &ADC_INJ_Init);
     LL_ADC_INJ_SetQueueMode(ADC2, LL_ADC_INJ_QUEUE_DISABLE);
+    LL_ADC_INJ_SetTriggerEdge(ADC2, LL_ADC_INJ_TRIG_EXT_RISING);
 
-    /* V-phase: internal OPAMP3 connection + CH3 */
-    LL_ADC_INJ_SetSequencerRanks(ADC2, LL_ADC_INJ_RANK_1, LL_ADC_CHANNEL_VOPAMP3_ADC2);
-    LL_ADC_INJ_SetSequencerRanks(ADC2, LL_ADC_INJ_RANK_2, LL_ADC_CHANNEL_3);
-    LL_ADC_SetChannelSamplingTime(ADC2, LL_ADC_CHANNEL_VOPAMP3_ADC2, LL_ADC_SAMPLINGTIME_6CYCLES_5);
-    LL_ADC_SetChannelSamplingTime(ADC2, LL_ADC_CHANNEL_3, LL_ADC_SAMPLINGTIME_6CYCLES_5);
-
+    /* ---- Exit deep power down, enable regulator, wait ---- */
+    LL_ADC_DisableDeepPowerDown(ADC2);
     LL_ADC_EnableInternalRegulator(ADC2);
-    for (volatile uint32_t i = 0; i < 10000; i++) {}
+    regulator_stabilize();
 
+    /* ---- Channel config (AFTER regulator stable) ---- */
+    LL_ADC_INJ_SetSequencerRanks(ADC2, LL_ADC_INJ_RANK_1, LL_ADC_CHANNEL_VOPAMP3_ADC2);
+    LL_ADC_SetChannelSamplingTime(ADC2, LL_ADC_CHANNEL_VOPAMP3_ADC2, LL_ADC_SAMPLINGTIME_6CYCLES_5);
+    LL_ADC_SetChannelSingleDiff(ADC2, LL_ADC_CHANNEL_VOPAMP3_ADC2, LL_ADC_SINGLE_ENDED);
+
+    LL_ADC_INJ_SetSequencerRanks(ADC2, LL_ADC_INJ_RANK_2, LL_ADC_CHANNEL_3);
+    LL_ADC_SetChannelSamplingTime(ADC2, LL_ADC_CHANNEL_3, LL_ADC_SAMPLINGTIME_6CYCLES_5);
+    LL_ADC_SetChannelSingleDiff(ADC2, LL_ADC_CHANNEL_3, LL_ADC_SINGLE_ENDED);
+
+    /* ---- Calibration ---- */
     LL_ADC_StartCalibration(ADC2, LL_ADC_SINGLE_ENDED);
-    while (LL_ADC_IsCalibrationOnGoing(ADC2)) {}
+    while (LL_ADC_IsCalibrationOnGoing(ADC2) != 0) {}
 
+    post_calib_delay();
+
+    /* ---- Enable ---- */
     LL_ADC_Enable(ADC2);
     while (!LL_ADC_IsActiveFlag_ADRDY(ADC2)) {}
+}
+
+/*----------------------------------------------------------------------------*/
+/* Public API                                                                 */
+/*----------------------------------------------------------------------------*/
+
+void haladc_Init(void)
+{
+    MX_ADC1_Init();
+    MX_ADC2_Init();
 }
 
 void haladc_StartRegular(void)
@@ -127,20 +219,16 @@ void haladc_StartRegular(void)
 
 uint32_t haladc_GetRegular(uint32_t wChannel)
 {
-    /* Wait for end of sequence */
-    while (!LL_ADC_IsActiveFlag_EOS(ADC1)) {}
-    (void)ADC1->DR; /* clear EOS */
-    /* Read from the specified rank's data register */
+    uint32_t timeout = 1000000UL;
+    while (!LL_ADC_IsActiveFlag_EOS(ADC1) && (--timeout)) {}
+    LL_ADC_ClearFlag_EOS(ADC1);
+    (void)wChannel;
     return LL_ADC_REG_ReadConversionData12(ADC1);
 }
 
 uint32_t haladc_GetInjected(uint32_t wAdc, uint32_t wRank)
 {
-    if (wAdc == HALADC_ADC1) {
-        if (wRank == 0) return LL_ADC_INJ_ReadConversionData12(ADC1, LL_ADC_INJ_RANK_1);
-        else            return LL_ADC_INJ_ReadConversionData12(ADC1, LL_ADC_INJ_RANK_2);
-    } else {
-        if (wRank == 0) return LL_ADC_INJ_ReadConversionData12(ADC2, LL_ADC_INJ_RANK_1);
-        else            return LL_ADC_INJ_ReadConversionData12(ADC2, LL_ADC_INJ_RANK_2);
-    }
+    ADC_TypeDef *inst = (wAdc == HALADC_ADC1) ? ADC1 : ADC2;
+    if (wRank == 0) return LL_ADC_INJ_ReadConversionData12(inst, LL_ADC_INJ_RANK_1);
+    else            return LL_ADC_INJ_ReadConversionData12(inst, LL_ADC_INJ_RANK_2);
 }

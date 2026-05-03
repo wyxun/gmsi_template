@@ -3,7 +3,7 @@
 # Toolchain : LLVM Embedded Toolchain for Arm (Windows)
 # Usage     : make [BUILD=debug|release] [TARGET_CHIP=stm32g431] ...
 # ==============================================================================
-SW_ROOT ?= D:/01SoftwareInstall
+SW_ROOT ?= D:/software
 MSYS2_BIN = $(SW_ROOT)/msys64/mingw64/bin
 MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 
@@ -11,7 +11,7 @@ MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 # Project
 # ------------------------------------------------------------------------------
 TARGET = template
-TARGET_CHIP ?= at32f421
+TARGET_CHIP ?= stm32g431
 
 include target/$(TARGET_CHIP)/target.mk
 
@@ -164,8 +164,7 @@ LDFLAGS += -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref
 LDFLAGS += -lcrt0 -lc -lm
 
 # ------------------------------------------------------------------------------
-# Build rules
-# ------------------------------------------------------------------------------
+.PHONY: all clean size flash rtt
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).bin size
 
 release:
@@ -207,10 +206,10 @@ clean:
 ifeq ($(OS),Windows_NT)
     OPENOCD_BIN     = $(SW_ROOT)/msys64/mingw64/bin/openocd.exe
     OPENOCD_SCRIPTS = $(SW_ROOT)/msys64/mingw64/share/openocd/scripts
-    OPENOCD_CMD = $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f openocd.cfg -c "reset_config none" -c "adapter speed 2000" -c "tcl_port 0"
+    OPENOCD_CMD = $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "reset_config none" -c "adapter speed 2000" -c "tcl_port 0"
 else
     OPENOCD_BIN = openocd
-    OPENOCD_CMD = $(OPENOCD_BIN) -f openocd.cfg
+    OPENOCD_CMD = $(OPENOCD_BIN) -f target/$(TARGET_CHIP)/openocd.cfg
 endif
 
 flash: $(BUILD_DIR)/$(TARGET).hex

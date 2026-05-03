@@ -22,9 +22,13 @@
  *    × 85 (PLLN)            = 340 MHz VCO 输出
  *    / 2 (PLLR)             = 170 MHz SYSCLK
  * -------------------------------------------------------------------------- */
-static void SystemClock_Config(void)
+void SystemClock_Config(void)
 {
     HAL_StatusTypeDef ret;
+
+    /* Boost mode (required for 170MHz) — Must be set BEFORE switching to high frequency */
+    __HAL_RCC_PWR_CLK_ENABLE();
+    HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1_BOOST);
 
     RCC_OscInitTypeDef osc = {0};
     osc.OscillatorType = RCC_OSCILLATORTYPE_HSI;
@@ -53,8 +57,10 @@ static void SystemClock_Config(void)
     ret = HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_4);
     if (ret != HAL_OK) while(1);
 
-    __HAL_RCC_PWR_CLK_ENABLE();
-    HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1_BOOST);
+    /* Enable PLLP output for ADC12 clock */
+    __HAL_RCC_PLLCLKOUT_ENABLE(RCC_PLL_ADCCLK);
+
+    SystemCoreClockUpdate();
 
     HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000U);
     HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);

@@ -37,6 +37,21 @@ static void SystemClock_Config(void)
     system_core_clock_update();
 }
 
+static void led_gpio_init(void)
+{
+    gpio_init_type gpio_init_struct;
+
+    crm_periph_clock_enable(CRM_GPIOF_PERIPH_CLOCK, TRUE);
+    gpio_default_para_init(&gpio_init_struct);
+
+    /* PF7 — LED 指示 */
+    gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MODERATE;
+    gpio_init_struct.gpio_out_type  = GPIO_OUTPUT_PUSH_PULL;
+    gpio_init_struct.gpio_mode      = GPIO_MODE_OUTPUT;
+    gpio_init_struct.gpio_pins      = GPIO_PINS_7;
+    gpio_init_struct.gpio_pull      = GPIO_PULL_NONE;
+    gpio_init(GPIOF, &gpio_init_struct);
+}
 /**
  * @brief USART1 初始化
  */
@@ -99,7 +114,10 @@ void peripheral_Init(void)
     /* 1. 初始化系统时钟 HICK 48 MHz */
     SystemClock_Config();
 
-    /* 2. USART1 调试串口初始化 */
+    /* 2. debug led 初始化 */
+    led_gpio_init();
+
+    /* 3. USART1 调试串口初始化 */
     usart1_init();
 
     /* 3. 启动 SysTick 1ms 中断 (48MHz / 1000 = 48000) */
