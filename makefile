@@ -11,7 +11,7 @@ MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 # Project
 # ------------------------------------------------------------------------------
 TARGET = template
-TARGET_CHIP ?= at32f421
+TARGET_CHIP ?= stm32g431
 
 include target/$(TARGET_CHIP)/target.mk
 
@@ -72,6 +72,7 @@ GMSI_SOURCES = \
     $(GMSI_GDBG_DIR)/util_debug.c \
     $(GMSI_GDBG_DIR)/gshell.c \
     $(GMSI_GDBG_DIR)/gwaveform.c \
+    $(if $(filter 1,$(GMSI_USE_WAVEFORM)),$(GMSI_GDBG_DIR)/gwaveform_protocol.c,) \
     $(LIB_SEGGER)/SEGGER_RTT.c \
     $(LIB_PERF_DIR)/perf_counter.c
 
@@ -107,7 +108,8 @@ C_DEFS += \
     -D__PERFC_CFG_PORTING_INCLUDE__=\"perfc_port_user.h\" \
     -D__COMPILER_HAS_GNU_EXTENSIONS__=1 \
     -DTRACE_USE_LIBC_PRINTF=0 \
-    -DTRACE_MCU_WRITE_STRING="extern void user_trace_output(const char*); user_trace_output"
+    -DTRACE_MCU_WRITE_STRING="extern void user_trace_output(const char*); user_trace_output" \
+    -DGMSI_CFG_USER_CONFIG_INCLUSION="\"userconfig.h\""
 
 # ------------------------------------------------------------------------------
 # Include paths
@@ -241,7 +243,8 @@ rtt: $(BUILD_DIR)/$(TARGET).elf
 	$(OPENOCD_CMD) -c "init" \
 	    -c "rtt setup $(RTT_ADDR) 0xa8 \"SEGGER RTT\"" \
 	    -c "rtt start" \
-	    -c "rtt server start 9090 0"
+	    -c "rtt server start 9090 0" \
+	    -c "rtt server start 9091 1"
 
 # Flash via already-running OpenOCD telnet (port 4444)
 flash-rtt: $(BUILD_DIR)/$(TARGET).hex

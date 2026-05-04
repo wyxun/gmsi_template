@@ -34,12 +34,6 @@ static gstorage_data_t s_tSysData = {
 };
 static gmsi_t s_tGmsi = { .ptAppFlash = NULL };
 
-#if FOC_SUPPORT
-/* FOC motor object */
-static motor_handle_t s_tMotor;
-static foc_app_t      s_tFocApp;
-static foc_app_cfg_t  s_tFocAppCfg = { .ptMotor = &s_tMotor };
-#endif
 #endif
 
 /*============================ IMPLEMENTATION ================================*/
@@ -65,16 +59,11 @@ int main(void)
 
 
 #if !DEBUG_MINIMAL
-    /* 4. GMSI framework init */
+    /* 4. GMSI framework init (also auto-inits FOC app via linker section) */
     gmsi_Init(&s_tGmsi);
-
-#if FOC_SUPPORT
-    /* 5. FOC app init */
-    foc_app_Init((uintptr_t)&s_tFocApp, (uintptr_t)&s_tFocAppCfg);
-#endif
 #endif
 
-    /* Allow SysTick_Handler to call gmsi_Clock */
+    /* 5. Allow SysTick_Handler to call gmsi_Clock */
     s_bInitDone = 1;
 
     /* 6. Main loop */

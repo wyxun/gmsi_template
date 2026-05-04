@@ -9,7 +9,11 @@ if "%1"=="rttv" goto gui_flow
 goto :eof
 
 :auto_flow
-:: Apply extra make variables as env vars (compatible: AT32 adds none, STM32 adds TARGET_CHIP=stm32g431)
+:: Kill old OpenOCD first to avoid port/device conflicts
+taskkill /F /IM openocd.exe /T 2>nul
+taskkill /F /IM openocd-at32.exe /T 2>nul
+
+:: Apply extra make variables as env vars
 if not "%2"=="" set %2
 echo [INFO] Starting Full Auto Build, Flash and Debug sequence...
 %MAKE_EXE% clean
@@ -27,14 +31,16 @@ if %ERRORLEVEL% neq 0 (
     exit /b %ERRORLEVEL%
 )
 
-echo [INFO] Launching RTT Server in background...
-start "ANPM RTT Server" cmd /k %MAKE_EXE% rtt
+echo [INFO] Launching RTT Server in background (no popup)...
+:: Use start /b for background execution without a new window
+start /b "" %MAKE_EXE% rtt > openocd_rtt.log 2>&1
 
 echo [INFO] Waiting for Server to initialize...
-ping 127.0.0.1 -n 6 > nul
+ping 127.0.0.1 -n 4 > nul
 
-echo [INFO] Launching RTT Viewer...
-start powershell -NoProfile -ExecutionPolicy Bypass -File ".\.agent\workflows\rtt_viewer.ps1"
+:: User uses SuperWaveform, so we skip the default RTT Viewer popup
+:: echo [INFO] Launching RTT Viewer...
+:: start powershell -NoProfile -ExecutionPolicy Bypass -File ".\.agent\workflows\rtt_viewer.ps1"
 goto :eof
 
 :gui_flow

@@ -27,10 +27,52 @@ PERFC_PORT_C = target/stm32g431/perfc_port_user.c
 # Chip-specific include paths
 TARGET_INCLUDES = -I$(HAL_INC) -Itarget/stm32g431
 
-# HAL sources (all peripherals, excluding template files)
-HAL_SOURCES = $(filter-out %_template.c, $(wildcard $(HAL_SRC)/*.c))
+# HAL sources (selective — only what's used by peripherals)
+HAL_SOURCES = \
+    $(HAL_SRC)/stm32g4xx_hal.c \
+    $(HAL_SRC)/stm32g4xx_hal_cortex.c \
+    $(HAL_SRC)/stm32g4xx_hal_rcc.c \
+    $(HAL_SRC)/stm32g4xx_hal_rcc_ex.c \
+    $(HAL_SRC)/stm32g4xx_hal_gpio.c \
+    $(HAL_SRC)/stm32g4xx_hal_pwr.c \
+    $(HAL_SRC)/stm32g4xx_hal_pwr_ex.c \
+    $(HAL_SRC)/stm32g4xx_hal_flash.c \
+    $(HAL_SRC)/stm32g4xx_hal_flash_ex.c \
+    $(HAL_SRC)/stm32g4xx_hal_dma.c \
+    $(HAL_SRC)/stm32g4xx_hal_dma_ex.c \
+    $(HAL_SRC)/stm32g4xx_hal_exti.c \
+    $(HAL_SRC)/stm32g4xx_hal_fdcan.c \
+    $(HAL_SRC)/stm32g4xx_hal_uart.c \
+    $(HAL_SRC)/stm32g4xx_hal_uart_ex.c \
+    $(HAL_SRC)/stm32g4xx_hal_usart.c \
+    $(HAL_SRC)/stm32g4xx_hal_usart_ex.c \
+    $(HAL_SRC)/stm32g4xx_hal_tim.c \
+    $(HAL_SRC)/stm32g4xx_hal_tim_ex.c \
+    $(HAL_SRC)/stm32g4xx_hal_comp.c \
+    $(HAL_SRC)/stm32g4xx_hal_dac.c \
+    $(HAL_SRC)/stm32g4xx_hal_dac_ex.c \
+    $(HAL_SRC)/stm32g4xx_hal_opamp.c \
+    $(HAL_SRC)/stm32g4xx_hal_opamp_ex.c \
+    $(HAL_SRC)/stm32g4xx_hal_adc.c \
+    $(HAL_SRC)/stm32g4xx_hal_adc_ex.c
 
-CHIP_SOURCES = $(HAL_SOURCES)
+# LL sources (selective)
+LL_SOURCES = \
+    $(HAL_SRC)/stm32g4xx_ll_adc.c \
+    $(HAL_SRC)/stm32g4xx_ll_comp.c \
+    $(HAL_SRC)/stm32g4xx_ll_dac.c \
+    $(HAL_SRC)/stm32g4xx_ll_gpio.c \
+    $(HAL_SRC)/stm32g4xx_ll_opamp.c \
+    $(HAL_SRC)/stm32g4xx_ll_pwr.c \
+    $(HAL_SRC)/stm32g4xx_ll_rcc.c \
+    $(HAL_SRC)/stm32g4xx_ll_tim.c \
+    $(HAL_SRC)/stm32g4xx_ll_usart.c \
+    $(HAL_SRC)/stm32g4xx_ll_utils.c
+
+CHIP_SOURCES = $(HAL_SOURCES) $(LL_SOURCES)
+
+# GMSI module selection (chip-level opt-in)
+GMSI_USE_WAVEFORM = 1
 
 # FOC framework — STM32G431 supports FOC
 FOC_SOURCES = $(wildcard foc/math/*.c)       \

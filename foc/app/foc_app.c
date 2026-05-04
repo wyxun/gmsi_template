@@ -161,6 +161,9 @@ static int foc_app_Clock(uintptr_t wObjectAddr)
 {
     foc_app_t *ptThis = (foc_app_t *)wObjectAddr;
     if (ptThis == NULL) { return GMSI_EFAIL; }
+
+    phase_test_waveform_step();
+
     return GMSI_SUCCESS;
 }
 
@@ -185,6 +188,8 @@ int foc_app_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
     ptThis->ptMotor->tPwm          = s_tGdiPwmOps;
     ptThis->ptMotor->tCurrent.tOps = s_tGdiAdcOps;
 
+    phase_test_waveform_init();
+    
     phase_testA();
     phase_testB(ptThis->ptMotor);
     phase_testC(ptThis);
@@ -217,3 +222,9 @@ void foc_app_Stop(foc_app_t *ptThis)
         }
     }
 }
+
+#if FOC_SUPPORT
+/* FOC motor object */
+static motor_handle_t s_tMotor;
+GMSI_DECLARE_OBJECT(foc_app, FocApp, .ptMotor = &s_tMotor);
+#endif

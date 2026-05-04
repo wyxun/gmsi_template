@@ -26,6 +26,12 @@
                         "label": "RTT Logs",
                         "port": 0,
                         "type": "console"
+                    },
+                    {
+                        "label": "Waveform",
+                        "port": 1,
+                        "type": "socket",
+                        "tcpPort": "9091"
                     }
                 ]
             },
@@ -59,6 +65,12 @@
                         "label": "RTT Logs",
                         "port": 0,
                         "type": "console"
+                    },
+                    {
+                        "label": "Waveform",
+                        "port": 1,
+                        "type": "socket",
+                        "tcpPort": "9091"
                     }
                 ]
             },

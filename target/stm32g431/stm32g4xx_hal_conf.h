@@ -22,9 +22,15 @@ extern "C" {
 #define HAL_GPIO_MODULE_ENABLED
 #define HAL_FLASH_MODULE_ENABLED
 #define HAL_PWR_MODULE_ENABLED
-#define HAL_UART_MODULE_ENABLED
-#define HAL_FDCAN_MODULE_ENABLED
 #define HAL_DMA_MODULE_ENABLED
+#define HAL_FDCAN_MODULE_ENABLED
+#define HAL_UART_MODULE_ENABLED
+#define HAL_USART_MODULE_ENABLED
+#define HAL_ADC_MODULE_ENABLED
+#define HAL_COMP_MODULE_ENABLED
+#define HAL_DAC_MODULE_ENABLED
+#define HAL_OPAMP_MODULE_ENABLED
+#define HAL_TIM_MODULE_ENABLED
 
 /* Callback selection */
 #define USE_HAL_ADC_REGISTER_CALLBACKS        0U
@@ -91,11 +97,29 @@ extern "C" {
 #ifdef HAL_PWR_MODULE_ENABLED
 #include "stm32g4xx_hal_pwr.h"
 #endif
+#ifdef HAL_FDCAN_MODULE_ENABLED
+#include "stm32g4xx_hal_fdcan.h"
+#endif
 #ifdef HAL_UART_MODULE_ENABLED
 #include "stm32g4xx_hal_uart.h"
 #endif
-#ifdef HAL_FDCAN_MODULE_ENABLED
-#include "stm32g4xx_hal_fdcan.h"
+#ifdef HAL_USART_MODULE_ENABLED
+#include "stm32g4xx_hal_usart.h"
+#endif
+#ifdef HAL_ADC_MODULE_ENABLED
+#include "stm32g4xx_hal_adc.h"
+#endif
+#ifdef HAL_COMP_MODULE_ENABLED
+#include "stm32g4xx_hal_comp.h"
+#endif
+#ifdef HAL_DAC_MODULE_ENABLED
+#include "stm32g4xx_hal_dac.h"
+#endif
+#ifdef HAL_OPAMP_MODULE_ENABLED
+#include "stm32g4xx_hal_opamp.h"
+#endif
+#ifdef HAL_TIM_MODULE_ENABLED
+#include "stm32g4xx_hal_tim.h"
 #endif
 
 #ifdef __cplusplus

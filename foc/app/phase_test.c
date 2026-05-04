@@ -94,3 +94,45 @@ void phase_testC(foc_app_t *ptApp)
 
     foc_app_Start(ptApp);
 }
+
+/* ---------------------------------------------------------------------------
+ *  Waveform Demo — per-unit sine/cosine via gwaveform
+ *  Uses hardware FPU (sinf/cosf) for generation.
+ *
+ *  Hook:
+ *    phase_test_waveform_init()  → call once after gmsi_Init()
+ *    phase_test_waveform_step()  → call from peripheral_Clock() or main loop
+ * ------------------------------------------------------------------------- */
+#if GWAVEFORM_ENABLE
+#include <math.h>
+#include "gdebug/gwaveform.h"
+
+static uint8_t s_chSinID, s_chCosID;
+static uint32_t s_wPhaseAcc = 0;
+static const uint32_t s_wPhaseStep = 42949673;  /* ~10Hz @ 1kHz sample rate */
+
+void phase_test_waveform_init(void)
+{
+    gwaveform.Init(NULL);
+    s_chSinID = gwaveform.AddChannel("Sin", 32767.0f);
+    s_chCosID = gwaveform.AddChannel("Cos", 32767.0f);
+    gwaveform.Start();
+    GLOG(I, "[Waveform] Sin/Cos demo started (10 Hz)\r\n");
+}
+
+void phase_test_waveform_step(void)
+{
+    s_wPhaseAcc += s_wPhaseStep;
+    float fAngle = (float)(s_wPhaseAcc >> 24) * 0.0245437f;  /* 2*pi/256 */
+
+    gwaveform.Push(s_chSinID, sinf(fAngle));
+    gwaveform.Push(s_chCosID, cosf(fAngle));
+    /* gwaveform.Step() is called automatically via gmsi_Clock() */
+}
+
+#else /* GWAVEFORM_ENABLE == 0 */
+
+void phase_test_waveform_init(void) {}
+void phase_test_waveform_step(void) {}
+
+#endif /* GWAVEFORM_ENABLE */

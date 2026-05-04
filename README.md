@@ -215,6 +215,16 @@ TARGET_CHIP ?= at32f421
 6. **auto**: 一键执行以上所有步骤。
 7. **release**: 生成 release 版本(-os 无调试信息)。
 
+### 5. 调试冲突解决 (Debug Conflict Resolution)
+如果在执行烧录、仿真或启动 RTT 时提示“设备被占用”或“无法访问”，通常是因为旧的 OpenOCD 进程在后台未正常退出。你可以手动执行以下指令强制清理：
+
+```powershell
+# 强制终止所有残留的 OpenOCD 进程
+taskkill /F /IM openocd.exe /T
+```
+
+> **提示**：`.\make.bat auto` 现在已经默认在启动时自动执行该清理指令，无需手动干预。
+
 ---
 
 ## 5. VSCode Cortex-Debug 调试说明
