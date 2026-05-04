@@ -8,10 +8,12 @@
             "request": "launch",
             "type": "cortex-debug",
             "servertype": "openocd",
-            "serverpath": "D:/software/msys64/mingw64/bin/openocd.exe",
-            "searchDir": ["D:/software/msys64/mingw64/share/openocd/scripts"],
+            "serverpath": "D:/software/msys64/mingw64/bin/openocd-at32.exe",
+            "searchDir": [
+                "D:/software/msys64/mingw64/share/openocd/scripts"
+            ],
             "configFiles": [
-                "openocd.cfg"
+                "target/at32f421/openocd.cfg"
             ],
             "armToolchainPath": "D:/software/llvm_for_arm/bin",
             "toolchainPrefix": "llvm",
@@ -30,7 +32,7 @@
             "runToEntryPoint": "main",
             "showDevDebugOutput": "raw",
             "svdFile": "${workspaceFolder}/target/at32f421/AT32F421xx_v2.svd",
-            "preLaunchTask": "Build ELF"
+            "preLaunchTask": "Build AT32F421 ELF"
         },
         {
             "name": "STM32G431 Debug (OpenOCD)",
@@ -40,7 +42,9 @@
             "type": "cortex-debug",
             "servertype": "openocd",
             "serverpath": "D:/software/msys64/mingw64/bin/openocd.exe",
-            "searchDir": ["D:/software/msys64/mingw64/share/openocd/scripts"],
+            "searchDir": [
+                "D:/software/msys64/mingw64/share/openocd/scripts"
+            ],
             "configFiles": [
                 "target/stm32g431/openocd.cfg"
             ],

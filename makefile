@@ -11,7 +11,7 @@ MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 # Project
 # ------------------------------------------------------------------------------
 TARGET = template
-TARGET_CHIP ?= stm32g431
+TARGET_CHIP ?= at32f421
 
 include target/$(TARGET_CHIP)/target.mk
 
@@ -204,18 +204,19 @@ clean:
 # ------------------------------------------------------------------------------
 
 ifeq ($(OS),Windows_NT)
-    OPENOCD_BIN     = $(SW_ROOT)/msys64/mingw64/bin/openocd.exe
-    OPENOCD_SCRIPTS = $(SW_ROOT)/msys64/mingw64/share/openocd/scripts
-    OPENOCD_CMD = $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "reset_config none" -c "adapter speed 2000" -c "tcl_port 0"
+    OPENOCD_BIN     ?= $(SW_ROOT)/msys64/mingw64/bin/openocd.exe
+    OPENOCD_SCRIPTS ?= $(SW_ROOT)/msys64/mingw64/share/openocd/scripts
+    OPENOCD_CMD = $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "adapter speed 2000" -c "tcl_port 0"
 else
     OPENOCD_BIN = openocd
     OPENOCD_CMD = $(OPENOCD_BIN) -f target/$(TARGET_CHIP)/openocd.cfg
 endif
 
 flash: $(BUILD_DIR)/$(TARGET).hex
-	$(OPENOCD_CMD) -c "init" -c "reset halt" -c "sleep 200" -c "program $< verify" -c "reset run" -c "exit"
+	$(OPENOCD_CMD) -c "reset_config connect_assert_srst" -c "init" -c "reset halt" -c "sleep 200" -c "program $< verify" -c "reset run" -c "exit"
 
 debug-server:
+
 	$(OPENOCD_CMD)
 
 openocd: debug-server

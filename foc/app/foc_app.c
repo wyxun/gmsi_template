@@ -112,10 +112,8 @@ PERFC_PT_BEGIN(this.chState)
 
             if (get_system_ms() - s_wLastPrintTick >= 500UL) {
                 s_wLastPrintTick = get_system_ms();
-                char buf[128];
-                snprintf(buf, sizeof(buf), "[SVPWM] Peak: %.2f%%, Valley: %.2f%%, Vq: %.3f\r\n",
-                         _D(s_qPeakDuty)*100.0, _D(s_qMinDuty)*100.0, _D(tVdq.qBetaOrQ));
-                GLOG(I, buf);
+                GLOGF(T, "[SVPWM] Peak: %.2f%%, Valley: %.2f%%, Vq: %.3f\r\n",
+                      _D(s_qPeakDuty)*100.0, _D(s_qMinDuty)*100.0, _D(tVdq.qBetaOrQ));
                 s_qPeakDuty = 0;
                 s_qMinDuty  = Q_ONE;
             }
@@ -152,7 +150,7 @@ static int foc_app_Run(uintptr_t wObjectAddr)
 
     if (get_system_ms() - this.lLastHeartbeat >= 1000) {
         this.lLastHeartbeat = get_system_ms();
-        GLOGF(I, "[Heartbeat] foc_app is alive, motor_state: %d\r\n",
+        GLOGF(T, "[Heartbeat] foc_app is alive, motor_state: %d\r\n",
               (int)ptThis->ptMotor->tRt.eRunState);
     }
 

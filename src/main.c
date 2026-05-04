@@ -84,7 +84,7 @@ int main(void)
 #if !DEBUG_MINIMAL
         gmsi_Run();
 #endif
-        if (perfc_is_time_out_ms(500)) {
+        if (perfc_is_time_out_ms(1000)) {
             GDI_Toggle(HW.ptLedStatus);
             wCounter++;
             GLOGF(T, "[TICK] %lu s  SYSCLK=%lu Hz\r\n",

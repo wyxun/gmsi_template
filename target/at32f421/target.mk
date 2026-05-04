@@ -105,3 +105,7 @@ ifeq ($(USE_DRV_PWC),1)
 endif
 
 CHIP_SOURCES = $(DRV_SOURCES)
+
+# OpenOCD (AT32 custom v0.11)
+OPENOCD_BIN     = $(SW_ROOT)/msys64/mingw64/bin/openocd-at32.exe
+OPENOCD_SCRIPTS = $(SW_ROOT)/msys64/mingw64/share/openocd/scripts
