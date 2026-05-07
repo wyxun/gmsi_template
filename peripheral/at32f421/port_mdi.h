@@ -1,14 +1,14 @@
-#ifndef __PORT_GDI_H__
-#define __PORT_GDI_H__
+#ifndef __PORT_MDI_H__
+#define __PORT_MDI_H__
 
 #include "at32f421.h"
-#include "util_queue.h"
+#include "mringbuf.h"
 #include "at32f421_usart.h"
 
 typedef struct {
     usart_type *ptUsart;
-    util_queue_t tTxQueue;
-    util_queue_t tRxQueue;
+    mringbuf_t tTxQueue;
+    mringbuf_t tRxQueue;
     volatile uint8_t chTXFlag;
     volatile uint8_t chRXFlag;
     volatile uint8_t chRXFinishTime;
@@ -26,4 +26,4 @@ void at32_usart_irq_handler(at32_usart_priv_t *ptPriv);
 /* Instance Wrappers */
 void at32_usart1_init(void);
 
-#endif /* __PORT_GDI_H__ */
+#endif /* __PORT_MDI_H__ */

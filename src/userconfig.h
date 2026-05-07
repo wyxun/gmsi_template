@@ -2,24 +2,25 @@
 #define __USERCONFIG_H__
 
 /*============================ INCLUDES ======================================*/
-#include "gmsi.h"
+#include "modus.h"
+
 /*============================ MACROS ========================================*/
 
-/* Debug output: 1 = enable GLOG/RTT output, 0 = disable */
+/* Debug output: 1 = enable MLOG/RTT output, 0 = disable */
 #define USERCONFIG_DEBUG_ENABLE 1
 
-/* GMSI waveform: 1 = enable gwaveform for real-time plotting */
+/* MODUS waveform: 1 = enable mwaveform for real-time plotting */
 #if defined(AT32F421F8P7)
-#   define GWAVEFORM_ENABLE 0
+#   define MWAVEFORM_ENABLE 0
 #else
-#   define GWAVEFORM_ENABLE 1
+#   define MWAVEFORM_ENABLE 1
 #endif
 
 /*============================ TYPES =========================================*/
 
-/* GMSI object IDs — extend as new class modules are added */
-#define TEMPLATE_CLASS   ((GMSI_ID_MOCK<<8)+1)
-#define FOC_APP          ((GMSI_ID_MOCK<<8)+2)
+/* MODUS object IDs — extend as new class modules are added */
+#define TEMPLATE_CLASS   ((MODUS_ID_MOCK<<8)+1)
+#define FOC_APP          ((MODUS_ID_MOCK<<8)+2)
 
 
 /*============================ MACROFIED FUNCTIONS ===========================*/

@@ -7,7 +7,7 @@
 #define __HAL_USART_H__
 
 #include "stm32g4xx_hal.h"
-#include "util_queue.h"
+#include "mringbuf.h"
 
 /* USART1: PB6(TX) / PB7(RX) — AF7 */
 #define USART1_TX_PORT          GPIOB
@@ -25,7 +25,7 @@
 #define USART2_RX_PIN           GPIO_PIN_4
 #define USART2_GPIO_AF          GPIO_AF7_USART2
 #define USART2_GPIO_CLK_EN()    __HAL_RCC_GPIOB_CLK_ENABLE()
-#define USART2_BAUDRATE         1843200UL
+#define USART2_BAUDRATE         115200UL
 
 /* USART3: PB10(TX) / PB11(RX) — AF7 */
 #define USART3_TX_PORT          GPIOB
@@ -45,10 +45,10 @@
 
 typedef struct {
     UART_HandleTypeDef *ptUsart;
-    util_queue_t        tRXQueue;
+    mringbuf_t          tRXQueue;
     uint8_t             chRXFinishTime;
     uint8_t             chRXFlag;
-    util_queue_t        tTXQueue;
+    mringbuf_t          tTXQueue;
     uint8_t             chTXFinishTime;
     uint8_t             chTXFlag;
 } usartbuffer_t;

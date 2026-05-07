@@ -1,7 +1,7 @@
-/*============================ INCLUDES ======================================*/
+﻿/*============================ INCLUDES ======================================*/
 #include "template_class.h"
 #include "peripheral.h"
-#include "gdi_hw.h"
+#include "mdi_hw.h"
 #include <string.h>
 
 /*============================ MACROS ========================================*/
@@ -14,16 +14,16 @@ int template_class_Run  (uintptr_t wObjectAddr);
 
 /*============================ GLOBAL VARIABLES ==============================*/
 
-gcoroutine_handle_t tGcoroutineTemplateClassHandle = {
+mcoroutine_handle_t tMcoroutineTemplateClassHandle = {
     .bIsRunning = false,
     .pfcn       = NULL,
 };
 
 /*============================ LOCAL VARIABLES ===============================*/
 
-static gmsi_base_t     s_tTemplateClassBase;
+static modus_base_t     s_tTemplateClassBase;
 
-static gmsi_base_cfg_t s_tTemplateClassBaseCfg = {
+static modus_base_cfg_t s_tTemplateClassBaseCfg = {
     .wId     = TEMPLATE_CLASS,
     .wParent = 0,
     .FcnInterface = {
@@ -34,11 +34,11 @@ static gmsi_base_cfg_t s_tTemplateClassBaseCfg = {
 
 /*============================ IMPLEMENTATION ================================*/
 
-/* Optional: coroutine — triggered by an event */
+/* Optional: coroutine 鈥?triggered by an event */
 fsm_rt_t template_class_coroutine(void *pvParam)
 {
     template_class_t    *ptObject = (template_class_t *)pvParam;
-    gcoroutine_handle_t *ptThis   = &tGcoroutineTemplateClassHandle;
+    mcoroutine_handle_t *ptThis   = &tMcoroutineTemplateClassHandle;
 
 PERFC_PT_BEGIN(this.chState)
     do {
@@ -53,7 +53,7 @@ PERFC_PT_END()
     return fsm_rt_cpl;
 }
 
-/* Event handler — called from template_class_Run() */
+/* Event handler 鈥?called from template_class_Run() */
 static void template_class_EventHandle(template_class_t *ptThis, uint32_t wEvent)
 {
     if (ptThis == NULL) {
@@ -66,49 +66,49 @@ static void template_class_EventHandle(template_class_t *ptThis, uint32_t wEvent
     (void)wEvent;
 }
 
-const char *msg = "Hello from template_class via USART1 GDI!\r\n";
-/* Called in the GMSI while(1) main loop */
+const char *msg = "Hello from template_class via USART1 MDI!\r\n";
+/* Called in the MODUS while(1) main loop */
 int template_class_Run(uintptr_t wObjectAddr)
 {
-    int        wRet  = GMSI_SUCCESS;
+    int        wRet  = MODUS_SUCCESS;
     uint32_t   wEvent;
     template_class_t *ptThis = (template_class_t *)wObjectAddr;
 
     if (ptThis == NULL) {
-        return GMSI_EFAIL;
+        return MODUS_EFAIL;
     }
 
-    wEvent = gbase_EventPend(ptThis->ptBase);
+    wEvent = mbase_EventPend(ptThis->ptBase);
     if (wEvent) {
         template_class_EventHandle(ptThis, wEvent);
     }
 
-    /* Demonstration: Print to UART every 500ms using the GDI stream interface */
+    /* Demonstration: Print to UART every 500ms using the MDI stream interface */
 
     if (perfc_is_time_out_ms(1000))
     {
-        GDI_Write(HW.ptSerial, (const uint8_t*)msg, strlen(msg));
+        MDI_Write(HW.ptSerial, (const uint8_t*)msg, strlen(msg));
     }
 
     // echo
     uint8_t chData[128];
-    int     hwReadLen = GDI_Read(HW.ptSerial, chData, sizeof(chData));
+    int     hwReadLen = MDI_Read(HW.ptSerial, chData, sizeof(chData));
     if (hwReadLen > 0) {
-        GDI_Write(HW.ptSerial, chData, hwReadLen);
+        MDI_Write(HW.ptSerial, chData, hwReadLen);
     }
 
 
     return wRet;
 }
 
-/* Called in the 1ms SysTick interrupt (via gmsi_Clock) */
+/* Called in the 1ms SysTick interrupt (via modus_Clock) */
 int template_class_Clock(uintptr_t wObjectAddr)
 {
     template_class_t *ptThis = (template_class_t *)wObjectAddr;
-    int wRet = GMSI_SUCCESS;
+    int wRet = MODUS_SUCCESS;
 
     if (ptThis == NULL) {
-        return GMSI_EFAIL;
+        return MODUS_EFAIL;
     }
 
     /* TODO: add 1ms periodic operations */
@@ -116,20 +116,20 @@ int template_class_Clock(uintptr_t wObjectAddr)
     return wRet;
 }
 
-/* Initialize the object and register it in the GMSI list */
+/* Initialize the object and register it in the MODUS list */
 int template_class_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
 {
     template_class_t     *ptThis = (template_class_t *)wObjectAddr;
     template_class_cfg_t *ptCfg  = (template_class_cfg_t *)wObjectCfgAddr;
 
     if (ptThis == NULL || ptCfg == NULL) {
-        GLOGF(E, "template_class_Init: NULL pointer.\n");
-        return GMSI_EFAIL;
+        MLOGF(E, "template_class_Init: NULL pointer.\n");
+        return MODUS_EFAIL;
     }
 
     ptThis->ptBase = &s_tTemplateClassBase;
     if (ptThis->ptBase == NULL) {
-        return GMSI_EAGAIN;
+        return MODUS_EAGAIN;
     }
 
     s_tTemplateClassBaseCfg.wParent = wObjectAddr;
@@ -143,11 +143,11 @@ int template_class_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
         };
     }
 
-    return gbase_Init(ptThis->ptBase, &s_tTemplateClassBaseCfg);
+    return mbase_Init(ptThis->ptBase, &s_tTemplateClassBaseCfg);
 }
 
-// 加载模块
-GMSI_DECLARE_OBJECT(template_class, TemplateClass, 
+// 鍔犺浇妯″潡
+MODUS_DECLARE_OBJECT(template_class, TemplateClass, 
     .pchRingBuffer = NULL, 
     .hwRingSize = 0
 )

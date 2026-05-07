@@ -1,6 +1,6 @@
 /**
  * @file  halusart.c
- * @brief USART interrupt-based driver — util_queue TX/RX, 3 ports
+ * @brief USART interrupt-based driver — mringbuf TX/RX, 3 ports
  */
 
 #include "halusart.h"
@@ -180,16 +180,16 @@ void halusart_Init(void)
     MX_USART2_Init();
     MX_USART3_Init();
 
-    queue_init((util_queue_t *)&s_tUsart1Buffer.tRXQueue, s_chUsart1RxBuf, USART1_RX_BUFFER_MAX);
-    queue_init((util_queue_t *)&s_tUsart1Buffer.tTXQueue, s_chUsart1TxBuf, USART1_TX_BUFFER_MAX);
+    mringbuf_Init(&s_tUsart1Buffer.tRXQueue, s_chUsart1RxBuf, USART1_RX_BUFFER_MAX);
+    mringbuf_Init(&s_tUsart1Buffer.tTXQueue, s_chUsart1TxBuf, USART1_TX_BUFFER_MAX);
     s_tUsart1Buffer.ptUsart = &huart1;
 
-    queue_init((util_queue_t *)&s_tUsart2Buffer.tRXQueue, s_chUsart2RxBuf, USART2_RX_BUFFER_MAX);
-    queue_init((util_queue_t *)&s_tUsart2Buffer.tTXQueue, s_chUsart2TxBuf, USART2_TX_BUFFER_MAX);
+    mringbuf_Init(&s_tUsart2Buffer.tRXQueue, s_chUsart2RxBuf, USART2_RX_BUFFER_MAX);
+    mringbuf_Init(&s_tUsart2Buffer.tTXQueue, s_chUsart2TxBuf, USART2_TX_BUFFER_MAX);
     s_tUsart2Buffer.ptUsart = &huart2;
 
-    queue_init((util_queue_t *)&s_tUsart3Buffer.tRXQueue, s_chUsart3RxBuf, USART3_RX_BUFFER_MAX);
-    queue_init((util_queue_t *)&s_tUsart3Buffer.tTXQueue, s_chUsart3TxBuf, USART3_TX_BUFFER_MAX);
+    mringbuf_Init(&s_tUsart3Buffer.tRXQueue, s_chUsart3RxBuf, USART3_RX_BUFFER_MAX);
+    mringbuf_Init(&s_tUsart3Buffer.tTXQueue, s_chUsart3TxBuf, USART3_TX_BUFFER_MAX);
     s_tUsart3Buffer.ptUsart = &huart3;
 
     HAL_UART_Receive_IT(&huart1, &s_chRxByte, 1);
@@ -204,7 +204,7 @@ uint16_t halusart_SendData(uint8_t chUsartNum, uint8_t *pchSendData, uint16_t hw
     uint8_t chData;
 
     for (hwCounter = 0; hwCounter < hwLength; hwCounter++) {
-        if (queue_write((util_queue_t *)&ptBuf->tTXQueue, *(pchSendData + hwCounter)) != QUEUE_OK) {
+        if (mringbuf_Write(&ptBuf->tTXQueue, *(pchSendData + hwCounter)) == 0) {
             return hwCounter;
         }
     }
@@ -213,7 +213,7 @@ uint16_t halusart_SendData(uint8_t chUsartNum, uint8_t *pchSendData, uint16_t hw
         return hwCounter;
     }
 
-    if (queue_read((util_queue_t *)&ptBuf->tTXQueue, &chData) == QUEUE_OK) {
+    if (mringbuf_Read(&ptBuf->tTXQueue, &chData) == 1) {
         HAL_UART_Transmit_IT(ptBuf->ptUsart, &chData, 1);
         ptBuf->chTXFlag = USART_TXFLAG_BUSY;
     }
@@ -229,7 +229,7 @@ uint16_t halusart_receiveData(uint8_t chUsartNum, uint8_t *pchReceiveData)
         return 0;
     }
 
-    while (queue_read((util_queue_t *)&ptBuf->tRXQueue, pchReceiveData) == QUEUE_OK) {
+    while (mringbuf_Read(&ptBuf->tRXQueue, pchReceiveData) == 1) {
         hwCounter++;
         pchReceiveData++;
     }
@@ -261,7 +261,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     else if (huart == &huart3) ptBuf = &s_tUsart3Buffer;
     else return;
 
-    queue_write((util_queue_t *)&ptBuf->tRXQueue, s_chRxByte);
+    mringbuf_Write(&ptBuf->tRXQueue, s_chRxByte);
     ptBuf->chRXFinishTime = USART_DELAYTIME;
     ptBuf->chRXFlag       = USART_RXFLAG_BUSY;
 
@@ -277,7 +277,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
     else if (huart == &huart3) ptBuf = &s_tUsart3Buffer;
     else return;
 
-    if (queue_read((util_queue_t *)&ptBuf->tTXQueue, &chData) == QUEUE_OK) {
+    if (mringbuf_Read(&ptBuf->tTXQueue, &chData) == 1) {
         HAL_UART_Transmit_IT(huart, &chData, 1);
     } else {
         ptBuf->chTXFlag = USART_TXFLAG_IDLE;

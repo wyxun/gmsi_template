@@ -1,15 +1,15 @@
-#ifndef __TEMPLATE_CLASS_H__
+﻿#ifndef __TEMPLATE_CLASS_H__
 #define __TEMPLATE_CLASS_H__
 
 /*============================ INCLUDES ======================================*/
-#include "gmsi.h"
+#include "modus.h"
 #include "userconfig.h"
 
 /*============================ MACROS ========================================*/
 /*============================ MACROFIED FUNCTIONS ===========================*/
 /*============================ TYPES =========================================*/
 
-/* Configuration structure — passed to template_class_Init() */
+/* Configuration structure 鈥?passed to template_class_Init() */
 typedef struct {
     uint8_t  *pchRingBuffer;
     uint16_t  hwRingSize;
@@ -17,7 +17,7 @@ typedef struct {
 
 /* Object structure */
 typedef struct {
-    gmsi_base_t *ptBase;
+    modus_base_t *ptBase;
     /* add hardware-related fields here */
 } template_class_t;
 

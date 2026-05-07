@@ -2,7 +2,7 @@
  * @file   at32f421_it.c
  * @brief  中断服务程序存根 (AT32F421)
  *
- * SysTick_Handler 是核心定时中断，驱动 perf_counter、gmsi_Clock 等。
+ * SysTick_Handler 是核心定时中断，驱动 perf_counter、modus_Clock 等。
  * 其余中断在此存根实现，按需展开。
  */
 
@@ -10,7 +10,7 @@
 #include "perf_counter.h"
 
 /* 由 main.c 导出 */
-extern void gmsi_Clock(void);
+extern void modus_Clock(void);
 extern void peripheral_Clock(void);
 
 /* 初始化完成标志（在 main.c 中定义） */
@@ -29,19 +29,19 @@ void SVC_Handler(void)              {}
 void DebugMon_Handler(void)         {}
 void PendSV_Handler(void)           {}
 
-#include "port_gdi.h"
+#include "port_mdi.h"
 extern at32_usart_priv_t s_tUsart1Priv;
 
 /**
  * @brief SysTick 1ms 定时中断
- *        驱动 perf_counter tick 及 GMSI 框架时钟
+ *        驱动 perf_counter tick 及 MODUS 框架时钟
  */
 void SysTick_Handler(void)
 {
     /* perf_counter 内部溢出处理（必须第一个调用） */
     perfc_port_insert_to_system_timer_insert_ovf_handler();
 
-    gmsi_Clock();
+    modus_Clock();
     at32_usart_timer_1ms(&s_tUsart1Priv);
 }
 

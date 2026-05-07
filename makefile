@@ -46,34 +46,24 @@ else
 endif
 
 # ------------------------------------------------------------------------------
-# GMSI framework  (shared across chips)
+# MODUS framework
 # ------------------------------------------------------------------------------
-GMSI_DIR      = gmsi/gmsi
-GMSI_UTL_DIR  = gmsi/gmsi/utilities
-GMSI_GDBG_DIR = gmsi/gmsi/gdebug
-LIB_PERF_DIR  = gmsi/lib/perf_counter
-LIB_PLOOC_DIR = gmsi/lib/plooc
-LIB_SEGGER    = $(GMSI_GDBG_DIR)/segger_rtt
+MODUS_ROOT = modus
 
-# ------------------------------------------------------------------------------
-# Sources  (shared across chips)
-# ------------------------------------------------------------------------------
-GMSI_SOURCES = \
-    $(GMSI_DIR)/gmsi.c \
-    $(GMSI_DIR)/gbase.c \
-    $(GMSI_DIR)/gblinfo.c \
-    $(GMSI_DIR)/gcoroutine.c \
-    $(GMSI_DIR)/glog.c \
-    $(GMSI_DIR)/gstorage.c \
-    $(GMSI_UTL_DIR)/list.c \
-    $(GMSI_UTL_DIR)/util_queue.c \
-    $(GMSI_GDBG_DIR)/trace.c \
-    $(GMSI_GDBG_DIR)/trace_fmt.c \
-    $(GMSI_GDBG_DIR)/util_debug.c \
-    $(GMSI_GDBG_DIR)/gshell.c \
-    $(GMSI_GDBG_DIR)/gwaveform.c \
-    $(if $(filter 1,$(GMSI_USE_WAVEFORM)),$(GMSI_GDBG_DIR)/gwaveform_protocol.c,) \
-    $(LIB_SEGGER)/SEGGER_RTT.c \
+# Module switches
+MSHELL_ENABLE    = 1
+MWAVEFORM_ENABLE = 1
+MSTORAGE_ENABLE  = 1
+MBLINFO_ENABLE   = 1
+MODUS_USE_LOG    = 1
+
+include $(MODUS_ROOT)/modus.mk
+
+LIB_PERF_DIR  = $(MODUS_ROOT)/lib/perf_counter
+LIB_PLOOC_DIR = $(MODUS_ROOT)/lib/plooc
+
+# MODUS sources are automatically handled via MODUS_SRCS from modus.mk
+PERIF_LIB_SOURCES = \
     $(LIB_PERF_DIR)/perf_counter.c
 
 PERIPHERAL_SOURCES = $(wildcard peripheral/*.c)
@@ -92,7 +82,8 @@ C_SOURCES = \
     $(IT_C) \
     $(SYSTEM_C) \
     $(CHIP_SOURCES) \
-    $(GMSI_SOURCES) \
+    $(MODUS_SRCS) \
+    $(PERIF_LIB_SOURCES) \
     $(PERIPHERAL_SOURCES) \
     $(CLASS_SOURCES) \
     $(FOC_SOURCES)
@@ -109,7 +100,7 @@ C_DEFS += \
     -D__COMPILER_HAS_GNU_EXTENSIONS__=1 \
     -DTRACE_USE_LIBC_PRINTF=0 \
     -DTRACE_MCU_WRITE_STRING="extern void user_trace_output(const char*); user_trace_output" \
-    -DGMSI_CFG_USER_CONFIG_INCLUSION="\"userconfig.h\""
+    -DMODUS_CFG_USER_CONFIG_INCLUSION="\"userconfig.h\""
 
 # ------------------------------------------------------------------------------
 # Include paths
@@ -120,10 +111,10 @@ C_INCLUDES = \
     -I$(CMSIS_CORE) \
     -I$(CMSIS_DEV) \
     $(TARGET_INCLUDES) \
-    -I$(GMSI_DIR) \
-    -I$(GMSI_UTL_DIR) \
-    -I$(GMSI_GDBG_DIR) \
-    -I$(LIB_SEGGER) \
+    $(MODUS_INCLUDES) \
+    -I$(MODUS_ROOT)/src/utilities \
+    -I$(MODUS_ROOT)/src/mdebug \
+    -I$(MODUS_ROOT)/src/mdebug/segger_rtt \
     -I$(LIB_PLOOC_DIR) \
     -I$(LIB_PERF_DIR) \
     -Iperipheral \
@@ -150,7 +141,8 @@ endif
 # ------------------------------------------------------------------------------
 # Flags
 # ------------------------------------------------------------------------------
-CFLAGS  = $(TARGET_TRIPLE) $(CPU_FLAGS) $(C_DEFS) $(C_INCLUDES) $(OPT) -g
+$(info C_DEFS is $(C_DEFS))
+CFLAGS  = $(TARGET_TRIPLE) $(CPU_FLAGS) $(C_DEFS) $(C_INCLUDES) $(MODUS_CFLAGS) $(OPT) -g
 CFLAGS += -Wall -Wextra -std=gnu11
 CFLAGS += -fdata-sections -ffunction-sections
 CFLAGS += -fno-exceptions

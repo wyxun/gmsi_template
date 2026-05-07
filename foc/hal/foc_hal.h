@@ -11,7 +11,7 @@
 #include "foc_hal_adc.h"
 
 extern int  foc_hal_Init(void);
-extern void foc_hal_gdi_register(void);
+extern void foc_hal_mdi_register(void);
 void foc_hal_current_reconstruct(phase_current_handle_t *ptHandle);
 
 #endif /* __FOC_HAL_H__ */

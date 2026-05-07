@@ -2,7 +2,7 @@
  * @file   stm32g4xx_it.c
  * @brief  Interrupt handlers (STM32G431)
  *
- * SysTick_Handler — perf_counter + gmsi + peripheral 1ms clock.
+ * SysTick_Handler �?perf_counter + modus + peripheral 1ms clock.
  * USART / FDCAN / TIM1 / ADC1_2 have real handlers; the rest are stubs.
  */
 
@@ -12,7 +12,7 @@
 #include "halfdcan.h"
 
 /* Exported by main.c */
-extern void gmsi_Clock(void);
+extern void modus_Clock(void);
 extern void peripheral_Clock(void);
 extern volatile uint8_t s_bInitDone;
 
@@ -30,10 +30,10 @@ void PendSV_Handler(void)           {}
 
 void SysTick_Handler(void)
 {
-    HAL_IncTick();   /* 必须第一个调用，驱动所有 HAL 超时机制 */
+    HAL_IncTick();   /* 必须第一个调用，驱动所�?HAL 超时机制 */
     if (s_bInitDone) {
         perfc_port_insert_to_system_timer_insert_ovf_handler();
-        gmsi_Clock();
+        modus_Clock();
         peripheral_Clock();
     }
 }

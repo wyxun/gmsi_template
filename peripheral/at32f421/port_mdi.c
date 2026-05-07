@@ -1,7 +1,7 @@
-#include "gdi_hw.h"
+#include "mdi_hw.h"
 #include "at32f421.h"
 
-#include "port_gdi.h"
+#include "port_mdi.h"
 
 /*============================================================================
  * AT32F421 USART1 (RS232/Dwin) 适配
@@ -21,7 +21,7 @@
 static uint8_t s_chUsart1TxBuf[USART1_TX_BUFFER_SIZE];
 static uint8_t s_chUsart1RxBuf[USART1_RX_BUFFER_SIZE];
 
-static int32_t at32_gpio_Set(void *pPriv, gdi_gpio_level_t eLevel)
+static int32_t at32_gpio_Set(void *pPriv, mdi_gpio_level_t eLevel)
 {
     void **ap = (void **)pPriv;
     gpio_bits_write((gpio_type *)ap[0], (uint16_t)(uintptr_t)ap[1], (confirm_state)eLevel);
@@ -30,7 +30,7 @@ static int32_t at32_gpio_Set(void *pPriv, gdi_gpio_level_t eLevel)
 
 static int32_t at32_gpio_Get(void *pPriv)
 {
-    return GDI_GPIO_LOW;
+    return MDI_GPIO_LOW;
 }
 
 static int32_t at32_gpio_Toggle(void *pPriv)
@@ -45,7 +45,7 @@ static int32_t at32_gpio_Toggle(void *pPriv)
  * 这里将具体的引脚、寄存器通过 pPriv 与操作函数绑定
  *===========================================================================*/
 static void *s_apvLedPriv[] = { GPIOF, (void *)(uintptr_t)GPIO_PINS_7 };
-static gdi_gpio_t s_tLedGpio = {
+static mdi_gpio_t s_tLedGpio = {
     .pPriv    = s_apvLedPriv,
     .fnSet    = at32_gpio_Set,
     .fnGet    = at32_gpio_Get,
@@ -76,8 +76,8 @@ void at32_usart_init(at32_usart_priv_t *ptPriv,
     if (NULL == ptPriv || NULL == ptUsart) return;
     
     ptPriv->ptUsart = ptUsart;
-    queue_init(&ptPriv->tTxQueue, pchTxBuf, wTxBufSize);
-    queue_init(&ptPriv->tRxQueue, pchRxBuf, wRxBufSize);
+    mringbuf_Init(&ptPriv->tTxQueue, pchTxBuf, (uint16_t)wTxBufSize);
+    mringbuf_Init(&ptPriv->tRxQueue, pchRxBuf, (uint16_t)wRxBufSize);
     ptPriv->chTXFlag = USART_TXFLAG_IDLE;
     ptPriv->chRXFlag = USART_RXFLAG_IDLE;
     ptPriv->chRXFinishTime = 0;
@@ -103,14 +103,14 @@ static int32_t at32_stream_Write(void *pPriv, const uint8_t *pchData, uint32_t w
     uint32_t i;
 
     for (i = 0; i < wLen; i++) {
-        if (queue_write(&ptPriv->tTxQueue, pchData[i]) != QUEUE_OK) {
+        if (mringbuf_Write(&ptPriv->tTxQueue, pchData[i]) == 0) {
             break;
         }
     }
 
-    if (ptPriv->chTXFlag == USART_TXFLAG_IDLE && !queue_isEmpty(&ptPriv->tTxQueue)) {
+    if (ptPriv->chTXFlag == USART_TXFLAG_IDLE && mringbuf_GetUsed(&ptPriv->tTxQueue) > 0) {
         uint8_t chData;
-        if (queue_read(&ptPriv->tTxQueue, &chData) == QUEUE_OK) {
+        if (mringbuf_Read(&ptPriv->tTxQueue, &chData) == 1) {
             usart_data_transmit(ptPriv->ptUsart, chData);
         ptPriv->chTXFlag = USART_TXFLAG_BUSY;
         }
@@ -122,19 +122,19 @@ static int32_t at32_stream_Read(void *pPriv, uint8_t *pchBuf, uint32_t wLen)
 {
     at32_usart_priv_t *ptPriv = (at32_usart_priv_t *)pPriv;
     uint32_t i = 0;
-    qstatus_t tQueueStatus;
+    uint16_t hwRead;
 
     if (ptPriv->chRXFlag != USART_RXFLAG_FINISH) return 0;
 
     do {
-        tQueueStatus = queue_read(&ptPriv->tRxQueue, &pchBuf[i]);
-        if (tQueueStatus == QUEUE_OK) {
+        hwRead = mringbuf_Read(&ptPriv->tRxQueue, &pchBuf[i]);
+        if (hwRead > 0) {
             i++;
         }
         if (i >= wLen) {
             break;
         }
-    } while (tQueueStatus != QUEUE_EMPTY);
+    } while (hwRead > 0);
 
     ptPriv->chRXFlag = USART_RXFLAG_IDLE;
     return i;
@@ -146,7 +146,7 @@ static int32_t at32_stream_IsBusy(void *pPriv)
     return (ptPriv->chTXFlag == USART_TXFLAG_BUSY) ? 1 : 0;
 }
 
-static gdi_stream_t s_tStreamSerial = {
+static mdi_stream_t s_tStreamSerial = {
     .pPriv    = &s_tUsart1Priv,
     .fnWrite  = at32_stream_Write,
     .fnRead   = at32_stream_Read,
@@ -163,7 +163,7 @@ void at32_usart_irq_handler(at32_usart_priv_t *ptPriv)
     if (ptHW->ctrl1_bit.rdbfien != RESET) {
         if (usart_interrupt_flag_get(ptHW, USART_RDBF_FLAG) != RESET) {
             uint8_t ch = usart_data_receive(ptHW);
-            queue_write(&ptPriv->tRxQueue, ch);
+            mringbuf_Write(&ptPriv->tRxQueue, ch);
             ptPriv->chRXFinishTime = USART_DELAYTIME;
             ptPriv->chRXFlag = USART_RXFLAG_BUSY;
         }
@@ -172,7 +172,7 @@ void at32_usart_irq_handler(at32_usart_priv_t *ptPriv)
     if (ptHW->ctrl1_bit.tdcien != RESET) {
         if (usart_flag_get(ptHW, USART_TDC_FLAG) != RESET) {
             usart_flag_clear(ptHW, USART_TDC_FLAG);
-            if (queue_read(&ptPriv->tTxQueue, &chData) == QUEUE_OK) {
+            if (mringbuf_Read(&ptPriv->tTxQueue, &chData) == 1) {
                 usart_data_transmit(ptHW, chData);
                 ptPriv->chTXFlag = USART_TXFLAG_BUSY;
             } else {
@@ -186,7 +186,7 @@ void at32_usart_irq_handler(at32_usart_priv_t *ptPriv)
  * 全局硬件资源池实例化
  *===========================================================================*/
 
-const gdi_hardware_t HW = {
+const mdi_hardware_t HW = {
     .ptLedStatus   = &s_tLedGpio,
     .ptSerial      = &s_tStreamSerial,
 };

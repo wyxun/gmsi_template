@@ -71,9 +71,6 @@ LL_SOURCES = \
 
 CHIP_SOURCES = $(HAL_SOURCES) $(LL_SOURCES)
 
-# GMSI module selection (chip-level opt-in)
-GMSI_USE_WAVEFORM = 1
-
 # FOC framework — STM32G431 supports FOC
 FOC_SOURCES = $(wildcard foc/math/*.c)       \
               $(wildcard foc/hal/*.c)         \

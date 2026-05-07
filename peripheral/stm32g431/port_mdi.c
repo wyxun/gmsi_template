@@ -1,29 +1,29 @@
-/**
- * @file   port_gdi.c
- * @brief  STM32G431 GDI 端口 — 硬件抽象实例化
+﻿/**
+ * @file   port_MDI.c
+ * @brief  STM32G431 MDI 缁旑垰褰?閳?绾兛娆㈤幎鍊熻杽鐎圭偘绶ラ崠?
  */
 
-#include "gdi_hw.h"
+#include "mdi_hw.h"
 #include "stm32g4xx_hal.h"
-#include "port_gdi.h"
+#include "port_mdi.h"
 #include "halusart.h"
 #include "haltim1.h"
 #include "haladc.h"
 #include "halcomp.h"
 #include "halledgpio.h"
-#include "gdi/gdi.h"
+#include "mdi/mdi.h"
 
 /* --------------------------------------------------------------------------
- *  GDI GPIO wrappers
+ *  MDI GPIO wrappers
  * -------------------------------------------------------------------------- */
 
-static int32_t gpiog_set(void *pPriv, gdi_gpio_level_t eLevel)
+static int32_t gpiog_set(void *pPriv, mdi_gpio_level_t eLevel)
 {
     void **ap = (void **)pPriv;
     /* Active-low logic: HIGH -> ON -> RESET(LOW) */
     HAL_GPIO_WritePin((GPIO_TypeDef *)ap[0],
                       (uint16_t)(uintptr_t)ap[1],
-                      (eLevel == GDI_GPIO_HIGH) ? GPIO_PIN_RESET : GPIO_PIN_SET);
+                      (eLevel == MDI_GPIO_HIGH) ? GPIO_PIN_RESET : GPIO_PIN_SET);
     return 0;
 }
 
@@ -32,7 +32,7 @@ static int32_t gpiog_get(void *pPriv)
     void **ap = (void **)pPriv;
     GPIO_PinState state = HAL_GPIO_ReadPin((GPIO_TypeDef *)ap[0], (uint16_t)(uintptr_t)ap[1]);
     /* Active-low logic: RESET(LOW) -> HIGH(ON) */
-    return (state == GPIO_PIN_RESET) ? GDI_GPIO_HIGH : GDI_GPIO_LOW;
+    return (state == GPIO_PIN_RESET) ? MDI_GPIO_HIGH : MDI_GPIO_LOW;
 }
 
 static int32_t gpiog_toggle(void *pPriv)
@@ -42,41 +42,41 @@ static int32_t gpiog_toggle(void *pPriv)
     return 0;
 }
 
-/* LED — PC6 */
+/* LED 閳?PC6 */
 static void *s_apvLedPriv[] = { GPIOC, (void *)(uintptr_t)GPIO_PIN_6 };
-static gdi_gpio_t s_tGpioLed = {
+static mdi_gpio_t s_tGpioLed = {
     .pPriv   = s_apvLedPriv,
     .fnSet   = gpiog_set,
     .fnGet   = gpiog_get,
     .fnToggle = gpiog_toggle,
 };
 
-/* COMP1 — PA1 (input only) */
+/* COMP1 閳?PA1 (input only) */
 static void *s_apvComp1Priv[] = { GPIOA, (void *)(uintptr_t)GPIO_PIN_1 };
-static gdi_gpio_t s_tGpioComp1 = {
+static mdi_gpio_t s_tGpioComp1 = {
     .pPriv   = s_apvComp1Priv,
     .fnSet   = NULL,
     .fnGet   = gpiog_get,
 };
 
-/* COMP2 — PA7 (input only) */
+/* COMP2 閳?PA7 (input only) */
 static void *s_apvComp2Priv[] = { GPIOA, (void *)(uintptr_t)GPIO_PIN_7 };
-static gdi_gpio_t s_tGpioComp2 = {
+static mdi_gpio_t s_tGpioComp2 = {
     .pPriv   = s_apvComp2Priv,
     .fnSet   = NULL,
     .fnGet   = gpiog_get,
 };
 
-/* COMP4 — PB0 (input only) */
+/* COMP4 閳?PB0 (input only) */
 static void *s_apvComp4Priv[] = { GPIOB, (void *)(uintptr_t)GPIO_PIN_0 };
-static gdi_gpio_t s_tGpioComp4 = {
+static mdi_gpio_t s_tGpioComp4 = {
     .pPriv   = s_apvComp4Priv,
     .fnSet   = NULL,
     .fnGet   = gpiog_get,
 };
 
 /* --------------------------------------------------------------------------
- *  GDI ADC wrappers
+ *  MDI ADC wrappers
  * -------------------------------------------------------------------------- */
 
 static int32_t adc_read(void *pPriv)
@@ -94,12 +94,12 @@ static int32_t adc_read(void *pPriv)
     }
 }
 
-static gdi_adc_t s_tAdcBusV = { .pPriv = (void *)HALADC_REG_BUS_VOLTAGE, .fnRead = adc_read };
-static gdi_adc_t s_tAdcTemp = { .pPriv = (void *)HALADC_REG_TEMPERATURE, .fnRead = adc_read };
-static gdi_adc_t s_tAdcPot  = { .pPriv = (void *)HALADC_REG_POTENTIOMETER, .fnRead = adc_read };
+static mdi_adc_t s_tAdcBusV = { .pPriv = (void *)HALADC_REG_BUS_VOLTAGE, .fnRead = adc_read };
+static mdi_adc_t s_tAdcTemp = { .pPriv = (void *)HALADC_REG_TEMPERATURE, .fnRead = adc_read };
+static mdi_adc_t s_tAdcPot  = { .pPriv = (void *)HALADC_REG_POTENTIOMETER, .fnRead = adc_read };
 
 /* --------------------------------------------------------------------------
- *  GDI PWM wrappers — TIM1 motor phases via haltim1_SetDuty
+ *  MDI PWM wrappers 閳?TIM1 motor phases via haltim1_SetDuty
  * -------------------------------------------------------------------------- */
 
 static int32_t pwm_setduty(void *pPriv, uint32_t wDuty)
@@ -118,12 +118,12 @@ static int32_t pwm_enable(void *pPriv, bool bEn)
     return 0;
 }
 
-static gdi_pwm_t s_tPwmU = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
-static gdi_pwm_t s_tPwmV = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
-static gdi_pwm_t s_tPwmW = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
+static mdi_pwm_t s_tPwmU = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
+static mdi_pwm_t s_tPwmV = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
+static mdi_pwm_t s_tPwmW = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
 
 /* --------------------------------------------------------------------------
- *  GDI Stream — USART2 debug serial
+ *  MDI Stream 閳?USART2 debug serial
  * -------------------------------------------------------------------------- */
 
 static int32_t uart_write(void *pPriv, const uint8_t *pchData, uint32_t wLen)
@@ -146,7 +146,7 @@ static int32_t uart_isbusy(void *pPriv)
     return 0;
 }
 
-static gdi_stream_t s_tStreamSerial = {
+static mdi_stream_t s_tStreamSerial = {
     .pPriv    = NULL,
     .fnWrite  = uart_write,
     .fnRead   = uart_read,
@@ -154,10 +154,10 @@ static gdi_stream_t s_tStreamSerial = {
 };
 
 /* --------------------------------------------------------------------------
- *  全局硬件资源池
+ *  閸忋劌鐪涵顑挎鐠у嫭绨Ч?
  * -------------------------------------------------------------------------- */
 
-const gdi_hardware_t HW = {
+const mdi_hardware_t HW = {
     .ptLedStatus  = &s_tGpioLed,
     .ptCompU      = &s_tGpioComp1,
     .ptCompV      = &s_tGpioComp2,

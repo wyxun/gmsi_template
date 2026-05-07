@@ -1,6 +1,6 @@
-[submodule "gmsi"]
-	path = gmsi
-	url = https://github.com/wyxun/gmsi.git
+[submodule "modus"]
+	path = modus
+	url = https://github.com/wyxun/modus.git
 [submodule "chiplib/AT32F421_Firmware_Library"]
 	path = chiplib/AT32F421_Firmware_Library
 	url = https://github.com/ArteryTek/AT32F421_Firmware_Library.git

@@ -1,9 +1,8 @@
 /*============================ INCLUDES ======================================*/
 #include <stdio.h>
 #include "peripheral.h"
-#include "gdi_hw.h"
-#include "gmsi.h"
-#include "gstorage.h"
+#include "modus.h"
+#include "mstorage.h"
 #include "SEGGER_RTT.h"
 #include "perf_counter.h"
 #include "util_debug.h"
@@ -25,14 +24,15 @@ volatile uint8_t s_bInitDone = 0;
 
 #if !DEBUG_MINIMAL
 /* RAM buffer for storage (optional, no flash device for now) */
-static uint8_t s_chSysDataBuf[32];
-static gstorage_data_t s_tSysData = {
-    .ptFlash              = NULL,               /* no flash backend yet */
+static uint8_t s_chSysDataBuf[128];
+static mstorage_data_t s_tSysData = {
+    .ptFlash              = NULL,
     .wFlashAddr           = 0,
     .pchStorageStartAddr  = s_chSysDataBuf,
     .hwStorageLength      = sizeof(s_chSysDataBuf),
 };
-static gmsi_t s_tGmsi = { .ptAppFlash = NULL };
+
+static modus_t s_tGmsi = { .ptAppFlash = NULL };
 
 #endif
 
@@ -55,29 +55,31 @@ int main(void)
 
     /* 3. RTT init — print BEFORE complex peripheral init */
     SEGGER_RTT_Init();
-    GLOG(I, "\r\n=== GMSI Template BOOT OK ===\r\n");
+    MLOG(I, "\r\n=== MODUS Template BOOT OK ===\r\n");
 
 
 #if !DEBUG_MINIMAL
-    /* 4. GMSI framework init (also auto-inits FOC app via linker section) */
-    gmsi_Init(&s_tGmsi);
+    /* 4. MODUS framework init (also auto-inits FOC app via linker section) */
+    modus_Init(&s_tGmsi);
 #endif
 
-    /* 5. Allow SysTick_Handler to call gmsi_Clock */
+    /* 5. Allow SysTick_Handler to call modus_Clock */
     s_bInitDone = 1;
+
+    __enable_irq();
 
     /* 6. Main loop */
     uint32_t wCounter = 0;
 
     while (1) {
 #if !DEBUG_MINIMAL
-        gmsi_Run();
+        modus_Run();
 #endif
         if (perfc_is_time_out_ms(1000)) {
-            GDI_Toggle(HW.ptLedStatus);
+            MDI_Toggle(HW.ptLedStatus);
             wCounter++;
-            GLOGF(T, "[TICK] %lu s  SYSCLK=%lu Hz\r\n",
-                  (unsigned long)wCounter,
+            MLOGF(T, "[TICK] %lu s  SYSCLK=%lu Hz\r\n",
+                  (unsigned long)(get_system_ms() / 1000),
                   (unsigned long)get_system_core_clock_hz());
         }
     }
