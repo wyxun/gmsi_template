@@ -10,8 +10,8 @@ CPU_FLAGS = -mcpu=cortex-m4 -mthumb -mfloat-abi=soft
 C_DEFS += -DAT32F421F8P7 -DUSE_STDPERIPH_DRIVER
 
 # CMSIS / peripheral library paths
-CHIPLIB_ROOT = chiplib/AT32F421_Firmware_Library/libraries
-CMSIS_CORE   = chiplib/cmsis_core
+CHIPLIB_ROOT = vendor/cortex-m/AT32F421_Firmware_Library/libraries
+CMSIS_CORE   = vendor/cortex-m/cmsis_core
 CMSIS_DEV    = $(CHIPLIB_ROOT)/cmsis/cm4/device_support
 DRV_INC      = $(CHIPLIB_ROOT)/drivers/inc
 DRV_SRC      = $(CHIPLIB_ROOT)/drivers/src

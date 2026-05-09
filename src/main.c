@@ -63,7 +63,7 @@ int main(void)
     modus_Init(&s_tGmsi);
 #endif
 
-    /* 5. Allow SysTick_Handler to call modus_Clock */
+    /* 6. Allow SysTick_Handler to call modus_Clock */
     s_bInitDone = 1;
 
     __enable_irq();

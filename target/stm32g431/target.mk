@@ -10,17 +10,17 @@ CPU_FLAGS = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
 C_DEFS += -DSTM32G431xx -DUSE_HAL_DRIVER -DUSE_FULL_LL_DRIVER -DFOC_SUPPORT=1
 
 # CMSIS paths
-CMSIS_CORE = chiplib/cmsis_core
-CMSIS_DEV  = chiplib/cmsis_device_g4/Include
+CMSIS_CORE = vendor/cortex-m/cmsis_core
+CMSIS_DEV  = vendor/cortex-m/cmsis_device_g4/Include
 
 # HAL paths
-HAL_INC = chiplib/stm32g4xx_hal_driver/Inc
-HAL_SRC = chiplib/stm32g4xx_hal_driver/Src
+HAL_INC = vendor/cortex-m/stm32g4xx_hal_driver/Inc
+HAL_SRC = vendor/cortex-m/stm32g4xx_hal_driver/Src
 
 # Linker script, startup, system, interrupt handler, perf_counter port
 LDSCRIPT     = target/stm32g431/STM32G431xB_FLASH.ld
-STARTUP_S    = chiplib/cmsis_device_g4/Source/Templates/gcc/startup_stm32g431xx.s
-SYSTEM_C     = chiplib/cmsis_device_g4/Source/Templates/system_stm32g4xx.c
+STARTUP_S    = vendor/cortex-m/cmsis_device_g4/Source/Templates/gcc/startup_stm32g431xx.s
+SYSTEM_C     = vendor/cortex-m/cmsis_device_g4/Source/Templates/system_stm32g4xx.c
 IT_C         = target/stm32g431/stm32g4xx_it.c
 PERFC_PORT_C = target/stm32g431/perfc_port_user.c
 

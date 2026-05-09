@@ -8,6 +8,7 @@
 
 #include "at32f421.h"
 #include "perf_counter.h"
+#include "core_debug_cm.h"    /* CORE_DEBUG_FAULT_HANDLERS_ACTIVE sentinel */
 
 /* 由 main.c 导出 */
 extern void modus_Clock(void);
@@ -21,10 +22,12 @@ extern volatile uint8_t s_bInitDone;
 /* -------------------------------------------------------------------------- */
 
 void NMI_Handler(void)              { while(1); }
+#ifndef CORE_DEBUG_FAULT_HANDLERS_ACTIVE
 void HardFault_Handler(void)        { while(1); }
 void MemManage_Handler(void)        { while(1); }
 void BusFault_Handler(void)         { while(1); }
 void UsageFault_Handler(void)       { while(1); }
+#endif
 void SVC_Handler(void)              {}
 void DebugMon_Handler(void)         {}
 void PendSV_Handler(void)           {}

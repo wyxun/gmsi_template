@@ -50,12 +50,32 @@ endif
 # ------------------------------------------------------------------------------
 MODUS_ROOT = modus
 
-# Module switches
+# Build mode: BUILD=debug (default) | BUILD=debug-rel | BUILD=release
+BUILD ?= debug
+
+# Module switches — default for debug; overridden by release below
 MSHELL_ENABLE    = 1
 MWAVEFORM_ENABLE = 1
 MSTORAGE_ENABLE  = 1
 MBLINFO_ENABLE   = 1
 MODUS_USE_LOG    = 1
+
+# Build mode overrides (MUST be before modus.mk include)
+ifeq ($(BUILD),release)
+    # Production: minimum size, no debug modules
+    OPT = -Oz
+    MSHELL_ENABLE    = 0
+    MWAVEFORM_ENABLE = 0
+    MSTORAGE_ENABLE  = 0
+    MBLINFO_ENABLE   = 0
+    MODUS_USE_LOG    = 0
+else ifeq ($(BUILD),debug-rel)
+    # Release-close debugging: same -Oz, but debug modules on
+    OPT = -Oz
+else
+    # Daily development: no optimization
+    OPT = -O0
+endif
 
 include $(MODUS_ROOT)/modus.mk
 
@@ -69,6 +89,11 @@ PERIF_LIB_SOURCES = \
 PERIPHERAL_SOURCES = $(wildcard peripheral/*.c)
 PERIPHERAL_SOURCES += $(wildcard peripheral/$(TARGET_CHIP)/*.c)
 CLASS_SOURCES      = $(wildcard class/*.c) $(wildcard class/*/*.c)
+
+# Core Debug — Cortex-M on-chip debug commands (regs/peek/poke/stack)
+CORE_DEBUG_SOURCES = \
+    vendor/cortex-m/core_debug/core_debug_cm.c \
+    vendor/cortex-m/core_debug/core_debug_cm_fault.c
 
 # FOC framework — defined per-chip in target.mk (not all chips support FOC)
 FOC_SOURCES ?=
@@ -86,6 +111,7 @@ C_SOURCES = \
     $(PERIF_LIB_SOURCES) \
     $(PERIPHERAL_SOURCES) \
     $(CLASS_SOURCES) \
+    $(CORE_DEBUG_SOURCES) \
     $(FOC_SOURCES)
 
 ASM_SOURCES = $(STARTUP_S)
@@ -117,6 +143,7 @@ C_INCLUDES = \
     -I$(MODUS_ROOT)/src/mdebug/segger_rtt \
     -I$(LIB_PLOOC_DIR) \
     -I$(LIB_PERF_DIR) \
+    -Ivendor/cortex-m/core_debug \
     -Iperipheral \
     -Iperipheral/$(TARGET_CHIP) \
     -Iclass \
@@ -126,17 +153,6 @@ C_INCLUDES = \
     -Ifoc/motor \
     -Ifoc/middleware \
     -Ifoc/app
-
-# ------------------------------------------------------------------------------
-# Build mode: BUILD=debug (default) | BUILD=release
-# ------------------------------------------------------------------------------
-BUILD ?= debug
-ifeq ($(BUILD),release)
-    OPT = -Oz
-    C_DEFS += -D__NO_USE_LOG__
-else
-    OPT = -O0
-endif
 
 # ------------------------------------------------------------------------------
 # Flags
@@ -158,11 +174,14 @@ LDFLAGS += -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref
 LDFLAGS += -lcrt0 -lc -lm
 
 # ------------------------------------------------------------------------------
-.PHONY: all clean size flash rtt
+.PHONY: all clean size flash rtt debug-rel
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).bin size
 
 release:
 	$(MAKE) BUILD=release
+
+debug-rel:
+	$(MAKE) BUILD=debug-rel
 
 OBJECTS  = $(addprefix $(BUILD_DIR)/,$(notdir $(C_SOURCES:.c=.o)))
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
@@ -267,4 +286,4 @@ info:
 	@echo "C_SOURCES   = $(C_SOURCES)"
 	@echo "ASM_SOURCES = $(ASM_SOURCES)"
 
-.PHONY: all release clean flash flash-rtt debug-server debug size info rtt rtt-addr openocd
+.PHONY: all release debug-rel clean flash flash-rtt debug-server debug size info rtt rtt-addr openocd

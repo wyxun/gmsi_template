@@ -2,7 +2,7 @@
  * @file   stm32g4xx_it.c
  * @brief  Interrupt handlers (STM32G431)
  *
- * SysTick_Handler �?perf_counter + modus + peripheral 1ms clock.
+ * SysTick_Handler �?perf_counter + modus + peripheral 1ms clock.
  * USART / FDCAN / TIM1 / ADC1_2 have real handlers; the rest are stubs.
  */
 
@@ -10,6 +10,7 @@
 #include "perf_counter.h"
 #include "halusart.h"
 #include "halfdcan.h"
+#include "core_debug_cm.h"    /* CORE_DEBUG_FAULT_HANDLERS_ACTIVE sentinel */
 
 /* Exported by main.c */
 extern void modus_Clock(void);
@@ -20,17 +21,19 @@ extern volatile uint8_t s_bInitDone;
  *  Cortex-M4 Core Exceptions
  * -------------------------------------------------------------------------- */
 void NMI_Handler(void)              { while(1); }
+#ifndef CORE_DEBUG_FAULT_HANDLERS_ACTIVE
 void HardFault_Handler(void)        { while(1); }
 void MemManage_Handler(void)        { while(1); }
 void BusFault_Handler(void)         { while(1); }
 void UsageFault_Handler(void)       { while(1); }
+#endif
 void SVC_Handler(void)              {}
 void DebugMon_Handler(void)         {}
 void PendSV_Handler(void)           {}
 
 void SysTick_Handler(void)
 {
-    HAL_IncTick();   /* 必须第一个调用，驱动所�?HAL 超时机制 */
+    HAL_IncTick();   /* 必须第一个调用，驱动所�?HAL 超时机制 */
     if (s_bInitDone) {
         perfc_port_insert_to_system_timer_insert_ovf_handler();
         modus_Clock();

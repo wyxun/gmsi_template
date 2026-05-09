@@ -96,7 +96,7 @@ void phase_testC(foc_app_t *ptApp)
 }
 
 /* ---------------------------------------------------------------------------
- *  Waveform Demo — per-unit sine/cosine via gwaveform
+ *  Waveform Demo — per-unit sine/cosine via mwaveform
  *  Uses hardware FPU (sinf/cosf) for generation.
  *
  *  Hook:

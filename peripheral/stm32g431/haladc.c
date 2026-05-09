@@ -136,7 +136,7 @@ static void MX_ADC1_Init(void)
 
     /* ---- Enable ---- */
     LL_ADC_Enable(ADC1);
-    while (!LL_ADC_IsActiveFlag_ADRDY(ADC1)) {}
+    { uint32_t _to = 1000000UL; while (!LL_ADC_IsActiveFlag_ADRDY(ADC1) && --_to) {} }
 }
 
 /*----------------------------------------------------------------------------*/
@@ -199,7 +199,14 @@ static void MX_ADC2_Init(void)
 
     /* ---- Enable ---- */
     LL_ADC_Enable(ADC2);
-    while (!LL_ADC_IsActiveFlag_ADRDY(ADC2)) {}
+    {
+        uint32_t _to = 1000000UL;
+        while (!LL_ADC_IsActiveFlag_ADRDY(ADC2) && --_to) {}
+        if (_to == 0) {
+            LL_ADC_Disable(ADC2);
+            return; /* ADC2 not ready — skip, MCU continues */
+        }
+    }
 }
 
 /*----------------------------------------------------------------------------*/

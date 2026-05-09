@@ -17,7 +17,7 @@ taskkill /F /IM openocd-at32.exe /T 2>nul
 if not "%2"=="" set %2
 echo [INFO] Starting Full Auto Build, Flash and Debug sequence...
 %MAKE_EXE% clean
-%MAKE_EXE%
+%MAKE_EXE% BUILD=debug-rel
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Build failed.
     pause

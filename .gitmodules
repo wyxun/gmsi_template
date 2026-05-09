@@ -1,18 +1,18 @@
 [submodule "modus"]
 	path = modus
 	url = https://github.com/wyxun/modus.git
-[submodule "chiplib/AT32F421_Firmware_Library"]
-	path = chiplib/AT32F421_Firmware_Library
+[submodule "vendor/cortex-m/AT32F421_Firmware_Library"]
+	path = vendor/cortex-m/AT32F421_Firmware_Library
 	url = https://github.com/ArteryTek/AT32F421_Firmware_Library.git
 	ignore = untracked
 
-[submodule "chiplib/cmsis_device_g4"]
-	path = chiplib/cmsis_device_g4
+[submodule "vendor/cortex-m/cmsis_device_g4"]
+	path = vendor/cortex-m/cmsis_device_g4
 	url = https://github.com/STMicroelectronics/cmsis_device_g4.git
 	ignore = untracked
 
-[submodule "chiplib/stm32g4xx_hal_driver"]
-	path = chiplib/stm32g4xx_hal_driver
+[submodule "vendor/cortex-m/stm32g4xx_hal_driver"]
+	path = vendor/cortex-m/stm32g4xx_hal_driver
 	url = https://github.com/STMicroelectronics/stm32g4xx_hal_driver.git
 	ignore = untracked
 
