@@ -90,6 +90,11 @@ PERFC_PT_BEGIN(this.chState)
         foc_ipark(&tVdq, ptMotor->tRt.qThetaE, &tVab);
         foc_svpwm(&tVab, ptMotor->tRt.qVbus, &qDu, &qDv, &qDw);
 
+        /* Store duties for observation */
+        this.qDutyU = qDu;
+        this.qDutyV = qDv;
+        this.qDutyW = qDw;
+
         if (ptMotor->tPwm.fnSetDuty) {
             ptMotor->tPwm.fnSetDuty(qDu, qDv, qDw);
         }
@@ -225,6 +230,6 @@ void foc_app_Stop(foc_app_t *ptThis)
 
 #if FOC_SUPPORT
 /* FOC motor object */
-static motor_handle_t s_tMotor;
+motor_handle_t s_tMotor;
 MODUS_DECLARE_OBJECT(foc_app, FocApp, .ptMotor = &s_tMotor);
 #endif

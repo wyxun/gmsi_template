@@ -2,6 +2,38 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "AT32F413 Debug (OpenOCD)",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/template.elf",
+            "request": "launch",
+            "type": "cortex-debug",
+            "servertype": "openocd",
+            "serverpath": "D:/software/msys64/mingw64/bin/openocd-at32.exe",
+            "searchDir": [
+                "D:/software/msys64/mingw64/share/openocd/scripts"
+            ],
+            "configFiles": [
+                "target/at32f413/openocd.cfg"
+            ],
+            "armToolchainPath": "D:/software/llvm_for_arm/bin",
+            "toolchainPrefix": "llvm",
+            "gdbPath": "D:/software/msys64/mingw64/bin/gdb-multiarch.exe",
+            "rttConfig": {
+                "enabled": false,
+                "address": "auto",
+                "decoders": [
+                    {
+                        "label": "RTT Logs",
+                        "port": 0,
+                        "type": "console"
+                    }
+                ]
+            },
+            "runToEntryPoint": "main",
+            "showDevDebugOutput": "raw",
+            "preLaunchTask": "Build AT32F413 ELF"
+        },
+        {
             "name": "AT32F421 Debug (OpenOCD)",
             "cwd": "${workspaceFolder}",
             "executable": "${workspaceFolder}/build/template.elf",

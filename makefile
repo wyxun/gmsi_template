@@ -11,7 +11,7 @@ MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 # Project
 # ------------------------------------------------------------------------------
 TARGET = template
-TARGET_CHIP ?= stm32g431
+TARGET_CHIP ?= at32f413
 
 include target/$(TARGET_CHIP)/target.mk
 
@@ -201,7 +201,7 @@ $(BUILD_DIR)/$(TARGET).bin: $(BUILD_DIR)/$(TARGET).elf
 	$(CP) -O binary -R .ARM.attributes $< $@
 
 $(BUILD_DIR)/$(TARGET).hex: $(BUILD_DIR)/$(TARGET).elf
-	$(CP) -O ihex -R .ARM.attributes $< $@
+	$(CP) -O ihex -R .ARM.attributes -R ._user_heap_stack $< $@
 
 $(BUILD_DIR):
 	$(MKDIR)

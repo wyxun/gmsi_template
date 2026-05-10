@@ -16,3 +16,7 @@
 	url = https://github.com/STMicroelectronics/stm32g4xx_hal_driver.git
 	ignore = untracked
 
+[submodule "vendor/cortex-m/AT32F413_Firmware_Library"]
+	path = vendor/cortex-m/AT32F413_Firmware_Library
+	url = https://gitee.com/arterytek/AT32F413_Firmware_Library.git
+	ignore = untracked

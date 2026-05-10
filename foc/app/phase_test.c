@@ -108,16 +108,20 @@ void phase_testC(foc_app_t *ptApp)
 #include "mdebug/mwaveform.h"
 
 static uint8_t s_chSinID, s_chCosID;
+static uint8_t s_chDutyU, s_chDutyV, s_chDutyW;
 static uint32_t s_wPhaseAcc = 0;
 static const uint32_t s_wPhaseStep = 42949673;  /* ~10Hz @ 1kHz sample rate */
 
 void phase_test_waveform_init(void)
 {
     mwaveform.Init(NULL);
-    s_chSinID = mwaveform.AddChannel("Sin", 32767.0f);
-    s_chCosID = mwaveform.AddChannel("Cos", 32767.0f);
+    s_chSinID = mwaveform.AddChannel("Sin", 1000.0f);
+    s_chCosID = mwaveform.AddChannel("Cos", 1000.0f);
+    s_chDutyU = mwaveform.AddChannel("DutyU", 1000.0f);
+    s_chDutyV = mwaveform.AddChannel("DutyV", 1000.0f);
+    s_chDutyW = mwaveform.AddChannel("DutyW", 1000.0f);
     mwaveform.Start();
-    MLOG(I, "[Waveform] Sin/Cos demo started (10 Hz)\r\n");
+    MLOG(I, "[Waveform] FOC App Demo started (Duties + Sin/Cos)\r\n");
 }
 
 void phase_test_waveform_step(void)
@@ -127,6 +131,13 @@ void phase_test_waveform_step(void)
 
     mwaveform.Push(s_chSinID, sinf(fAngle));
     mwaveform.Push(s_chCosID, cosf(fAngle));
+
+    /* Push SVPWM Duties from the FOC app object */
+    extern foc_app_t tFocApp;
+    mwaveform.Push(s_chDutyU, _D(tFocApp.qDutyU));
+    mwaveform.Push(s_chDutyV, _D(tFocApp.qDutyV));
+    mwaveform.Push(s_chDutyW, _D(tFocApp.qDutyW));
+
     /* mwaveform.Step() is called automatically via modus_Clock() */
 }
 

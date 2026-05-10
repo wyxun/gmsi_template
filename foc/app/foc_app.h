@@ -21,6 +21,9 @@ typedef struct foc_app_s {
     uint8_t         chState;
     int64_t         lLastHeartbeat;
     q_type          qSpeedRef;
+    q_type          qDutyU;
+    q_type          qDutyV;
+    q_type          qDutyW;
     motor_handle_t *ptMotor;
 } foc_app_t;
 
