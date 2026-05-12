@@ -11,7 +11,7 @@ MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 # Project
 # ------------------------------------------------------------------------------
 TARGET = template
-TARGET_CHIP ?= at32f413
+TARGET_CHIP ?= stm32g431
 
 include target/$(TARGET_CHIP)/target.mk
 

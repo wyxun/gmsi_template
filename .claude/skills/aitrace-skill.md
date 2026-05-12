@@ -1,6 +1,6 @@
 # AITrace Debug Skill
 
-Use `aitrace.exe` (at `E:\Project\mstudio\aitrace\aitrace.exe`) to debug MCU firmware.
+Use `aitrace.exe` (at `./tools/aitrace.exe`) to debug MCU firmware.
 
 ## Prerequisites
 
