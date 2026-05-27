@@ -286,17 +286,24 @@ TARGET_CHIP ?= at32f421
 
 ---
 
-## 8. Git 子模块管理 (Git Submodules Configuration)
-由于外设底层、核心 CMSIS、MODUS 均属于独立外链依赖仓库。
+## 8. Git 子模块与极速推拉管理 (Git Submodules & High-Speed Mirroring)
+
+由于外设底层、核心 CMSIS、MODUS 均属于独立外链依赖仓库，采用子模块（Submodule）进行高度解耦管理。
+
+### 8.1 首次克隆与极速更新
 
 **首次克隆本仓库架构：**
-务必带上 `--recursive` 参数，这一步帮助你连同依赖仓库代码一同自动拉下来。
+若要获得极速拉取体验，强烈建议使用国内镜像源克隆，且加上 `--recursive` 与限制深度 `--depth=1` 参数：
 ```bash
-git clone --recursive https://your-repo-url/template-project.git
+# 使用镜像源进行极速首次克隆
+git clone --recursive --depth=1 https://ghfast.top/https://github.com/wyxun/modus_template.git
 ```
-**忘记带参的自救指令：**
+
+**忘记带参的自救更新指令：**
+如果克隆时漏掉了依赖子模块，或者要对它们进行强力提速拉取：
 ```bash
-git submodule update --init --recursive
+# 只拉取最新的一次 Commit，避免拉取数十兆的历史垃圾文件，速度暴涨 10 倍！
+git submodule update --init --recursive --depth=1
 ```
 
 **对底层库版本的强制追更：**
@@ -304,8 +311,41 @@ git submodule update --init --recursive
 cd modus
 git checkout dev
 git pull origin dev
-git submodule update --init --recursive
+# 强制使用深度限制进行子模块更新
+git submodule update --init --recursive --depth=1
 cd ..
-git add modus
-git commit -m "chore: bump modus framework to latest dev branch"
+```
+
+---
+
+### 8.2 🚀 终极加速实践：Git “推拉分流” 双轨机制
+
+在日常开发中，由于网络干扰，GitHub 经常面临“拉取极慢、推送卡死”的物理死穴。项目为此深度定制并推荐采用 **“推拉分流” (Fetch/Push Splitting)** 方案：
+
+* **核心原理**：
+  - **拉取 (Fetch / Pull)**：只读操作，直接走国内的高速加速镜像 `ghfast.top`，**免登录鉴权，实现 MB/s 级极速拉取子模块**。
+  - **推送 (Push)**：必须有写权限，走 GitHub 官方物理写通道 `github.com`，搭配本地代理与凭据提供商设置，**实现秒级秒开验证，安全推送**。
+
+**极速分流一键配置命令：**
+```powershell
+# 1. 设置 pull（fetch）使用镜像加速源，确保无感极速更新
+git remote set-url github https://ghfast.top/https://github.com/wyxun/modus_template.git
+
+# 2. 专门设置 push 推送目标为 GitHub 官方源（写物理通道）
+git remote set-url --push github https://github.com/wyxun/modus_template.git
+
+# 3. 指定 GitHub.com 的凭据提供商，跳过无谓的2秒网络嗅探，杜绝登录弹窗卡死
+git config --global credential.https://github.com.provider github
+```
+
+运行完后，在根目录下输入 `git remote -v`，你将看到堪称完美的**推拉双轨状态**：
+```text
+github  https://ghfast.top/https://github.com/wyxun/modus_template.git (fetch)
+github  https://github.com/wyxun/modus_template.git (push)
+```
+
+**配置本地代理通道 (如果你本地开着代理软件)：**
+```powershell
+# 让你的 Git 物理网络直连本地代理（如 Clash 默认的 7890 端口），让官方写通道推送瞬间起飞
+git config --global http.proxy http://127.0.0.1:7890
 ```
