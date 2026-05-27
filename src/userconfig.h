@@ -10,10 +10,12 @@
 #define USERCONFIG_DEBUG_ENABLE 1
 
 /* MODUS waveform: 1 = enable mwaveform for real-time plotting */
-#if defined(AT32F421F8P7)
-#   define MWAVEFORM_ENABLE 0
-#else
-#   define MWAVEFORM_ENABLE 1
+#ifndef MWAVEFORM_ENABLE
+#   if defined(AT32F421F8P7)
+#       define MWAVEFORM_ENABLE 0
+#   else
+#       define MWAVEFORM_ENABLE 1
+#   endif
 #endif
 
 /*============================ TYPES =========================================*/

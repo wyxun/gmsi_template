@@ -193,78 +193,100 @@ TARGET_CHIP ?= at32f421
 
 ---
 
-## 4. 编译、烧录与手动调试 (Compilation, Flashing & Debugging)
+## 4. 编译模式与优化等级 (Build Modes & Optimizations)
 
-本工程默认使用 **LLVM 交叉编译工具链** 进行构建，基于 **OpenOCD + CMSIS-DAP/DAP-Link** 进行固件烧录。为缓解每次必须敲长命令之苦，根目录默认放置了一个快捷入口 `make.bat`。
+为了完美应对微秒级 FOC 电机驱动的时序要求和逻辑开发，项目独创性地支持 **“双轨制构建”** 体系：
 
-### 1. 编译与烧录
-在任何终端（PowerShell 或 CMD）直接执行：
+| 构建模式 | 命令行参数 | 优化等级 (`OPT`) | 调试模块 (`mshell/MLOG/Waveform`) | 最佳应用场景 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Debug (开发轨)** | `.\make.bat` / `make` | **`-O0`** (无优化) | 🟢 开启 | 适用于纯逻辑算法调试。GDB 单步不断点、不跳行，所有局部临时变量 100% 可读，绝无 `<optimized out>` 报错。 |
+| **Debug-Rel (过渡轨)** | `.\make.bat debug-rel` | **`-Oz`** (极致体积/速度) | 🟢 开启 | **发版前黄金预检模式**。拥有与生产环境 100% 绝对一致的运行速度与指令时序，防范时序炸管，但同时保留 Shell、RTT 打印与 `mstudio` 高速波形捕获！ |
+| **Release (生产轨)** | `.\make.bat release` | **`-Oz`** (极致体积/速度) | 🔴 彻底剥离 (无开销) | 最终量产发版。所有调试逻辑、打印代码在汇编层被物理切除，获得最小的体积与最高效的硬件执行速率。 |
+
+---
+
+## 5. 编译、烧录与一键流 (Compilation, Flashing & Workflows)
+
+### 5.1 极简命令行流
+在任何终端（PowerShell 或 CMD）直接执行以下快捷批处理指令：
 ```powershell
-.\make.bat clean
-.\make.bat             # 执行构建
-.\make.bat flash       # 将产生的 hex/bin 直接烧录进入目标板
+.\make.bat clean              # 清理 build 目录
+.\make.bat [BUILD_MODE]       # 执行编译，不传参数默认是 debug 模式，可传入 release / debug-rel 
+.\make.bat flash BUILD=...    # 将相应生成的 hex 直接烧录进入目标板 (默认烧录 debug 固件)
+.\make.bat download           # 🚀 免除依赖检查：直接调用 OpenOCD 刷写已有的固件 hex
 ```
 
-### 2. 挂载 RTT 调试通道
-一旦成功烧制并开始工作，拉起本地 GDB 服务器：
-```powershell
-.\make.bat rtt
-```
-
-### 3. 日志捕获监控
-使用 RTT 时为防止日志直接乱刷主终端，推荐使用准备好的监视器脚本：
-```powershell
-.\.agent\workflows\rtt_viewer.ps1
-```
-此时将弹出独立监控视窗，所有 `LOG_OUT()` 等通过 `SEGGER_RTT_WriteString` 输送的心跳日志将清晰呈现在这里。
-
-### 4. 自动化测试
-如果你希望一次性完成“清理、编译、烧录、启动 RTT 服务器、打开 RTT 监视器”的全流程，可以使用一键自动化指令：
+### 5.2 🚀 一键自动化测试流水线 (`.\make.bat auto`)
+如果你希望以 **`-Oz` 强优化时序** 进行测试（最推荐的调试电机模式），只需运行一键自动化指令：
 ```powershell
 .\make.bat auto
 ```
-该脚本将严格按照以下顺序执行：
-1. **clean**: 清除旧的编译文件。
-2. **build**: 重新编译生成最新的固件。
-3. **flash**: 自动通过 OpenOCD 烧录到目标板。
-4. **rtt**: 在后台静默启动 `openocd` 作为 RTT 代理。
-5. **rtt_viewer**: 自动弹出 PowerShell 监视窗口显示实时日志。
-6. **auto**: 一键执行以上所有步骤。
-7. **release**: 生成 release 版本(-os 无调试信息)。
-
-### 5. 调试冲突解决 (Debug Conflict Resolution)
-如果在执行烧录、仿真或启动 RTT 时提示“设备被占用”或“无法访问”，通常是因为旧的 OpenOCD 进程在后台未正常退出。你可以手动执行以下指令强制清理：
-
-```powershell
-# 强制终止所有残留的 OpenOCD 进程
-taskkill /F /IM openocd.exe /T
-```
-
-> **提示**：`.\make.bat auto` 现在已经默认在启动时自动执行该清理指令，无需手动干预。
+该指令将以极速在后台自动完成以下全闭环操作：
+1. **自动强杀** 任何残留占用调试口的后台 OpenOCD 进程（杜绝端口冲突）。
+2. **清理** 并将项目编译为 **`-Oz` 极致优化的 `debug-rel`** 固件。
+3. **安全下载** 固件写入单片机 Flash。
+4. **后台静默挂载** RTT 服务器，自动将电机波形数据映射至本地 **`127.0.0.1:9091`** 端口！
+* **结果**：指令运行完毕后，不需手动运行任何程序，直接打开 **`mstudio`** 软件连接 `127.0.0.1:9091` 端口，最真实的电机高速 SVPWM、正余弦波形即刻直观呈现！
 
 ---
 
-## 5. VSCode Cortex-Debug 调试说明
+## 6. VSCode Cortex-Debug 调试说明
 
-本工程已完美适配 VSCode 的 **Cortex-Debug** 插件，通过集成 RTT console 与 SVD 寄存器描述文件，实现极其便捷的图形化断点调试。
+本工程已完美适配 VSCode 的 **Cortex-Debug** 插件，通过集成 RTT console 与 SVD 外设寄存器描述文件，实现极其便捷的图形化断点调试。
 
-### 1. 环境准备
+### 6.1 环境准备
 - **插件安装**：请从 VSCode 插件市场安装 [Cortex-Debug](https://marketplace.visualstudio.com/items?itemName=marus25.cortex-debug)。
 - **路径确认**：确保 `.vscode/launch.json` 中的 `serverpath` (OpenOCD 路径) 与 `armToolchainPath` (LLVM 环境路径) 指向你电脑上的实际安装目录。
 
-### 2. 开发与调试流程
+### 6.2 开发与调试流程
 1. **启动调试**：按下快捷键 **`F5`**。
 2. **自动构建**：系统会自动触发 `Build ELF` 任务（调用 `make.bat build`）确保代码是最新的。
-3. **固件植入**：底层自动启动 OpenOCD 将编译好的 `.elf` 固件下载至 AT32F421 芯片，并默认停在 `main` 函数入口。
-4. **实时日志**：在 VSCode 的 **DEBUG CONSOLE (调试控制台)** 或 **Output (输出)** 面板的 RTT 通道中，可以直接实时查看 `LOG_OUT` 产生的日志。
+3. **固件植入**：底层自动启动 OpenOCD 将编译好的 `.elf` 固件下载至芯片（如 STM32G431），并默认停在 `main` 函数入口。
+4. **实时日志**：在 VSCode 的 **DEBUG CONSOLE (调试控制台)** 中，可以直接实时查看 `MLOG` 产生的 RTT 日志。
 
-### 3. 特色高级功能
-- **外设寄存器查看**：在调试模式下，左侧侧边栏底部会出现 **CORTEX PERIPHERALS** 面板。依靠项目自带的 `AT32F421xx_v2.svd` 文件，你可以直观查看所有外设（如 CRM, TMR, USART, GPIO）的实时寄存器位。
-- **变量监控与断点**：支持标准的断点调试、全路径调用堆栈跟踪以及变量 Watch 监视。
+### 6.3 特色高级功能
+- **外设寄存器查看**：在调试模式下，左侧侧边栏底部会出现 **CORTEX PERIPHERALS** 面板。依靠项目自带 SVD 文件，你可以直观查看所有外设（如 CRM, TMR, ADC, GPIO）的实时寄存器位。
+- **变量监控与断点**：支持标准的断点调试、全路径调用堆栈跟踪以及变量 Watch 监视（注：如需顺畅单步调试，请在 `BUILD=debug` 模式下运行，避免优化干扰）。
 
 ---
 
-## 6. Git 子模块管理 (Git Submodules Configuration)
+## 7. AI 辅助调试：`AITrace` 命令行调试工具 (AI-Driven Debugging with AITrace)
+
+项目在 `./tools/aitrace.exe` 目录下内置了极其强大的无 GUI 命令行调试工具 `AITrace`。该工具不仅供工程师手工调测，更专为 AI 助理（如 Antigravity / Claude）提供直接窥视 MCU 内部运行状态的“天眼”。
+
+### 7.1 侵入安全红线
+由于 FOC 电机驱动系统属于大电流强实时功率电路，**严禁在电机旋转时进行 CPU 挂起**（否则会导致 MOS 管直通烧毁）。AITrace 严格划分了侵入等级：
+* **A. 被动级 (无开销/绝对安全)**：`shell` 命令与 `wave` 采集，通过 RTT 通道零开销交互。**电机运行时首选**！
+* **B. 暂停级 (暂停 1秒)**：`ocd` 指令读核心寄存器和内存，会短暂挂起 CPU。**仅在电机静止时允许使用**！
+* **C. GDB级 (完全挂起)**：`gdb` 连接单步。**仅在逻辑仿真时允许使用**！
+
+### 7.2 黄金被动诊断命令 (A 级安全)
+```powershell
+# 1. 抓取电机波形通道列表
+./tools/aitrace.exe wave list
+
+# 2. 捕获 5 秒钟高速电机波形输出并保存为 CSV (供 AI 调参或诊断 PID 震荡)
+./tools/aitrace.exe wave capture 5 --output motor_wave.csv
+
+# 3. 免挂起读取单片机当前挂载的 MODUS 活跃对象
+./tools/aitrace.exe shell list
+
+# 4. 被动查看故障状态寄存器
+./tools/aitrace.exe shell cfsr
+```
+
+### 7.3 ⚡ HardFault 死机秒级定位
+如果单片机在运行中偶发性死机：
+1. 固件中的异常服务会自动捕获现场，并将崩溃现场的 `PC` (程序计数器)、`LR` (连接寄存器) 等通过 RTT 打印出来。
+2. 将这几个十六进制寄存器发给你的 AI 助理，AI 将在终端一键解析：
+   ```powershell
+   ./tools/aitrace.exe crash report --pc=<PC> --lr=<LR> --sp=<SP> --elf=build/template.elf
+   ```
+3. **AI 将在一秒钟内直接指出是你的哪一个 C 语言源文件、第几行代码、因为何种硬件异常（除零/对齐错/野指针）导致的崩溃！**
+
+---
+
+## 8. Git 子模块管理 (Git Submodules Configuration)
 由于外设底层、核心 CMSIS、MODUS 均属于独立外链依赖仓库。
 
 **首次克隆本仓库架构：**

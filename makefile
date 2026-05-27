@@ -175,7 +175,7 @@ LDFLAGS += -lcrt0 -lc -lm
 
 # ------------------------------------------------------------------------------
 .PHONY: all clean size flash rtt debug-rel
-all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).bin size
+all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).hex size
 
 release:
 	$(MAKE) BUILD=release
@@ -219,7 +219,7 @@ clean:
 ifeq ($(OS),Windows_NT)
     OPENOCD_BIN     ?= $(SW_ROOT)/msys64/mingw64/bin/openocd.exe
     OPENOCD_SCRIPTS ?= $(SW_ROOT)/msys64/mingw64/share/openocd/scripts
-    OPENOCD_CMD = $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "adapter speed 2000" -c "tcl_port 0"
+    OPENOCD_CMD = $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "adapter speed 1000" -c "tcl_port 0"
 else
     OPENOCD_BIN = openocd
     OPENOCD_CMD = $(OPENOCD_BIN) -f target/$(TARGET_CHIP)/openocd.cfg
@@ -227,6 +227,9 @@ endif
 
 flash: $(BUILD_DIR)/$(TARGET).hex
 	$(OPENOCD_CMD) -c "reset_config connect_assert_srst" -c "init" -c "reset halt" -c "sleep 200" -c "program $< verify" -c "reset run" -c "exit"
+
+download:
+	$(OPENOCD_CMD) -c "reset_config connect_assert_srst" -c "init" -c "reset halt" -c "sleep 200" -c "program $(BUILD_DIR)/$(TARGET).hex verify" -c "reset run" -c "exit"
 
 debug-server:
 
@@ -286,4 +289,4 @@ info:
 	@echo "C_SOURCES   = $(C_SOURCES)"
 	@echo "ASM_SOURCES = $(ASM_SOURCES)"
 
-.PHONY: all release debug-rel clean flash flash-rtt debug-server debug size info rtt rtt-addr openocd
+.PHONY: all release debug-rel clean flash download flash-rtt debug-server debug size info rtt rtt-addr openocd

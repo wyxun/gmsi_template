@@ -1,22 +1,23 @@
 [submodule "modus"]
 	path = modus
-	url = https://github.com/wyxun/modus.git
+	url = https://ghfast.top/https://github.com/wyxun/modus.git
 [submodule "vendor/cortex-m/AT32F421_Firmware_Library"]
 	path = vendor/cortex-m/AT32F421_Firmware_Library
-	url = https://github.com/ArteryTek/AT32F421_Firmware_Library.git
+	url = https://ghfast.top/https://github.com/ArteryTek/AT32F421_Firmware_Library.git
 	ignore = untracked
 
 [submodule "vendor/cortex-m/cmsis_device_g4"]
 	path = vendor/cortex-m/cmsis_device_g4
-	url = https://github.com/STMicroelectronics/cmsis_device_g4.git
+	url = https://ghfast.top/https://github.com/STMicroelectronics/cmsis_device_g4.git
 	ignore = untracked
 
 [submodule "vendor/cortex-m/stm32g4xx_hal_driver"]
 	path = vendor/cortex-m/stm32g4xx_hal_driver
-	url = https://github.com/STMicroelectronics/stm32g4xx_hal_driver.git
+	url = https://ghfast.top/https://github.com/STMicroelectronics/stm32g4xx_hal_driver.git
 	ignore = untracked
 
 [submodule "vendor/cortex-m/AT32F413_Firmware_Library"]
 	path = vendor/cortex-m/AT32F413_Firmware_Library
 	url = https://gitee.com/arterytek/AT32F413_Firmware_Library.git
 	ignore = untracked
+

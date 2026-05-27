@@ -84,3 +84,27 @@ aitrace crash report --pc=0x... --lr=0x... --sp=0x... --elf=build/template.elf
 - ALWAYS prefer passive commands first — the MCU may be driving a motor/power stage
 - Before halt/resume or GDB: explain WHY to the engineer, get confirmation, remind them it interrupts real-time control
 - Never modify source code or re-flash firmware without confirmation
+
+## Double-Track Debugging Strategy
+
+To maximize debugging safety and efficiency, follow the **Double-Track Debugging** workflow:
+
+| Scenario | Mode | Compiler Optimization | Recommended Tools | Advantages |
+| :--- | :--- | :--- | :--- | :--- |
+| **Logic & Code Flow** | `.\make.bat` (`BUILD=debug`) | `-O0` (No optimization) | VS Code Graphical F5 (Cortex-Debug) | Precise step-by-step debug, values of local variables are 100% visible (no `<optimized out>`). |
+| **Tuning, Waveforms & Timing** | `.\make.bat auto` (`BUILD=debug-rel`) | `-Oz` (Strict size/speed opt) | `mstudio` / `aitrace` (Passive wave/shell) | 100% identical physical timing to the release build, preventing FOC MOS-blown risks due to timing jitter. |
+
+## FAQ & Troubleshooting
+
+### 1. `Failed to write memory` or `can't assert SRST`
+If OpenOCD fails to flash or halt the CPU, the SWD debug pins might be disabled by firmware or entering low-power modes.
+- **Solution**: Press and **hold** the physical **RESET button** on the MCU board, execute `.\make.bat auto` (or aitrace flash command), and **release** the RESET button the exact moment the terminal prints `CMSIS-DAP: Interface ready`.
+
+### 2. How to use `.\make.bat auto` Workflow
+The `.\make.bat auto` command automates the entire loop:
+1. Performs `make clean`.
+2. Compiles the firmware with `BUILD=debug-rel` (`-Oz`).
+3. Flashes the firmware into the MCU.
+4. Spawns an OpenOCD RTT server in the background, mapping RTT Ch1 Waveform data to `127.0.0.1:9091` automatically.
+- **Result**: Once finished, you do **NOT** need to run any extra commands. Simply open **`mstudio`** and connect to `127.0.0.1:9091` to view FOC waveforms.
+

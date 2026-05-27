@@ -32,17 +32,17 @@ static mstorage_data_t s_tSysData = {
     .hwStorageLength      = sizeof(s_chSysDataBuf),
 };
 
-static modus_t s_tGmsi = { .ptAppFlash = NULL };
+static modus_t s_tModus = { .ptAppFlash = NULL };
 
 #endif
 
 /*============================ IMPLEMENTATION ================================*/
-
+#if MSHELL_ENABLE || !defined(__NO_USE_LOG__)
 void user_trace_output(const char *str)
 {
     SEGGER_RTT_WriteString(0, str);
 }
-
+#endif
 /*============================ MAIN ==========================================*/
 
 int main(void)
@@ -52,15 +52,15 @@ int main(void)
 
     /* 2. perf_counter init — must be after Clock setup */
     perfc_init(true);
-
+#if MSHELL_ENABLE || !defined(__NO_USE_LOG__)
     /* 3. RTT init — print BEFORE complex peripheral init */
     SEGGER_RTT_Init();
     MLOG(I, "\r\n=== MODUS Template BOOT OK ===\r\n");
-
+#endif
 
 #if !DEBUG_MINIMAL
     /* 4. MODUS framework init (also auto-inits FOC app via linker section) */
-    modus_Init(&s_tGmsi);
+    modus_Init(&s_tModus);
 #endif
 
     /* 6. Allow SysTick_Handler to call modus_Clock */
