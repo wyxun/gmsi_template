@@ -51,6 +51,7 @@ typedef struct {
     mringbuf_t          tTXQueue;
     uint8_t             chTXFinishTime;
     uint8_t             chTXFlag;
+    uint8_t             chTXByte;
 } usartbuffer_t;
 
 extern void     halusart_Init(void);

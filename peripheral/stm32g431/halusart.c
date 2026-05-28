@@ -201,7 +201,6 @@ uint16_t halusart_SendData(uint8_t chUsartNum, uint8_t *pchSendData, uint16_t hw
 {
     usartbuffer_t *ptBuf = get_usart_buffer(chUsartNum);
     uint16_t hwCounter;
-    uint8_t chData;
 
     for (hwCounter = 0; hwCounter < hwLength; hwCounter++) {
         if (mringbuf_Write(&ptBuf->tTXQueue, *(pchSendData + hwCounter)) == 0) {
@@ -213,8 +212,8 @@ uint16_t halusart_SendData(uint8_t chUsartNum, uint8_t *pchSendData, uint16_t hw
         return hwCounter;
     }
 
-    if (mringbuf_Read(&ptBuf->tTXQueue, &chData) == 1) {
-        HAL_UART_Transmit_IT(ptBuf->ptUsart, &chData, 1);
+    if (mringbuf_Read(&ptBuf->tTXQueue, &ptBuf->chTXByte) == 1) {
+        HAL_UART_Transmit_IT(ptBuf->ptUsart, &ptBuf->chTXByte, 1);
         ptBuf->chTXFlag = USART_TXFLAG_BUSY;
     }
     return hwCounter;
@@ -270,15 +269,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-    uint8_t chData;
     usartbuffer_t *ptBuf = NULL;
     if      (huart == &huart1) ptBuf = &s_tUsart1Buffer;
     else if (huart == &huart2) ptBuf = &s_tUsart2Buffer;
     else if (huart == &huart3) ptBuf = &s_tUsart3Buffer;
     else return;
 
-    if (mringbuf_Read(&ptBuf->tTXQueue, &chData) == 1) {
-        HAL_UART_Transmit_IT(huart, &chData, 1);
+    if (mringbuf_Read(&ptBuf->tTXQueue, &ptBuf->chTXByte) == 1) {
+        HAL_UART_Transmit_IT(huart, &ptBuf->chTXByte, 1);
     } else {
         ptBuf->chTXFlag = USART_TXFLAG_IDLE;
     }

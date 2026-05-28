@@ -75,6 +75,14 @@ int main(void)
 #if !DEBUG_MINIMAL
         modus_Run();
 #endif
+
+        /* 串口回传 (Echo) 测试 */
+        uint8_t chBuf[64];
+        int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
+        if (nReadBytes > 0) {
+            MDI_Write(HW.ptSerial, chBuf, nReadBytes);
+        }
+
         if (perfc_is_time_out_ms(1000)) {
             MDI_Toggle(HW.ptLedStatus);
             wCounter++;

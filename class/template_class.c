@@ -1,4 +1,4 @@
-﻿/*============================ INCLUDES ======================================*/
+/*============================ INCLUDES ======================================*/
 #include "template_class.h"
 #include "peripheral.h"
 #include "mdi_hw.h"
@@ -84,7 +84,7 @@ int template_class_Run(uintptr_t wObjectAddr)
     }
 
     /* Demonstration: Print to UART every 500ms using the MDI stream interface */
-
+#if 0
     if (perfc_is_time_out_ms(1000))
     {
         MDI_Write(HW.ptSerial, (const uint8_t*)msg, strlen(msg));
@@ -96,6 +96,7 @@ int template_class_Run(uintptr_t wObjectAddr)
     if (hwReadLen > 0) {
         MDI_Write(HW.ptSerial, chData, hwReadLen);
     }
+#endif
 
 
     return wRet;
