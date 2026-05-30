@@ -9,6 +9,7 @@
 #include "foc_core.h"
 #include "foc_hal.h"
 #include "motor.h"
+#include "mdebug/mshell.h"
 
 #undef  this
 #define this (*ptThis)
@@ -64,12 +65,19 @@ PERFC_PT_BEGIN(this.chState)
         ptMotor->tRt.qThetaE = 0;
         ptMotor->tRt.qId     = _Q(0.1f);
         ptMotor->tRt.qIq     = 0;
+        /* Calibrate current offsets with PWM disabled (zero current flowing) */
+        if (ptMotor->tCurrent.tOps.fnOffsetCalib) {
+            ptMotor->tCurrent.tOps.fnOffsetCalib(&ptMotor->tCurrent.tCalib);
+        }
     )
 
     PERFC_PT_DELAY_MS(200)
 
     PERFC_PT_ENTRY(
         ptMotor->tRt.eRunState = MOTOR_STATE_OPEN_LOOP;
+        if (ptMotor->tPwm.fnEnable) {
+            ptMotor->tPwm.fnEnable(true);
+        }
     )
 
     while (ptMotor->tRt.eRunState == MOTOR_STATE_OPEN_LOOP) {
@@ -99,6 +107,11 @@ PERFC_PT_BEGIN(this.chState)
             ptMotor->tPwm.fnSetDuty(qDu, qDv, qDw);
         }
 
+        /* Reconstruct three-phase currents */
+        if (ptMotor->tCurrent.tOps.fnReconstruct) {
+            ptMotor->tCurrent.tOps.fnReconstruct(&ptMotor->tCurrent);
+        }
+
         {
             static q_type   s_qPeakDuty = 0;
             static q_type   s_qMinDuty  = Q_ONE;
@@ -117,8 +130,17 @@ PERFC_PT_BEGIN(this.chState)
 
             if (get_system_ms() - s_wLastPrintTick >= 500UL) {
                 s_wLastPrintTick = get_system_ms();
-                MLOGF(T, "[SVPWM] Peak: %.2f%%, Valley: %.2f%%, Vq: %.3f\r\n",
-                      _D(s_qPeakDuty)*100.0, _D(s_qMinDuty)*100.0, _D(tVdq.qBetaOrQ));
+                
+                /* Get raw ADC readings for debugging */
+                uint32_t raw_u = 0, raw_v = 0, raw_w = 0;
+                if (ptMotor->tCurrent.tOps.fnGetRaw) {
+                    ptMotor->tCurrent.tOps.fnGetRaw(&raw_u, &raw_v, &raw_w);
+                }
+
+                MLOGF(I, "[SVPWM] Peak: %.2f%%, Valley: %.2f%%, Vq: %.3f | Iu=%.3f, Iv=%.3f, Iw=%.3f | Raw: U=%lu V=%lu W=%lu\r\n",
+                      _D(s_qPeakDuty)*100.0, _D(s_qMinDuty)*100.0, _D(tVdq.qBetaOrQ),
+                      _D(ptMotor->tCurrent.qIu), _D(ptMotor->tCurrent.qIv), _D(ptMotor->tCurrent.qIw),
+                      (unsigned long)raw_u, (unsigned long)raw_v, (unsigned long)raw_w);
                 s_qPeakDuty = 0;
                 s_qMinDuty  = Q_ONE;
             }
@@ -233,3 +255,35 @@ void foc_app_Stop(foc_app_t *ptThis)
 motor_handle_t s_tMotor;
 MODUS_DECLARE_OBJECT(foc_app, FocApp, .ptMotor = &s_tMotor);
 #endif
+
+static void cmd_motor(const char *args)
+{
+    extern foc_app_t tFocApp;
+    if (tFocApp.ptMotor == NULL) {
+        MLOG(E, "Motor object not initialized\r\n");
+        return;
+    }
+    if (strncmp(args, "start", 5) == 0) {
+        foc_app_Start(&tFocApp);
+        MLOG(I, "Motor starting...\r\n");
+    } else if (strncmp(args, "stop", 4) == 0) {
+        foc_app_Stop(&tFocApp);
+        MLOG(I, "Motor stopped\r\n");
+    } else if (strncmp(args, "status", 6) == 0) {
+        motor_handle_t *ptMotor = tFocApp.ptMotor;
+        MLOGF(I, "Motor state: %d\r\n", (int)ptMotor->tRt.eRunState);
+        MLOGF(I, " - ThetaE: %.3f\r\n", _D(ptMotor->tRt.qThetaE));
+        MLOGF(I, " - Duty U=%.1f%%, V=%.1f%%, W=%.1f%%\r\n",
+              _D(tFocApp.qDutyU)*100.0, _D(tFocApp.qDutyV)*100.0, _D(tFocApp.qDutyW)*100.0);
+        MLOGF(I, " - Current U=%.3f, V=%.3f, W=%.3f\r\n",
+              _D(ptMotor->tCurrent.qIu), _D(ptMotor->tCurrent.qIv), _D(ptMotor->tCurrent.qIw));
+        MLOGF(I, " - Calib Offsets: U=%lu V=%lu W=%lu Calibrated=%d\r\n",
+              (unsigned long)ptMotor->tCurrent.tCalib.wOffsetU,
+              (unsigned long)ptMotor->tCurrent.tCalib.wOffsetV,
+              (unsigned long)ptMotor->tCurrent.tCalib.wOffsetW,
+              (int)ptMotor->tCurrent.tCalib.bIsCalibrated);
+    } else {
+        MLOG(I, "Usage: motor <start|stop|status>\r\n");
+    }
+}
+MODUS_SHELL_CMD(motor, cmd_motor, "Control FOC Motor (start/stop/status)");

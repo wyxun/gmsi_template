@@ -104,39 +104,38 @@ void phase_testC(foc_app_t *ptApp)
  *    phase_test_waveform_step()  → call from peripheral_Clock() or main loop
  * ------------------------------------------------------------------------- */
 #if MWAVEFORM_ENABLE
-#include <math.h>
 #include "mdebug/mwaveform.h"
 
-static uint8_t s_chSinID, s_chCosID;
 static uint8_t s_chDutyU, s_chDutyV, s_chDutyW;
-static uint32_t s_wPhaseAcc = 0;
-static const uint32_t s_wPhaseStep = 42949673;  /* ~10Hz @ 1kHz sample rate */
+static uint8_t s_chIu, s_chIv, s_chIw;
 
 void phase_test_waveform_init(void)
 {
     mwaveform.Init(NULL);
-    s_chSinID = mwaveform.AddChannel("Sin", 1000.0f);
-    s_chCosID = mwaveform.AddChannel("Cos", 1000.0f);
     s_chDutyU = mwaveform.AddChannel("DutyU", 1000.0f);
     s_chDutyV = mwaveform.AddChannel("DutyV", 1000.0f);
     s_chDutyW = mwaveform.AddChannel("DutyW", 1000.0f);
+    s_chIu    = mwaveform.AddChannel("Iu", 1000.0f);
+    s_chIv    = mwaveform.AddChannel("Iv", 1000.0f);
+    s_chIw    = mwaveform.AddChannel("Iw", 1000.0f);
     mwaveform.Start();
-    MLOG(I, "[Waveform] FOC App Demo started (Duties + Sin/Cos)\r\n");
+    MLOG(I, "[Waveform] FOC App Dynamic Monitoring started (Duties + Currents)\r\n");
 }
 
 void phase_test_waveform_step(void)
 {
-    s_wPhaseAcc += s_wPhaseStep;
-    float fAngle = (float)(s_wPhaseAcc >> 24) * 0.0245437f;  /* 2*pi/256 */
-
-    mwaveform.Push(s_chSinID, sinf(fAngle));
-    mwaveform.Push(s_chCosID, cosf(fAngle));
-
     /* Push SVPWM Duties from the FOC app object */
     extern foc_app_t tFocApp;
     mwaveform.Push(s_chDutyU, _D(tFocApp.qDutyU));
     mwaveform.Push(s_chDutyV, _D(tFocApp.qDutyV));
     mwaveform.Push(s_chDutyW, _D(tFocApp.qDutyW));
+
+    /* Push reconstructed phase currents */
+    if (tFocApp.ptMotor) {
+        mwaveform.Push(s_chIu, _D(tFocApp.ptMotor->tCurrent.qIu));
+        mwaveform.Push(s_chIv, _D(tFocApp.ptMotor->tCurrent.qIv));
+        mwaveform.Push(s_chIw, _D(tFocApp.ptMotor->tCurrent.qIw));
+    }
 
     /* mwaveform.Step() is called automatically via modus_Clock() */
 }
