@@ -1,4 +1,5 @@
 /*============================ INCLUDES ======================================*/
+#include "global_define.h"
 #include <stdio.h>
 #include "peripheral.h"
 #include "modus.h"
@@ -66,7 +67,7 @@ int main(void)
     /* 6. Allow SysTick_Handler to call modus_Clock */
     s_bInitDone = 1;
 
-    __enable_irq();
+    peripheral_EnableIRQ();
 
     /* 6. Main loop */
     uint32_t wCounter = 0;

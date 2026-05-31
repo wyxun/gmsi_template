@@ -21,7 +21,7 @@ LDSCRIPT     = target/at32f421/AT32F421x8_FLASH.ld
 STARTUP_S    = $(CMSIS_DEV)/startup/gcc/startup_at32f421.s
 SYSTEM_C     = $(CMSIS_DEV)/system_at32f421.c
 IT_C         = target/at32f421/at32f421_it.c
-PERFC_PORT_C = target/at32f421/perfc_port_user.c
+
 
 # Chip-specific include paths
 TARGET_INCLUDES = -I$(DRV_INC) -Itarget/at32f421

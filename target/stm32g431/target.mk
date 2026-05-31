@@ -22,7 +22,7 @@ LDSCRIPT     = target/stm32g431/STM32G431xB_FLASH.ld
 STARTUP_S    = vendor/cortex-m/cmsis_device_g4/Source/Templates/gcc/startup_stm32g431xx.s
 SYSTEM_C     = vendor/cortex-m/cmsis_device_g4/Source/Templates/system_stm32g4xx.c
 IT_C         = target/stm32g431/stm32g4xx_it.c
-PERFC_PORT_C = target/stm32g431/perfc_port_user.c
+
 
 # Chip-specific include paths
 TARGET_INCLUDES = -I$(HAL_INC) -Itarget/stm32g431

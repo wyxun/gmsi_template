@@ -60,9 +60,7 @@ int template_class_Run(uintptr_t wObjectAddr)
     uint8_t chRxBuf[64];
     int nLen = mbase_MessagePendFromRing(ptThis->ptBase, chRxBuf, sizeof(chRxBuf));
     if (nLen > 0) {
-        /* 在 RTT 调试通道输出，便于使用 aitrace 观察效果 */
-        MLOGF(I, "[TemplateClass] Recv IPC message: %.*s", nLen, (char *)chRxBuf);
-        MLOG("/r/n");
+        MLOGF(I, "[TemplateClass] Recv IPC message: %.*s\r\n", nLen, (char *)chRxBuf);
         /* 物理串口回显输出（可选） */
         if (HW.ptSerial != NULL) {
             MDI_Write(HW.ptSerial, chRxBuf, nLen);

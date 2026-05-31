@@ -101,3 +101,13 @@ uint32_t get_system_core_clock_hz(void)
 {
     return HAL_RCC_GetHCLKFreq();
 }
+
+void peripheral_EnableIRQ(void)
+{
+    __enable_irq();
+}
+
+void peripheral_DisableIRQ(void)
+{
+    __disable_irq();
+}

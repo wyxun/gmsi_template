@@ -21,3 +21,6 @@
 	url = https://gitee.com/arterytek/AT32F413_Firmware_Library.git
 	ignore = untracked
 
+[submodule "vendor/riscv/ch592"]
+	path = vendor/riscv/ch592
+	url = https://github.com/openwch/ch592.git

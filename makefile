@@ -11,6 +11,12 @@ MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 # Project
 # ------------------------------------------------------------------------------
 TARGET = template
+
+# Support both target=xxx (lowercase) and TARGET_CHIP=xxx (uppercase)
+ifdef target
+    TARGET_CHIP = $(target)
+endif
+
 TARGET_CHIP ?= stm32g431
 
 include target/$(TARGET_CHIP)/target.mk
@@ -18,18 +24,23 @@ include target/$(TARGET_CHIP)/target.mk
 # ------------------------------------------------------------------------------
 # Toolchain  (Windows LLVM path)
 # ------------------------------------------------------------------------------
-LLVM_PATH = $(SW_ROOT)/llvm_for_arm/bin/
+ifeq ($(TARGET_CHIP),ch592)
+    TARGET_TRIPLE = --target=riscv32-none-elf
+    LLVM_PATH = D:/software/msys64/mingw64/bin/
+else
+    TARGET_TRIPLE = --target=armv7em-none-eabi
+    LLVM_PATH = $(SW_ROOT)/llvm_for_arm/bin/
+endif
+
+# Always use llvm_for_arm's multi-architecture binary utilities
+LLVM_UTILS_PATH = D:/software/llvm_for_arm/bin/
+
 CC  = $(LLVM_PATH)clang
 AS  = $(LLVM_PATH)clang
-CP  = $(LLVM_PATH)llvm-objcopy
-SZ  = $(LLVM_PATH)llvm-size
+CP  = $(LLVM_UTILS_PATH)llvm-objcopy
+SZ  = $(LLVM_UTILS_PATH)llvm-size
 LD  = $(LLVM_PATH)clang
-AR  = $(LLVM_PATH)llvm-ar
-
-# ------------------------------------------------------------------------------
-# CPU / Architecture
-# ------------------------------------------------------------------------------
-TARGET_TRIPLE = --target=armv7em-none-eabi
+AR  = $(LLVM_UTILS_PATH)llvm-ar
 
 # ------------------------------------------------------------------------------
 # Directories
@@ -91,7 +102,7 @@ PERIPHERAL_SOURCES += $(wildcard peripheral/$(TARGET_CHIP)/*.c)
 CLASS_SOURCES      = $(wildcard class/*.c) $(wildcard class/*/*.c)
 
 # Core Debug — Cortex-M on-chip debug commands (regs/peek/poke/stack)
-CORE_DEBUG_SOURCES = \
+CORE_DEBUG_SOURCES ?= \
     vendor/cortex-m/core_debug/core_debug_cm.c \
     vendor/cortex-m/core_debug/core_debug_cm_fault.c
 
@@ -122,7 +133,7 @@ ASM_SOURCES = $(STARTUP_S)
 C_DEFS += \
     -D__PERFC_USE_USER_CUSTOM_PORTING__=1 \
     -D__C_LANGUAGE_EXTENSIONS_PERFC_PT__=1 \
-    -D__PERFC_CFG_PORTING_INCLUDE__=\"perfc_port_user.h\" \
+    -D__PERFC_CFG_PORTING_INCLUDE__=\"perfc_port.h\" \
     -D__COMPILER_HAS_GNU_EXTENSIONS__=1 \
     -DTRACE_USE_LIBC_PRINTF=0 \
     -DTRACE_MCU_WRITE_STRING="extern void user_trace_output(const char*); user_trace_output" \
@@ -167,11 +178,12 @@ CFLAGS += -Wno-unused-variable -Wno-unused-parameter -Wno-sign-compare \
 
 ASFLAGS = $(TARGET_TRIPLE) $(CPU_FLAGS) -g
 
-LDFLAGS  = $(TARGET_TRIPLE) $(CPU_FLAGS)
+LDFLAGS += $(TARGET_TRIPLE) $(CPU_FLAGS)
 LDFLAGS += -T$(LDSCRIPT)
 LDFLAGS += -Wl,--gc-sections
 LDFLAGS += -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref
-LDFLAGS += -lcrt0 -lc -lm
+STD_LIBS ?= -lcrt0 -lc -lm
+LDFLAGS += $(STD_LIBS)
 
 # ------------------------------------------------------------------------------
 .PHONY: all clean size flash rtt debug-rel
@@ -184,14 +196,20 @@ debug-rel:
 	$(MAKE) BUILD=debug-rel
 
 OBJECTS  = $(addprefix $(BUILD_DIR)/,$(notdir $(C_SOURCES:.c=.o)))
-OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
+ASM_OBJECTS = $(patsubst %.s,$(BUILD_DIR)/%.o,$(patsubst %.S,$(BUILD_DIR)/%.o,$(notdir $(ASM_SOURCES))))
+OBJECTS += $(ASM_OBJECTS)
+
 vpath %.c $(sort $(dir $(C_SOURCES)))
 vpath %.s $(sort $(dir $(ASM_SOURCES)))
+vpath %.S $(sort $(dir $(ASM_SOURCES)))
 
 $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) -o $@ $<
 
 $(BUILD_DIR)/%.o: %.s | $(BUILD_DIR)
+	$(AS) -c $(ASFLAGS) -o $@ $<
+
+$(BUILD_DIR)/%.o: %.S | $(BUILD_DIR)
 	$(AS) -c $(ASFLAGS) -o $@ $<
 
 $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS)

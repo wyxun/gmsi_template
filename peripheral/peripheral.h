@@ -35,6 +35,16 @@ void peripheral_Clock(void);
  */
 uint32_t get_system_core_clock_hz(void);
 
+/**
+ * @brief 全局开启中断
+ */
+void peripheral_EnableIRQ(void);
+
+/**
+ * @brief 全局关闭中断
+ */
+void peripheral_DisableIRQ(void);
+
 #ifdef __cplusplus
 }
 #endif

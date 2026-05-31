@@ -1,0 +1,35 @@
+/**
+ * @file mdi_hw.h
+ * @brief 全局外设资源统一定义 (MDI 硬件池头文件) — WeAct Studio CH592F
+ *
+ * 为应用层提供统一硬件结构定义，避免应用层暴露芯片私有头文件。
+ */
+
+#ifndef __MDI_HW_H__
+#define __MDI_HW_H__
+
+#include "mdi/mdi.h"
+
+/*============================================================================
+ * 项目硬件资源池定义
+ *
+ * 结构体内声明项目所有的使用到的外设抽象对象
+ *===========================================================================*/
+
+typedef struct {
+    /* ---------- GPIO ---------- */
+    mdi_gpio_t   *ptLedStatus;      /**< 状态指示 LED (PA8) */
+
+    /* ---------- Stream ---------- */
+    mdi_stream_t *ptSerial;         /**< UART0 调试/mshell 通讯串口 (PB7/PB4) */
+    
+} mdi_hardware_t;
+
+/**
+ * @brief 全局统一的硬件资源实例
+ * 
+ * 真正的实例化发生在外设适配层（如 peripheral/ch592/port_mdi.c 中）
+ */
+extern const mdi_hardware_t HW;
+
+#endif /* __MDI_HW_H__ */
