@@ -77,14 +77,15 @@ int main(void)
 #endif
 
         /* 串口回传 (Echo) 测试 */
-        uint8_t chBuf[64];
-        int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
-        if (nReadBytes > 0) {
-            MDI_Write(HW.ptSerial, chBuf, nReadBytes);
-        }
+        // uint8_t chBuf[64];
+        // int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
+        // if (nReadBytes > 0) {
+        //     MDI_Write(HW.ptSerial, chBuf, nReadBytes);
+        // }
 
         if (perfc_is_time_out_ms(1000)) {
-            MDI_Toggle(HW.ptLedStatus);
+            /* 避免与 template_class 的每 500ms 闪灯逻辑产生冲突，此处不再翻转 LED */
+            // MDI_Toggle(HW.ptLedStatus);
             wCounter++;
             MLOGF(T, "[TICK] %lu s  SYSCLK=%lu Hz\r\n",
                   (unsigned long)(get_system_ms() / 1000),

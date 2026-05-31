@@ -52,27 +52,37 @@ int template_class_Run(uintptr_t wObjectAddr)
         return MODUS_EFAIL;
     }
 
+    /* [跨模块通信接收示例] 
+     * 从其他 Class (如 FocApp) 通过以下方式发送数据到本模块的 RingBuffer：
+     * mbase_MessagePostToRing(TEMPLATE_CLASS, data, len); 
+     * 
+     * 注：写在 PERFC_PT_BEGIN 之前以确保每一帧都能无条件获得调度，避免死代码。 */
+    uint8_t chRxBuf[64];
+    int nLen = mbase_MessagePendFromRing(ptThis->ptBase, chRxBuf, sizeof(chRxBuf));
+    if (nLen > 0) {
+        /* 在 RTT 调试通道输出，便于使用 aitrace 观察效果 */
+        MLOGF(I, "[TemplateClass] Recv IPC message: %.*s", nLen, (char *)chRxBuf);
+        MLOG("/r/n");
+        /* 物理串口回显输出（可选） */
+        if (HW.ptSerial != NULL) {
+            MDI_Write(HW.ptSerial, chRxBuf, nLen);
+        }
+    }
+
     /* 基于 perf_counter FSM 的轮询状态机 */
     PERFC_PT_BEGIN(this.chState)
 
     /* 软定时器驱动非阻塞闪灯示范 */
-    mbase_TimerStart(&this.tLedTimer, 500);
+    mbase_TimerStart(&this.tLedTimer, 200);
     while (1) {
         PERFC_PT_WAIT_UNTIL(mbase_TimerPoll(&this.tLedTimer))
         if (HW.ptLedStatus != NULL) {
             MDI_Toggle(HW.ptLedStatus);
         }
-        mbase_TimerStart(&this.tLedTimer, 500);
+        mbase_TimerStart(&this.tLedTimer, 200);
     }
 
     PERFC_PT_END()
-
-    /* 演示标准的 RingBuffer 非阻塞接收与 MDI 串口回显 */
-    uint8_t chRxBuf[32];
-    int nLen = mbase_MessagePendFromRing(ptThis->ptBase, chRxBuf, sizeof(chRxBuf));
-    if (nLen > 0 && HW.ptSerial != NULL) {
-        MDI_Write(HW.ptSerial, chRxBuf, nLen);
-    }
 
     return MODUS_SUCCESS;
 }

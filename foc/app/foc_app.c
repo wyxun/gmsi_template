@@ -5,6 +5,8 @@
 
 #include <stddef.h>
 #include <string.h>
+#include "peripheral.h"
+#include "mdi_hw.h"
 #include "foc_app.h"
 #include "foc_core.h"
 #include "foc_hal.h"
@@ -137,7 +139,7 @@ PERFC_PT_BEGIN(this.chState)
                     ptMotor->tCurrent.tOps.fnGetRaw(&raw_u, &raw_v, &raw_w);
                 }
 
-                MLOGF(I, "[SVPWM] Peak: %.2f%%, Valley: %.2f%%, Vq: %.3f | Iu=%.3f, Iv=%.3f, Iw=%.3f | Raw: U=%lu V=%lu W=%lu\r\n",
+                MLOGF(T, "[SVPWM] Peak: %.2f%%, Valley: %.2f%%, Vq: %.3f | Iu=%.3f, Iv=%.3f, Iw=%.3f | Raw: U=%lu V=%lu W=%lu\r\n",
                       _D(s_qPeakDuty)*100.0, _D(s_qMinDuty)*100.0, _D(tVdq.qBetaOrQ),
                       _D(ptMotor->tCurrent.qIu), _D(ptMotor->tCurrent.qIv), _D(ptMotor->tCurrent.qIw),
                       (unsigned long)raw_u, (unsigned long)raw_v, (unsigned long)raw_w);
@@ -172,6 +174,13 @@ static int foc_app_Run(uintptr_t wObjectAddr)
 
     wEvent = mbase_EventPend(ptThis->ptBase);
     (void)wEvent;
+
+    /* 物理串口接收等待：当有串口输入数据时，跨模块 Post 转发给 TEMPLATE_CLASS 的 RingBuffer，达到 Echo 效果 */
+    uint8_t chBuf[64];
+    int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
+    if (nReadBytes > 0) {
+        mbase_MessagePostToRing(TEMPLATE_CLASS, chBuf, nReadBytes);
+    }
 
     foc_app_RunFSM(ptThis);
 
