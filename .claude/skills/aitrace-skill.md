@@ -31,6 +31,7 @@ aitrace shell log -E -W -I -D
 aitrace wave capture 5                  # 5s CSV to stdout
 aitrace wave capture 10 --output w.csv  # To file
 aitrace wave start / stop / rate <n>
+aitrace serial --port COM3 [--baud 115200] [--duration 5] [--hex]  # Listen to serial port (passive, safe)
 ```
 
 ### Halt-Based (requires confirmation)
@@ -72,6 +73,15 @@ aitrace crash report --pc=0x... --lr=0x... --sp=0x... --elf=build/template.elf
 1. `aitrace wave capture 5 > wave.csv` — capture waveform
 2. `aitrace shell regs` + `aitrace shell list` — check MCU state
 3. Analyze CSV: look for anomalies, compare with expected ranges
+
+### Serial Port Capturing & Interactive Transmit (Passive, safe)
+
+Use `aitrace serial` to write commands to the MCU and monitor logs/feedback in a closed loop:
+- Read-only capturing: `.\tools\aitrace.exe serial --port COM3 --baud 115200 --duration 5`
+- Interactive Closed Loop (Send -> Listen -> Exit): 
+  `.\tools\aitrace.exe serial --port COM3 --send "help" --duration 3`
+  `.\tools\aitrace.exe serial --port COM3 --send-hex "A5 5A 01" --duration 2 --hex`
+- Supports `--hex` to print hex, and `--ascii` to print clean text (default).
 
 ### Variable Inspection
 
