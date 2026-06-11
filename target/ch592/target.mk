@@ -33,3 +33,49 @@ OPENOCD_SCRIPTS ?= $(SW_ROOT)/msys64/mingw64/share/openocd/scripts
 # Use LLVM LLD linker for cross-architecture ELF linking, disable standard C library dependency
 STD_LIBS =
 LDFLAGS += -fuse-ld=lld -nostdlib
+
+# ------------------------------------------------------------------------------
+# Flash configuration for CH592 (prioritizes community 'wchisp', falls back to official 'WCHISPTool_CMD')
+# ------------------------------------------------------------------------------
+ifeq ($(OS),Windows_NT)
+    WCHISP_PATH := $(shell where wchisp 2>nul)
+    WCHCMD_PATH := $(shell where WCHISPTool_CMD 2>nul)
+    
+    ifneq ($(WCHISP_PATH),)
+        FLASH_CMD = wchisp flash $<
+    else ifneq ($(WCHCMD_PATH),)
+        CONFIG_INI = target/ch592/config.ini
+        ifeq ($(wildcard $(CONFIG_INI)),)
+            FLASH_CMD = @echo [ERROR] WCHISPTool_CMD requires target/ch592/config.ini && \
+                        echo Please open WchIspStudio GUI, select CH592, configure and click 'File -> Save UI Config' to save as 'target/ch592/config.ini' && \
+                        exit 1
+        else
+            FLASH_CMD = WCHISPTool_CMD -p USB -c $(CONFIG_INI) -o program -f $<
+        endif
+    else
+        FLASH_CMD = @echo [ERROR] No flashing tool found. Please download 'wchisp.exe' (https://github.com/ch32-rs/wchisp) and add it to your PATH, or download official 'WCHISPTool_CMD.exe' and add it to your PATH. && \
+                    exit 1
+    endif
+else
+    # Linux / macOS
+    WCHISP_PATH := $(shell which wchisp 2>/dev/null)
+    WCHCMD_PATH := $(shell which WCHISPTool_CMD 2>/dev/null)
+    
+    ifneq ($(WCHISP_PATH),)
+        FLASH_CMD = wchisp flash $<
+    else ifneq ($(WCHCMD_PATH),)
+        CONFIG_INI = target/ch592/config.ini
+        ifeq ($(wildcard $(CONFIG_INI)),)
+            FLASH_CMD = @echo "[ERROR] WCHISPTool_CMD requires target/ch592/config.ini" && \
+                        echo "Please open WchIspStudio GUI, select CH592, configure and click 'File -> Save UI Config' to save as 'target/ch592/config.ini'" && \
+                        exit 1
+        else
+            # Linux USB node defaults to /dev/ch37x
+            FLASH_CMD = WCHISPTool_CMD -p /dev/ch37x -c $(CONFIG_INI) -o program -f $<
+        endif
+    else
+        FLASH_CMD = @echo "[ERROR] No flashing tool found (wchisp or WCHISPTool_CMD)" && \
+                    exit 1
+    endif
+endif
+

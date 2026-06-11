@@ -67,7 +67,7 @@ int main(void)
     /* 6. Allow SysTick_Handler to call modus_Clock */
     s_bInitDone = 1;
 
-    peripheral_EnableIRQ();
+    //peripheral_EnableIRQ();
 
     /* 6. Main loop */
     uint32_t wCounter = 0;
@@ -78,11 +78,11 @@ int main(void)
 #endif
 
         /* 串口回传 (Echo) 测试 */
-        // uint8_t chBuf[64];
-        // int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
-        // if (nReadBytes > 0) {
-        //     MDI_Write(HW.ptSerial, chBuf, nReadBytes);
-        // }
+        uint8_t chBuf[64];
+        int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
+        if (nReadBytes > 0) {
+            MDI_Write(HW.ptSerial, chBuf, nReadBytes);
+        }
 
         if (perfc_is_time_out_ms(1000)) {
             /* 避免与 template_class 的每 500ms 闪灯逻辑产生冲突，此处不再翻转 LED */

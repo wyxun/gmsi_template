@@ -56,6 +56,9 @@ static void Uart0_Init(uint32_t baudrate)
 /* 外设初始化总入口 */
 void peripheral_Init(void)
 {
+    /* 初始化系统时钟与 SysTick 定时器 */
+    SystemInit();
+
     /* 1. 开启 UART0 外设时钟 (清零表示使能时钟) */
     R8_SLP_CLK_OFF0 &= ~RB_SLP_CLK_UART0;
 
@@ -252,4 +255,98 @@ float __floatunsisf(uint32_t a) {
 float __divsf3(float a, float b) {
     (void)a; (void)b;
     return 0.0f;
+}
+
+/* 64位无符号右移逻辑实现，避免产生递归的编译器内置函数调用 */
+uint64_t __lshrdi3(uint64_t a, int b) {
+    if (b <= 0) return a;
+    if (b >= 64) return 0;
+    
+    union {
+        uint64_t val;
+        struct {
+            uint32_t low;
+            uint32_t high;
+        } words;
+    } src, dst;
+    
+    src.val = a;
+    if (b >= 32) {
+        dst.words.low = src.words.high >> (b - 32);
+        dst.words.high = 0;
+    } else {
+        dst.words.low = (src.words.low >> b) | (src.words.high << (32 - b));
+        dst.words.high = src.words.high >> b;
+    }
+    return dst.val;
+}
+
+/* 64位无符号左移逻辑实现，避免产生递归的编译器内置函数调用 */
+uint64_t __ashldi3(uint64_t a, int b) {
+    if (b <= 0) return a;
+    if (b >= 64) return 0;
+    
+    union {
+        uint64_t val;
+        struct {
+            uint32_t low;
+            uint32_t high;
+        } words;
+    } src, dst;
+    
+    src.val = a;
+    if (b >= 32) {
+        dst.words.high = src.words.low << (b - 32);
+        dst.words.low = 0;
+    } else {
+        dst.words.high = (src.words.high << b) | (src.words.low >> (32 - b));
+        dst.words.low = src.words.low << b;
+    }
+    return dst.val;
+}
+
+/* 单精度浮点不相等比较内置辅助函数实现，避开 C 编译器 float 比较递归 */
+int __nesf2(float a, float b) {
+    union { float f; uint32_t u; } ua, ub;
+    ua.f = a;
+    ub.f = b;
+    
+    uint32_t exp_a = ua.u & 0x7F800000UL;
+    uint32_t frac_a = ua.u & 0x007FFFFFUL;
+    uint32_t exp_b = ub.u & 0x7F800000UL;
+    uint32_t frac_b = ub.u & 0x007FFFFFUL;
+    
+    if ((exp_a == 0x7F800000UL && frac_a != 0) ||
+        (exp_b == 0x7F800000UL && frac_b != 0)) {
+        return 1;
+    }
+    
+    if (((ua.u & 0x7FFFFFFFUL) == 0) && ((ub.u & 0x7FFFFFFFUL) == 0)) {
+        return 0;
+    }
+    
+    return (ua.u != ub.u) ? 1 : 0;
+}
+
+/* 双精度浮点相等比较内置辅助函数实现，避开 C 编译器 double 比较递归 */
+int __eqdf2(double a, double b) {
+    union { double d; uint64_t u; } ua, ub;
+    ua.d = a;
+    ub.d = b;
+    
+    uint64_t exp_a = ua.u & 0x7FF0000000000000ULL;
+    uint64_t frac_a = ua.u & 0x000FFFFFFFFFFFFFULL;
+    uint64_t exp_b = ub.u & 0x7FF0000000000000ULL;
+    uint64_t frac_b = ub.u & 0x000FFFFFFFFFFFFFULL;
+    
+    if ((exp_a == 0x7FF0000000000000ULL && frac_a != 0) ||
+        (exp_b == 0x7FF0000000000000ULL && frac_b != 0)) {
+        return 1;
+    }
+    
+    if (((ua.u & 0x7FFFFFFFFFFFFFFFULL) == 0) && ((ub.u & 0x7FFFFFFFFFFFFFFFULL) == 0)) {
+        return 0;
+    }
+    
+    return (ua.u == ub.u) ? 0 : 1;
 }

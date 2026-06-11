@@ -57,15 +57,15 @@ int template_class_Run(uintptr_t wObjectAddr)
      * mbase_MessagePostToRing(TEMPLATE_CLASS, data, len); 
      * 
      * 注：写在 PERFC_PT_BEGIN 之前以确保每一帧都能无条件获得调度，避免死代码。 */
-    uint8_t chRxBuf[64];
-    int nLen = mbase_MessagePendFromRing(ptThis->ptBase, chRxBuf, sizeof(chRxBuf));
-    if (nLen > 0) {
-        MLOGF(I, "[TemplateClass] Recv IPC message: %.*s\r\n", nLen, (char *)chRxBuf);
-        /* 物理串口回显输出（可选） */
-        if (HW.ptSerial != NULL) {
-            MDI_Write(HW.ptSerial, chRxBuf, nLen);
-        }
-    }
+    // uint8_t chRxBuf[64];
+    // int nLen = mbase_MessagePendFromRing(ptThis->ptBase, chRxBuf, sizeof(chRxBuf));
+    // if (nLen > 0) {
+    //     MLOGF(I, "[TemplateClass] Recv IPC message: %.*s\r\n", nLen, (char *)chRxBuf);
+    //     /* 物理串口回显输出（可选） */
+    //     if (HW.ptSerial != NULL) {
+    //         MDI_Write(HW.ptSerial, chRxBuf, nLen);
+    //     }
+    // }
 
     /* 基于 perf_counter FSM 的轮询状态机 */
     PERFC_PT_BEGIN(this.chState)

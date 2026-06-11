@@ -17,7 +17,7 @@ ifdef target
     TARGET_CHIP = $(target)
 endif
 
-TARGET_CHIP ?= stm32g431
+TARGET_CHIP ?= at32f421
 
 include target/$(TARGET_CHIP)/target.mk
 
@@ -243,8 +243,10 @@ else
     OPENOCD_CMD = $(OPENOCD_BIN) -f target/$(TARGET_CHIP)/openocd.cfg
 endif
 
+FLASH_CMD ?= $(OPENOCD_CMD) -c "reset_config connect_assert_srst" -c "init" -c "reset halt" -c "sleep 200" -c "program $< verify" -c "reset run" -c "exit"
+
 flash: $(BUILD_DIR)/$(TARGET).hex
-	$(OPENOCD_CMD) -c "reset_config connect_assert_srst" -c "init" -c "reset halt" -c "sleep 200" -c "program $< verify" -c "reset run" -c "exit"
+	$(FLASH_CMD)
 
 download:
 	$(OPENOCD_CMD) -c "reset_config connect_assert_srst" -c "init" -c "reset halt" -c "sleep 200" -c "program $(BUILD_DIR)/$(TARGET).hex verify" -c "reset run" -c "exit"

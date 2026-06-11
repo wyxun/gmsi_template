@@ -20,9 +20,6 @@ extern void modus_Clock(void);
 __attribute__((interrupt))
 void SysTick_Handler(void)
 {
-    /* 直接累加 1ms 比较值 (60MHz 对应 60000 counts) */
-    SysTick->CMP += 60000UL;
-
     /* 清除中断标志 */
     SysTick->SR = 0; 
     modus_Clock();
