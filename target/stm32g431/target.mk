@@ -77,3 +77,7 @@ FOC_SOURCES = $(wildcard foc/math/*.c)       \
               $(wildcard foc/motor/*.c)       \
               $(wildcard foc/middleware/*.c)  \
               $(wildcard foc/app/*.c)
+
+# 启用 MODUS 默认内置的 perf_counter 移植
+MODUS_USE_DEFAULT_PERFC_PORT = 1
+

@@ -88,8 +88,8 @@ else
     OPT = -O0
 endif
 
-# 使用 template 提供的自定义移植，关闭 MODUS 默认内置移植
-MODUS_USE_DEFAULT_PERFC_PORT = 0
+# 默认关闭 MODUS 内置移植，各芯片 target.mk 可自行覆盖启用
+MODUS_USE_DEFAULT_PERFC_PORT ?= 0
 
 include $(MODUS_ROOT)/modus.mk
 

@@ -79,3 +79,7 @@ else
     endif
 endif
 
+# 启用 MODUS 默认内置的 perf_counter 移植
+MODUS_USE_DEFAULT_PERFC_PORT = 1
+
+
