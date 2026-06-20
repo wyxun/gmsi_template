@@ -88,6 +88,9 @@ else
     OPT = -O0
 endif
 
+# 使用 template 提供的自定义移植，关闭 MODUS 默认内置移植
+MODUS_USE_DEFAULT_PERFC_PORT = 0
+
 include $(MODUS_ROOT)/modus.mk
 
 LIB_PERF_DIR  = $(MODUS_ROOT)/lib/perf_counter
