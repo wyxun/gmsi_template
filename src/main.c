@@ -7,24 +7,17 @@
 #include "SEGGER_RTT.h"
 #include "perf_counter.h"
 #include "util_debug.h"
+//#include "CH592SFR.h"
 
 #if FOC_SUPPORT
 #include "foc.h"
 #endif
 
-/*============================ MACROS ========================================*/
 #define DEBUG_MINIMAL   0
-
-/*============================ PROTOTYPES ====================================*/
-
-/*============================ GLOBAL VARIABLES ==============================*/
 
 volatile uint8_t s_bInitDone = 0;
 
-/*============================ LOCAL VARIABLES ===============================*/
-
 #if !DEBUG_MINIMAL
-/* RAM buffer for storage (optional, no flash device for now) */
 static uint8_t s_chSysDataBuf[128];
 static mstorage_data_t s_tSysData = {
     .ptFlash              = NULL,
@@ -32,52 +25,44 @@ static mstorage_data_t s_tSysData = {
     .pchStorageStartAddr  = s_chSysDataBuf,
     .hwStorageLength      = sizeof(s_chSysDataBuf),
 };
-
 static modus_t s_tModus = { .ptAppFlash = NULL };
-
 #endif
 
-/*============================ IMPLEMENTATION ================================*/
 #if MSHELL_ENABLE || !defined(__NO_USE_LOG__)
+#include <string.h>
 void user_trace_output(const char *str)
 {
     SEGGER_RTT_WriteString(0, str);
+
+    /* 同时输出到 UART0 (PB7 TX, 115200bps) */
+    if (str && HW.ptSerial) {
+        MDI_Write(HW.ptSerial, (const uint8_t *)str, strlen(str));
+    }
 }
 #endif
-/*============================ MAIN ==========================================*/
 
 int main(void)
 {
-    /* 1. Low-level HAL, Clock & all peripherals init */
+    /* 必须在 peripheral_Init (启动 SysTick) 之前调用 */
+    perfc_init(true);
     peripheral_Init();
 
-    /* 2. perf_counter init — must be after Clock setup */
-    perfc_init(true);
 #if MSHELL_ENABLE || !defined(__NO_USE_LOG__)
-    /* 3. RTT init — print BEFORE complex peripheral init */
     SEGGER_RTT_Init();
     MLOG(I, "\r\n=== MODUS Template BOOT OK ===\r\n");
 #endif
 
 #if !DEBUG_MINIMAL
-    /* 4. MODUS framework init (also auto-inits FOC app via linker section) */
     modus_Init(&s_tModus);
 #endif
 
-    /* 6. Allow SysTick_Handler to call modus_Clock */
     s_bInitDone = 1;
 
-    //peripheral_EnableIRQ();
-
-    /* 6. Main loop */
     uint32_t wCounter = 0;
-
     while (1) {
 #if !DEBUG_MINIMAL
         modus_Run();
 #endif
-
-        /* 串口回传 (Echo) 测试 */
         uint8_t chBuf[64];
         int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
         if (nReadBytes > 0) {
@@ -85,12 +70,14 @@ int main(void)
         }
 
         if (perfc_is_time_out_ms(1000)) {
-            /* 避免与 template_class 的每 500ms 闪灯逻辑产生冲突，此处不再翻转 LED */
-            // MDI_Toggle(HW.ptLedStatus);
             wCounter++;
-            MLOGF(T, "[TICK] %lu s  SYSCLK=%lu Hz\r\n",
-                  (unsigned long)(get_system_ms() / 1000),
-                  (unsigned long)get_system_core_clock_hz());
+            /* 直接写 UART (绕过 MDI/RTT, 纯诊断) */
+            // while (!(R8_UART0_LSR & RB_LSR_TX_FIFO_EMP));
+            // R8_UART0_THR = '0' + (uint8_t)(wCounter % 10);
+            // while (!(R8_UART0_LSR & RB_LSR_TX_FIFO_EMP));
+            // R8_UART0_THR = '\r';
+            // while (!(R8_UART0_LSR & RB_LSR_TX_FIFO_EMP));
+            // R8_UART0_THR = '\n';
         }
     }
     return 0;

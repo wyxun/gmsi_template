@@ -72,9 +72,23 @@ function Send-Ocd {
         $stream = $client.GetStream()
         $writer = New-Object System.IO.StreamWriter($stream)
         $reader = New-Object System.IO.StreamReader($stream)
+        
+        # Flush the initial OpenOCD greeting message
+        Start-Sleep -Milliseconds 200
+        while ($stream.DataAvailable) {
+            [void]$reader.ReadLine()
+        }
+        
         $writer.WriteLine($Cmd)
         $writer.Flush()
-        Start-Sleep -Milliseconds 200
+        
+        # Wait for data to arrive (up to 500ms)
+        $attempts = 0
+        while (-not $stream.DataAvailable -and $attempts -lt 10) {
+            Start-Sleep -Milliseconds 50
+            $attempts++
+        }
+        
         $result = ""
         while ($stream.DataAvailable) {
             $result += $reader.ReadLine() + "`r`n"

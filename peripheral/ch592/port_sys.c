@@ -12,18 +12,98 @@ uint32_t get_system_core_clock_hz(void)
     return SystemCoreClock;
 }
 
+/* =============================================================================
+ * 安全访问模式辅助宏 (Safe Access Mode)
+ *
+ * CH592 的部分关键寄存器（如时钟配置、flash 配置等标记为 RWA 的寄存器）
+ * 必须在"安全访问模式"下才能写入。进入安全访问模式需要：
+ *   1. 关闭全局中断
+ *   2. 依次写入 SAFE_ACCESS_SIG1 (0x57) 和 SAFE_ACCESS_SIG2 (0xA8) 到 R8_SAFE_ACCESS_SIG
+ *   3. 在 16 个系统时钟周期内完成 RWA 寄存器操作
+ *   4. 写入 0 退出安全访问模式，恢复中断
+ * ============================================================================= */
+#define PORT_SAFE_ACCESS_ENABLE()   do {                             \
+    volatile uint32_t _mpie_mie = __risc_v_disable_irq();           \
+    asm volatile("fence.i");                                         \
+    R8_SAFE_ACCESS_SIG = SAFE_ACCESS_SIG1;                           \
+    R8_SAFE_ACCESS_SIG = SAFE_ACCESS_SIG2;                           \
+    asm volatile("fence.i");                                         \
+    (void)_mpie_mie;
+
+#define PORT_SAFE_ACCESS_DISABLE()                                   \
+    R8_SAFE_ACCESS_SIG = 0;                                          \
+    __risc_v_enable_irq(_mpie_mie);                                  \
+    asm volatile("fence.i");                                         \
+} while(0)
+
+/* =============================================================================
+ * 系统时钟配置 — 将 CH592 从默认 6.4MHz 提升至 PLL 60MHz
+ *
+ * 默认复位后: Fsys = 32MHz / 5 = 6.4MHz
+ * 配置后:     Fsys = PLL(480MHz) / 8 = 60MHz
+ *
+ * CLK_SOURCE_PLL_60MHz = 0x48:
+ *   bit[6]   = 1  → 选择 PLL 作为时钟源
+ *   bit[5:0] = 8  → 分频系数 (480MHz / 8 = 60MHz)
+ * ============================================================================= */
+static void SystemClock_Config(void)
+{
+    /* 1. PLL 配置前置：关闭 PLL 配置位 5 */
+    PORT_SAFE_ACCESS_ENABLE()
+    R8_PLL_CONFIG &= ~(1 << 5);
+    PORT_SAFE_ACCESS_DISABLE();
+
+    /* 2. 配置系统时钟为 PLL 60MHz */
+    PORT_SAFE_ACCESS_ENABLE()
+    R32_CLK_SYS_CFG = (1 << 6)          /* PLL 时钟源 */
+                    | (0x48 & 0x1f)     /* 分频系数 = 8 */
+                    | RB_TX_32M_PWR_EN  /* 32MHz HSE 上电 */
+                    | RB_PLL_PWR_EN;    /* PLL 上电 */
+    __nop(); __nop(); __nop(); __nop();
+    PORT_SAFE_ACCESS_DISABLE();
+
+    /* 3. 根据芯片型号配置 Flash 等待周期 (60MHz 需要 2 个等待周期) */
+    PORT_SAFE_ACCESS_ENABLE()
+    {
+        /* 检测是否为 CH592A (通过 ROM 配置版本寄存器) */
+        uint8_t chip_type = 0;
+        if (((*(uint32_t *)0x7F010) & 0xFF) == 0xA4) {
+            chip_type = 1;  /* CH592A */
+        }
+        if (chip_type) {
+            R8_FLASH_CFG = 0x53;  /* CH592A: 60MHz flash 配置 */
+        } else {
+            R8_FLASH_CFG = 0x52;  /* CH592:  60MHz flash 配置 */
+        }
+    }
+    PORT_SAFE_ACCESS_DISABLE();
+
+    /* 4. 使能 FLASH 时钟加速 */
+    PORT_SAFE_ACCESS_ENABLE()
+    R8_PLL_CONFIG |= (1 << 7);
+    PORT_SAFE_ACCESS_DISABLE();
+}
+
 /* 官方中断向量表默认调用的时钟/SysTick初始化入口 */
 void SystemInit(void)
 {
-    /* 1. 重置并配置硬件 SysTick 全局自减计数器 */
+    /* 1. 配置系统时钟至 60MHz (必须在 SysTick 之前，SysTick 使用 HCLK) */
+    SystemClock_Config();
+
+    /* 2. 重置并配置硬件 SysTick 全局自减计数器 */
     SysTick->CTLR = 0;
     SysTick->CNT = 0;
     SysTick->SR = 0;
 
-    /* 2. 配置 60MHz 时钟下 1ms 的比较中断值 (60,000 counts) */
+    /* 3. 配置 60MHz 时钟下 1ms 的比较中断值 (60,000 counts) */
     SysTick->CMP = 60000UL - 1U;
 
-    /* 3. 开启 System Timer，使用 HCLK 作为基准并开启中断 */
+    /* 4. 在 PFIC 中断控制器中使能 SysTick 中断线 (SysTick_IRQn = 12)
+     *    ⚠️ 这是关键步骤！CH592 QingKe V4C 内核要求所有中断
+     *    必须在 PFIC 中显式使能，否则外设中断无法送达 CPU。 */
+    PFIC_EnableIRQ(SysTick_IRQn);
+
+    /* 5. 开启 System Timer，使用 HCLK 作为基准并开启中断 */
     SysTick->CTLR = SysTick_CTLR_INIT |
                     SysTick_CTLR_STRE |
                     SysTick_CTLR_STCLK |
@@ -74,12 +154,14 @@ void peripheral_Clock(void) {}
 
 void peripheral_EnableIRQ(void)
 {
-    __asm__ __volatile__("csrs mstatus, 8");
+    uint32_t mask = 8;
+    __asm__ __volatile__("csrrs zero, mstatus, %0" :: "r"(mask));
 }
 
 void peripheral_DisableIRQ(void)
 {
-    __asm__ __volatile__("csrc mstatus, 8");
+    uint32_t mask = 8;
+    __asm__ __volatile__("csrrc zero, mstatus, %0" :: "r"(mask));
 }
 
 /* =============================================================================
@@ -306,7 +388,7 @@ uint64_t __ashldi3(uint64_t a, int b) {
 }
 
 /* 单精度浮点不相等比较内置辅助函数实现，避开 C 编译器 float 比较递归 */
-int __nesf2(float a, float b) {
+__attribute__((optnone)) int __nesf2(float a, float b) {
     union { float f; uint32_t u; } ua, ub;
     ua.f = a;
     ub.f = b;
@@ -329,7 +411,7 @@ int __nesf2(float a, float b) {
 }
 
 /* 双精度浮点相等比较内置辅助函数实现，避开 C 编译器 double 比较递归 */
-int __eqdf2(double a, double b) {
+__attribute__((optnone)) int __eqdf2(double a, double b) {
     union { double d; uint64_t u; } ua, ub;
     ua.d = a;
     ub.d = b;

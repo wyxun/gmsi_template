@@ -26,18 +26,20 @@ if (-not $isConnected) {
 }
 
 $stream = $client.GetStream()
+$writer = New-Object System.IO.StreamWriter($stream)
+$writer.Write("`r`n")
+$writer.Flush()
 $buffer = New-Object byte[] 4096
 
 try {
     while ($true) {
-        if ($stream.DataAvailable) {
-            $bytesRead = $stream.Read($buffer, 0, 4096)
-            if ($bytesRead -gt 0) {
-                $text = [System.Text.Encoding]::UTF8.GetString($buffer, 0, $bytesRead)
-                Write-Host $text -NoNewline
-            }
+        $bytesRead = $stream.Read($buffer, 0, 4096)
+        if ($bytesRead -gt 0) {
+            $text = [System.Text.Encoding]::UTF8.GetString($buffer, 0, $bytesRead)
+            Write-Host $text -NoNewline
         } else {
-            Start-Sleep -Milliseconds 50
+            Write-Host "`nConnection closed by remote host." -ForegroundColor Yellow
+            break
         }
     }
 } catch {

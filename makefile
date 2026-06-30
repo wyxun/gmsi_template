@@ -17,7 +17,7 @@ ifdef target
     TARGET_CHIP = $(target)
 endif
 
-TARGET_CHIP ?= at32f421
+TARGET_CHIP ?= stm32g431
 
 include target/$(TARGET_CHIP)/target.mk
 
@@ -41,6 +41,7 @@ CP  = $(LLVM_UTILS_PATH)llvm-objcopy
 SZ  = $(LLVM_UTILS_PATH)llvm-size
 LD  = $(LLVM_PATH)clang
 AR  = $(LLVM_UTILS_PATH)llvm-ar
+NM  = $(LLVM_UTILS_PATH)llvm-nm
 
 # ------------------------------------------------------------------------------
 # Directories
@@ -240,7 +241,7 @@ clean:
 ifeq ($(OS),Windows_NT)
     OPENOCD_BIN     ?= $(SW_ROOT)/msys64/mingw64/bin/openocd.exe
     OPENOCD_SCRIPTS ?= $(SW_ROOT)/msys64/mingw64/share/openocd/scripts
-    OPENOCD_CMD = $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "adapter speed 1000" -c "tcl_port 0"
+    OPENOCD_CMD ?= $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "adapter speed 1000" -c "tcl_port 0"
 else
     OPENOCD_BIN = openocd
     OPENOCD_CMD = $(OPENOCD_BIN) -f target/$(TARGET_CHIP)/openocd.cfg
@@ -267,21 +268,19 @@ debug: $(BUILD_DIR)/$(TARGET).elf
 # RTT
 # ------------------------------------------------------------------------------
 ifeq ($(OS),Windows_NT)
-    RTT_ADDR = $(shell powershell -NoProfile -Command "$$nm = & '$(LLVM_PATH)llvm-nm.exe' $(BUILD_DIR)/$(TARGET).elf 2>$$null | Select-String '_SEGGER_RTT$$'; if ($$nm) { '0x' + ($$nm -split ' ')[0] }" 2>nul)
+    RTT_ADDR = $(shell powershell -NoProfile -Command "$$nm = & '$(NM).exe' $(BUILD_DIR)/$(TARGET).elf 2>$$null | Select-String '_SEGGER_RTT$$'; if ($$nm) { '0x' + ($$nm -split ' ')[0] }" 2>nul)
 else
-    RTT_ADDR = $(shell $(LLVM_PATH)llvm-nm $(BUILD_DIR)/$(TARGET).elf 2>/dev/null | awk '/_SEGGER_RTT$$/ {print "0x"$$1}')
+    RTT_ADDR = $(shell $(NM) $(BUILD_DIR)/$(TARGET).elf 2>/dev/null | awk '/_SEGGER_RTT$$/ {print "0x"$$1}')
 endif
+
+RTT_CMD ?= -c "init" -c "rtt setup $(RTT_ADDR) 0xa8 \"SEGGER RTT\"" -c "rtt start" -c "rtt server start 9090 0" -c "rtt server start 9091 1"
 
 rtt-addr: $(BUILD_DIR)/$(TARGET).elf
 	@echo "RTT CB address: $(RTT_ADDR)"
 
 rtt: $(BUILD_DIR)/$(TARGET).elf
 	@echo "RTT CB address: $(RTT_ADDR)"
-	$(OPENOCD_CMD) -c "init" \
-	    -c "rtt setup $(RTT_ADDR) 0xa8 \"SEGGER RTT\"" \
-	    -c "rtt start" \
-	    -c "rtt server start 9090 0" \
-	    -c "rtt server start 9091 1"
+	$(OPENOCD_CMD) $(RTT_CMD)
 
 # Flash via already-running OpenOCD telnet (port 4444)
 flash-rtt: $(BUILD_DIR)/$(TARGET).hex
