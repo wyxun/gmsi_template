@@ -1,8 +1,7 @@
 #include "peripheral.h"
 #include <stdint.h>
 #include <stdbool.h>
-#include "CH592SFR.h"
-#include "core_riscv.h"
+#include "CH59x_common.h"
 
 /* 系统内核时钟强符号回传，完美覆盖 perf_counter 中的弱符号 */
 uint32_t SystemCoreClock = 60000000UL;
@@ -12,76 +11,47 @@ uint32_t get_system_core_clock_hz(void)
     return SystemCoreClock;
 }
 
-/* =============================================================================
- * 安全访问模式辅助宏 (Safe Access Mode)
- *
- * CH592 的部分关键寄存器（如时钟配置、flash 配置等标记为 RWA 的寄存器）
- * 必须在"安全访问模式"下才能写入。进入安全访问模式需要：
- *   1. 关闭全局中断
- *   2. 依次写入 SAFE_ACCESS_SIG1 (0x57) 和 SAFE_ACCESS_SIG2 (0xA8) 到 R8_SAFE_ACCESS_SIG
- *   3. 在 16 个系统时钟周期内完成 RWA 寄存器操作
- *   4. 写入 0 退出安全访问模式，恢复中断
- * ============================================================================= */
-#define PORT_SAFE_ACCESS_ENABLE()   do {                             \
-    volatile uint32_t _mpie_mie = __risc_v_disable_irq();           \
-    asm volatile("fence.i");                                         \
-    R8_SAFE_ACCESS_SIG = SAFE_ACCESS_SIG1;                           \
-    R8_SAFE_ACCESS_SIG = SAFE_ACCESS_SIG2;                           \
-    asm volatile("fence.i");                                         \
-    (void)_mpie_mie;
+/* WCH 官方 UART 库要求的 GetSysClock 实现 */
+uint32_t GetSysClock(void)
+{
+    return SystemCoreClock;
+}
 
-#define PORT_SAFE_ACCESS_DISABLE()                                   \
-    R8_SAFE_ACCESS_SIG = 0;                                          \
-    __risc_v_enable_irq(_mpie_mie);                                  \
-    asm volatile("fence.i");                                         \
-} while(0)
-
-/* =============================================================================
- * 系统时钟配置 — 将 CH592 从默认 6.4MHz 提升至 PLL 60MHz
+/* 系统时钟配置 — 使用 WCH 官方 sys_safe_access 宏操作 RWA 寄存器
  *
- * 默认复位后: Fsys = 32MHz / 5 = 6.4MHz
- * 配置后:     Fsys = PLL(480MHz) / 8 = 60MHz
- *
- * CLK_SOURCE_PLL_60MHz = 0x48:
- *   bit[6]   = 1  → 选择 PLL 作为时钟源
- *   bit[5:0] = 8  → 分频系数 (480MHz / 8 = 60MHz)
- * ============================================================================= */
+ * 之前自定义 PORT_SAFE_ACCESS_ENABLE 可能未正确解锁 SAM，
+ * 导致 R32_CLK_SYS_CFG 写入被硬件忽略，系统仍跑 6.4MHz。
+ * 现在直接用 CH59x_sys.h 提供的 sys_safe_access_enable() 宏。 */
 static void SystemClock_Config(void)
 {
-    /* 1. PLL 配置前置：关闭 PLL 配置位 5 */
-    PORT_SAFE_ACCESS_ENABLE()
-    R8_PLL_CONFIG &= ~(1 << 5);
-    PORT_SAFE_ACCESS_DISABLE();
-
-    /* 2. 配置系统时钟为 PLL 60MHz */
-    PORT_SAFE_ACCESS_ENABLE()
-    R32_CLK_SYS_CFG = (1 << 6)          /* PLL 时钟源 */
-                    | (0x48 & 0x1f)     /* 分频系数 = 8 */
-                    | RB_TX_32M_PWR_EN  /* 32MHz HSE 上电 */
-                    | RB_PLL_PWR_EN;    /* PLL 上电 */
-    __nop(); __nop(); __nop(); __nop();
-    PORT_SAFE_ACCESS_DISABLE();
-
-    /* 3. 根据芯片型号配置 Flash 等待周期 (60MHz 需要 2 个等待周期) */
-    PORT_SAFE_ACCESS_ENABLE()
-    {
-        /* 检测是否为 CH592A (通过 ROM 配置版本寄存器) */
-        uint8_t chip_type = 0;
-        if (((*(uint32_t *)0x7F010) & 0xFF) == 0xA4) {
-            chip_type = 1;  /* CH592A */
-        }
-        if (chip_type) {
-            R8_FLASH_CFG = 0x53;  /* CH592A: 60MHz flash 配置 */
-        } else {
-            R8_FLASH_CFG = 0x52;  /* CH592:  60MHz flash 配置 */
-        }
+    uint8_t chip_type = 0;
+    if (((*(uint32_t *)0x7F010) & 0xFF) == 0xA4) {
+        chip_type = 1;
     }
-    PORT_SAFE_ACCESS_DISABLE();
+
+    /* 1. PLL 配置前置 */
+    sys_safe_access_enable();
+    R8_PLL_CONFIG &= ~(1 << 5);
+    sys_safe_access_disable();
+
+    /* 2. 选择 PLL 60MHz */
+    sys_safe_access_enable();
+    R32_CLK_SYS_CFG = (1 << 6)           /* PLL 时钟源 */
+                    | (0x48 & 0x1f)       /* 分频系数 8 → 480/8=60MHz */
+                    | RB_TX_32M_PWR_EN    /* 32MHz HSE 上电 */
+                    | RB_PLL_PWR_EN;      /* PLL 上电 */
+    __nop(); __nop(); __nop(); __nop();
+    sys_safe_access_disable();
+
+    /* 3. Flash 等待周期 */
+    sys_safe_access_enable();
+    R8_FLASH_CFG = chip_type ? 0x53 : 0x52;
+    sys_safe_access_disable();
 
     /* 4. 使能 FLASH 时钟加速 */
-    PORT_SAFE_ACCESS_ENABLE()
+    sys_safe_access_enable();
     R8_PLL_CONFIG |= (1 << 7);
-    PORT_SAFE_ACCESS_DISABLE();
+    sys_safe_access_disable();
 }
 
 /* 官方中断向量表默认调用的时钟/SysTick初始化入口 */
@@ -111,26 +81,21 @@ void SystemInit(void)
                     SysTick_CTLR_STE;
 }
 
-/* 串口0波特率配置算法 */
+/* 串口0初始化 — 直接用 WCH 官方 API 排除自定义配置差异 */
 static void Uart0_Init(uint32_t baudrate)
 {
-    /* 1. 引脚配置: PB7(TX0) 设为输出高电平，PB4(RX0) 设为输入 */
-    R32_PB_OUT |= (1 << 7);
-    R32_PB_DIR |= (1 << 7);
-    R32_PB_DIR &= ~(1 << 4);
+    /* 1. GPIO: TX 先拉高再设推挽输出, RX 设输入上拉 (WCH EVT 标准做法) */
+    GPIOB_SetBits(GPIO_Pin_7);
+    GPIOB_ModeCfg(GPIO_Pin_7, GPIO_ModeOut_PP_5mA);
+    GPIOB_ModeCfg(GPIO_Pin_4, GPIO_ModeIN_PU);
 
-    /* 2. 算波特率分频因子 (16C550 整除公式) */
-    uint32_t x = 10 * get_system_core_clock_hz() / 8 / baudrate;
-    uint32_t div = (x + 5) / 10;
+    /* 2. 与 WCH 官方例程完全一致，DL 对应 60MHz 系统时钟 */
+    UART0_BaudRateCfg(baudrate);
 
-    /* 3. 写入 UART 寄存器组并使能 FIFO */
-    R8_UART0_LCR = RB_LCR_DLAB; /* 开启 Latch 访问 */
-    R16_UART0_DL = (uint16_t)div;
+    R8_UART0_FCR = (2 << 6) | RB_FCR_TX_FIFO_CLR | RB_FCR_RX_FIFO_CLR | RB_FCR_FIFO_EN;
+    R8_UART0_LCR = RB_LCR_WORD_SZ;
+    R8_UART0_IER = RB_IER_TXD_EN;
     R8_UART0_DIV = 1;
-    R8_UART0_LCR = RB_LCR_WORD_SZ; /* 8N1，退出 DLAB */
-
-    R8_UART0_FCR = 0x07; /* 清空并使能 FIFO */
-    R8_UART0_IER = 0;    /* 轮询模式 */
 }
 
 /* 外设初始化总入口 */

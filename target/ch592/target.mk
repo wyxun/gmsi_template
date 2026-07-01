@@ -23,7 +23,9 @@ IT_C         = target/ch592/ch592_it.c
 CORE_DEBUG_SOURCES =
 
 # Chip core sources (scanned automatically via PERIPHERAL_SOURCES)
-CHIP_SOURCES =
+CHIP_SOURCES = \
+    $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_gpio.c \
+    $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_uart0.c
 
 # OpenOCD (WCH Custom OpenOCD path or standard openocd with wlink support)
 # WCH MounRiver Studio typically installs openocd.exe supporting wlink
