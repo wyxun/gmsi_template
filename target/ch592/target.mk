@@ -7,7 +7,7 @@
 CPU_FLAGS = -march=rv32imac -mabi=ilp32
 
 # Chip preprocessor defines
-C_DEFS += -DCH592 -D__riscv
+C_DEFS += -DCH592 -D__riscv -DUSERCONFIG_MSHELL_ON_SERIAL=1
 
 # CMSIS / Peripheral Library Paths
 CHIPLIB_ROOT = vendor/riscv/ch592/EVT/EXAM/SRC

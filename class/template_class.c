@@ -1,5 +1,4 @@
 #include "template_class.h"
-#include "peripheral.h"
 #include "mdi_hw.h"
 #include <string.h>
 

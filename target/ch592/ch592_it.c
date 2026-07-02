@@ -15,7 +15,6 @@ extern volatile uint64_t g_perfc_systick_overflow;
 
 /* 由 main.c 导出 */
 extern void modus_Clock(void);
-extern volatile uint8_t s_bInitDone;
 
 /**
  * @brief SysTick 中断: 每 1ms 触发
@@ -29,7 +28,5 @@ void SysTick_Handler(void)
     SysTick->SR = 0;
     g_perfc_systick_overflow += 60000;  /* 60MHz * 1ms = 60000 ticks */
 
-    if (s_bInitDone) {
-        modus_Clock();
-    }
+    modus_Clock();
 }

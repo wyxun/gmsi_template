@@ -39,7 +39,7 @@ static void Uart0_Init(uint32_t baudrate)
 
     R8_UART0_FCR = (2 << 6) | RB_FCR_TX_FIFO_CLR | RB_FCR_RX_FIFO_CLR | RB_FCR_FIFO_EN;
     R8_UART0_LCR = RB_LCR_WORD_SZ;
-    R8_UART0_IER = RB_IER_TXD_EN;
+    R8_UART0_IER = RB_IER_TXD_EN | RB_IER_RECV_RDY;
     R8_UART0_DIV = 1;
 }
 

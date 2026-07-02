@@ -15,7 +15,6 @@
 /* Exported by main.c */
 extern void modus_Clock(void);
 extern void peripheral_Clock(void);
-extern volatile uint8_t s_bInitDone;
 
 /* --------------------------------------------------------------------------
  *  Cortex-M4 Core Exceptions
@@ -33,12 +32,10 @@ void PendSV_Handler(void)           {}
 
 void SysTick_Handler(void)
 {
-    HAL_IncTick();   /* 必须第一个调用，驱动所�?HAL 超时机制 */
-    if (s_bInitDone) {
-        perfc_port_insert_to_system_timer_insert_ovf_handler();
-        modus_Clock();
-        peripheral_Clock();
-    }
+    HAL_IncTick();
+    perfc_port_insert_to_system_timer_insert_ovf_handler();
+    modus_Clock();
+    peripheral_Clock();
 }
 
 /* --------------------------------------------------------------------------

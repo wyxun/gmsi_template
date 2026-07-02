@@ -14,7 +14,6 @@
 /* Exported by main.c */
 extern void modus_Clock(void);
 extern void peripheral_Clock(void);
-extern volatile uint8_t s_bInitDone;
 
 /* USART private instance (defined in port_mdi.c) */
 #include "port_mdi.h"
@@ -37,10 +36,8 @@ void PendSV_Handler(void)           {}
 void SysTick_Handler(void)
 {
     perfc_port_insert_to_system_timer_insert_ovf_handler();
-    if (s_bInitDone) {
-        modus_Clock();
-        at32_usart_timer_1ms(&s_tUsart1Priv);
-    }
+    modus_Clock();
+    at32_usart_timer_1ms(&s_tUsart1Priv);
 }
 
 /* --------------------------------------------------------------------------

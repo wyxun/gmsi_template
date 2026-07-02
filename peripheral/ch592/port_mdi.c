@@ -47,12 +47,8 @@ static int32_t ch592_stream_Read(void *pPriv, uint8_t *pchBuf, uint32_t wLen)
 {
     if (!pchBuf) return 0;
     uint32_t i = 0;
-    while (i < wLen) {
-        if (R8_UART0_LSR & RB_LSR_DATA_RDY) {
-            pchBuf[i++] = UART0_RecvByte();
-        } else {
-            break;
-        }
+    while (i < wLen && R8_UART0_RFC) {
+        pchBuf[i++] = UART0_RecvByte();
     }
     return i;
 }

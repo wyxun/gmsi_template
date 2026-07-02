@@ -10,7 +10,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "mdi_hw.h"
 
 #ifdef __cplusplus
 extern "C" {
