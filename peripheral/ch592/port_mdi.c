@@ -1,5 +1,5 @@
 #include "mdi_hw.h"
-#include "CH592SFR.h"
+#include "CH59x_common.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -7,9 +7,9 @@
 static int32_t ch592_gpio_Set(void *pPriv, mdi_gpio_level_t eLevel)
 {
     if (eLevel == MDI_GPIO_HIGH) {
-        R32_PA_OUT |= (1 << 8); /* 灭 */
+        GPIOA_SetBits(GPIO_Pin_8);   /* 灭 */
     } else {
-        R32_PA_OUT &= ~(1 << 8); /* 亮 */
+        GPIOA_ResetBits(GPIO_Pin_8); /* 亮 */
     }
     return 0;
 }
@@ -21,7 +21,7 @@ static int32_t ch592_gpio_Get(void *pPriv)
 
 static int32_t ch592_gpio_Toggle(void *pPriv)
 {
-    R32_PA_OUT ^= (1 << 8);
+    GPIOA_InverseBits(GPIO_Pin_8);
     return 0;
 }
 
@@ -38,7 +38,7 @@ static int32_t ch592_stream_Write(void *pPriv, const uint8_t *pchData, uint32_t 
     if (!pchData) return 0;
     for (uint32_t i = 0; i < wLen; i++) {
         while (!(R8_UART0_LSR & RB_LSR_TX_FIFO_EMP));
-        R8_UART0_THR = pchData[i];
+        UART0_SendByte(pchData[i]);
     }
     return wLen;
 }
@@ -49,7 +49,7 @@ static int32_t ch592_stream_Read(void *pPriv, uint8_t *pchBuf, uint32_t wLen)
     uint32_t i = 0;
     while (i < wLen) {
         if (R8_UART0_LSR & RB_LSR_DATA_RDY) {
-            pchBuf[i++] = (uint8_t)R8_UART0_RBR;
+            pchBuf[i++] = UART0_RecvByte();
         } else {
             break;
         }

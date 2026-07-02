@@ -10,7 +10,7 @@
 #include "perf_counter.h"
 #include "halusart.h"
 #include "halfdcan.h"
-#include "core_debug_cm.h"    /* CORE_DEBUG_FAULT_HANDLERS_ACTIVE sentinel */
+#include "mdebug_cm.h"
 
 /* Exported by main.c */
 extern void modus_Clock(void);
@@ -21,7 +21,7 @@ extern volatile uint8_t s_bInitDone;
  *  Cortex-M4 Core Exceptions
  * -------------------------------------------------------------------------- */
 void NMI_Handler(void)              { while(1); }
-#ifndef CORE_DEBUG_FAULT_HANDLERS_ACTIVE
+#ifndef MDEBUG_CM_FAULT_HANDLERS_ACTIVE
 void HardFault_Handler(void)        { while(1); }
 void MemManage_Handler(void)        { while(1); }
 void BusFault_Handler(void)         { while(1); }

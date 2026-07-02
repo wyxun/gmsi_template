@@ -105,11 +105,6 @@ PERIPHERAL_SOURCES = $(wildcard peripheral/*.c)
 PERIPHERAL_SOURCES += $(wildcard peripheral/$(TARGET_CHIP)/*.c)
 CLASS_SOURCES      = $(wildcard class/*.c) $(wildcard class/*/*.c)
 
-# Core Debug — Cortex-M on-chip debug commands (regs/peek/poke/stack)
-CORE_DEBUG_SOURCES ?= \
-    vendor/cortex-m/core_debug/core_debug_cm.c \
-    vendor/cortex-m/core_debug/core_debug_cm_fault.c
-
 # FOC framework — defined per-chip in target.mk (not all chips support FOC)
 FOC_SOURCES ?=
 
@@ -126,7 +121,6 @@ C_SOURCES = \
     $(PERIF_LIB_SOURCES) \
     $(PERIPHERAL_SOURCES) \
     $(CLASS_SOURCES) \
-    $(CORE_DEBUG_SOURCES) \
     $(FOC_SOURCES)
 
 ASM_SOURCES = $(STARTUP_S)
@@ -158,7 +152,6 @@ C_INCLUDES = \
     -I$(MODUS_ROOT)/src/mdebug/segger_rtt \
     -I$(LIB_PLOOC_DIR) \
     -I$(LIB_PERF_DIR) \
-    -Ivendor/cortex-m/core_debug \
     -Iperipheral \
     -Iperipheral/$(TARGET_CHIP) \
     -Iclass \

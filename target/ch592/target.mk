@@ -12,20 +12,19 @@ C_DEFS += -DCH592 -D__riscv
 # CMSIS / Peripheral Library Paths
 CHIPLIB_ROOT = vendor/riscv/ch592/EVT/EXAM/SRC
 SYS_INC_PATH = D:/software/llvm_for_arm/lib/clang-runtimes/arm-none-eabi/armv7m_soft_nofp/include
-TARGET_INCLUDES = -I$(CHIPLIB_ROOT)/StdPeriphDriver/inc -I$(CHIPLIB_ROOT)/RVMSIS -Itarget/ch592 -I$(SYS_INC_PATH)
+TARGET_INCLUDES = -I$(CHIPLIB_ROOT)/StdPeriphDriver/inc -I$(CHIPLIB_ROOT)/RVMSIS -Itarget/ch592 -I$(SYS_INC_PATH) -isystem D:/software/llvm_for_arm/lib/clang/19/include -include stddef.h
 
 # Linker script, startup, interrupt handler, perf_counter port
 LDSCRIPT     = target/ch592/CH592_FLASH.ld
 STARTUP_S    = target/ch592/startup_CH592.S target/ch592/ch592_exception.S
 IT_C         = target/ch592/ch592_it.c
 
-# Overwrite Cortex-M debug sources to empty (RISC-V debug is inside modus framework core)
-CORE_DEBUG_SOURCES =
-
 # Chip core sources (scanned automatically via PERIPHERAL_SOURCES)
 CHIP_SOURCES = \
     $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_gpio.c \
-    $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_uart0.c
+    $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_uart0.c \
+    $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_sys.c \
+    $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_clk.c
 
 # OpenOCD (WCH Custom OpenOCD path or standard openocd with wlink support)
 # WCH MounRiver Studio typically installs openocd.exe supporting wlink
@@ -35,6 +34,7 @@ OPENOCD_SCRIPTS ?= D:/software/MounRiver/MounRiver_Studio2/resources/app/resourc
 # Use LLVM LLD linker for cross-architecture ELF linking, disable standard C library dependency
 STD_LIBS =
 LDFLAGS += -fuse-ld=lld -nostdlib
+LDFLAGS += -L$(CHIPLIB_ROOT)/StdPeriphDriver -lISP592
 
 # ------------------------------------------------------------------------------
 # Flash configuration for CH592

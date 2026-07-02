@@ -9,7 +9,7 @@
 #define CORE_DEBUG_OVERRIDE_FAULT_HANDLER
 #include "at32f413.h"
 #include "perf_counter.h"
-#include "core_debug_cm.h"    /* CORE_DEBUG_FAULT_HANDLERS_ACTIVE sentinel */
+#include "mdebug_cm.h"
 
 /* Exported by main.c */
 extern void modus_Clock(void);
@@ -24,7 +24,7 @@ extern at32_usart_priv_t s_tUsart1Priv;
  *  Cortex-M4 Core Exceptions
  * -------------------------------------------------------------------------- */
 void NMI_Handler(void)              { while(1); }
-#ifndef CORE_DEBUG_FAULT_HANDLERS_ACTIVE
+#ifndef MDEBUG_CM_FAULT_HANDLERS_ACTIVE
 void HardFault_Handler(void)        { while(1); }
 void MemManage_Handler(void)        { while(1); }
 void BusFault_Handler(void)         { while(1); }

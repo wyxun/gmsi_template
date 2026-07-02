@@ -18,6 +18,12 @@ MEMORY
 	RAM (xrw) : ORIGIN = 0x20000000, LENGTH = 24K
 }
 
+/* 架构符号 — 供 modus mdebug_riscv 等模块使用 */
+__flash_start = ORIGIN(FLASH);
+__flash_end   = ORIGIN(FLASH) + LENGTH(FLASH);
+__sram_start  = ORIGIN(RAM);
+__sram_end    = ORIGIN(RAM) + LENGTH(RAM);
+
 SECTIONS
 {
 	.init :
