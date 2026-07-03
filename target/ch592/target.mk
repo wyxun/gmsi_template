@@ -22,7 +22,7 @@ IT_C         = target/ch592/ch592_it.c
 # Chip core sources (scanned automatically via PERIPHERAL_SOURCES)
 CHIP_SOURCES = \
     $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_gpio.c \
-    $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_uart0.c \
+    $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_uart1.c \
     $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_sys.c \
     $(CHIPLIB_ROOT)/StdPeriphDriver/CH59x_clk.c
 

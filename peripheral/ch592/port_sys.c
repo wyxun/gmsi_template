@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "CH59x_common.h"
+#include "port_mdi.h"
 
 /* 系统内核时钟强符号回传，完美覆盖 perf_counter 中的弱符号 */
 uint32_t SystemCoreClock = 60000000UL;
@@ -28,21 +29,6 @@ void SystemInit(void)
     SysTick_Config(60000);
 }
 
-/* 串口0初始化 — 使用 WCH vendor API */
-static void Uart0_Init(uint32_t baudrate)
-{
-    GPIOB_SetBits(GPIO_Pin_7);
-    GPIOB_ModeCfg(GPIO_Pin_7, GPIO_ModeOut_PP_5mA);
-    GPIOB_ModeCfg(GPIO_Pin_4, GPIO_ModeIN_PU);
-
-    UART0_BaudRateCfg(baudrate);
-
-    R8_UART0_FCR = (2 << 6) | RB_FCR_TX_FIFO_CLR | RB_FCR_RX_FIFO_CLR | RB_FCR_FIFO_EN;
-    R8_UART0_LCR = RB_LCR_WORD_SZ;
-    R8_UART0_IER = RB_IER_TXD_EN | RB_IER_RECV_RDY;
-    R8_UART0_DIV = 1;
-}
-
 /* 外设初始化总入口 */
 void peripheral_Init(void)
 {
@@ -55,8 +41,8 @@ void peripheral_Init(void)
     R32_PA_DIR |= (1 << 8);
     R32_PA_OUT |= (1 << 8); /* 默认灭 (低电平亮) */
 
-    /* 3. 串口 0 初始化为 115200 */
-    Uart0_Init(115200);
+    /* 3. 一站式初始化串口 0 硬件、RingBuffer 与中断 */
+    ch592_usart_init(115200);
 }
 
 void peripheral_Clock(void) {}

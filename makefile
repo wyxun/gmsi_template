@@ -17,7 +17,7 @@ ifdef target
     TARGET_CHIP = $(target)
 endif
 
-TARGET_CHIP ?= at32f421
+TARGET_CHIP ?= ch592
 
 include target/$(TARGET_CHIP)/target.mk
 

@@ -83,7 +83,7 @@ int main(void)
 
         if (perfc_is_time_out_ms(1000)) {
             wCounter++;
-            MLOG(T, "time out\r\n");
+            //MLOG(T, "time out\r\n");
         }
     }
     return 0;

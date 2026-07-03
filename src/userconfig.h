@@ -11,7 +11,7 @@
 
 /* Route mshell through serial MDI (UART) instead of default RTT.
  * Enable for chips that don't have a debug probe connected (e.g. CH592). */
-#define USERCONFIG_MSHELL_ON_SERIAL 0
+#define USERCONFIG_MSHELL_ON_SERIAL 1
 
 /* MODUS waveform: 1 = enable mwaveform for real-time plotting */
 #ifndef MWAVEFORM_ENABLE
