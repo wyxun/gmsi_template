@@ -3,7 +3,7 @@
 # Toolchain : LLVM Embedded Toolchain for Arm (Windows)
 # Usage     : make [BUILD=debug|release] [TARGET_CHIP=stm32g431] ...
 # ==============================================================================
-SW_ROOT ?= D:/software
+SW_ROOT ?= D:/0_software
 MSYS2_BIN = $(SW_ROOT)/msys64/mingw64/bin
 MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 
@@ -17,7 +17,7 @@ ifdef target
     TARGET_CHIP = $(target)
 endif
 
-TARGET_CHIP ?= ch592
+TARGET_CHIP ?= stm32g431
 
 include target/$(TARGET_CHIP)/target.mk
 
@@ -26,14 +26,14 @@ include target/$(TARGET_CHIP)/target.mk
 # ------------------------------------------------------------------------------
 ifeq ($(TARGET_CHIP),ch592)
     TARGET_TRIPLE = --target=riscv32-none-elf
-    LLVM_PATH = D:/software/msys64/mingw64/bin/
+    LLVM_PATH = $(SW_ROOT)/msys64/mingw64/bin/
 else
     TARGET_TRIPLE = --target=armv7em-none-eabi
     LLVM_PATH = $(SW_ROOT)/llvm_for_arm/bin/
 endif
 
 # Always use llvm_for_arm's multi-architecture binary utilities
-LLVM_UTILS_PATH = D:/software/llvm_for_arm/bin/
+LLVM_UTILS_PATH = $(SW_ROOT)/llvm_for_arm/bin/
 
 CC  = $(LLVM_PATH)clang
 AS  = $(LLVM_PATH)clang
@@ -94,6 +94,12 @@ MODUS_USE_DEFAULT_PERFC_PORT ?= 0
 
 include $(MODUS_ROOT)/modus.mk
 
+# grblHAL CNC controller (opt-in per target via GRBLHAL_ENABLE=1)
+ifdef GRBLHAL_ENABLE
+GRBLHAL_ROOT = third_party/grblhal
+include $(GRBLHAL_ROOT)/grblhal.mk
+endif
+
 LIB_PERF_DIR  = $(MODUS_ROOT)/lib/perf_counter
 LIB_PLOOC_DIR = $(MODUS_ROOT)/lib/plooc
 
@@ -122,6 +128,12 @@ C_SOURCES = \
     $(PERIPHERAL_SOURCES) \
     $(CLASS_SOURCES) \
     $(FOC_SOURCES)
+
+# grblHAL sources (only when enabled)
+ifdef GRBLHAL_ENABLE
+C_SOURCES += $(GRBLHAL_SRCS)
+C_SOURCES += $(wildcard grblhal_adapt/*.c)
+endif
 
 ASM_SOURCES = $(STARTUP_S)
 
@@ -161,6 +173,13 @@ C_INCLUDES = \
     -Ifoc/motor \
     -Ifoc/middleware \
     -Ifoc/app
+
+# grblHAL includes and defines (only when enabled, after C_INCLUDES is fully built)
+ifdef GRBLHAL_ENABLE
+C_INCLUDES += $(GRBLHAL_INCLUDES)
+C_INCLUDES += -Igrblhal_adapt
+C_DEFS     += $(GRBLHAL_CFLAGS)
+endif
 
 # ------------------------------------------------------------------------------
 # Flags

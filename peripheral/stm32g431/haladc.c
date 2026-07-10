@@ -137,6 +137,9 @@ static void MX_ADC1_Init(void)
     /* ---- Enable ---- */
     LL_ADC_Enable(ADC1);
     { uint32_t _to = 1000000UL; while (!LL_ADC_IsActiveFlag_ADRDY(ADC1) && --_to) {} }
+
+    /* ---- Arm injected group (required for external trigger) ---- */
+    LL_ADC_INJ_StartConversion(ADC1);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -207,6 +210,9 @@ static void MX_ADC2_Init(void)
             return; /* ADC2 not ready — skip, MCU continues */
         }
     }
+
+    /* ---- Arm injected group (required for external trigger) ---- */
+    LL_ADC_INJ_StartConversion(ADC2);
 }
 
 /*----------------------------------------------------------------------------*/

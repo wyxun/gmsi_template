@@ -23,4 +23,7 @@
 
 [submodule "vendor/riscv/ch592"]
 	path = vendor/riscv/ch592
-	url = https://github.com/openwch/ch592.git
+	url = https://ghfast.top/https://github.com/openwch/ch592.git
+[submodule "third_party/grblhal/core"]
+	path = third_party/grblhal/core
+	url = https://github.com/grblHAL/core.git

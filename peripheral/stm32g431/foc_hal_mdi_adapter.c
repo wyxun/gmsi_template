@@ -6,6 +6,10 @@
  * Chip-agnostic FOC code under foc/ does not need modification.
  */
 
+#include "global_define.h"
+
+#if defined(FOC_SUPPORT) && FOC_SUPPORT
+
 #include <stddef.h>
 #include <stdint.h>
 #include "foc_hal.h"
@@ -132,3 +136,5 @@ static void mdi_adc_reconstruct(phase_current_handle_t *ptHandle)
             break;
     }
 }
+
+#endif
