@@ -84,14 +84,20 @@ void peripheral_Init(void)
     HAL_Init();
     SystemClock_Config();
 
+#if !defined(GRBLHAL_ENABLE) || !GRBLHAL_ENABLE
     haldac_Init();
     halopamp_Init();
     haladc_Init();
     halcomp_Init();
     haltim1_Init();
+#endif
+
     halusart_Init();
+
+#if !defined(GRBLHAL_ENABLE) || !GRBLHAL_ENABLE
     halfdcan_Init();
     halledgpio_Init();
+#endif
 }
 
 /* --------------------------------------------------------------------------

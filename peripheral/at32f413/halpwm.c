@@ -68,10 +68,10 @@ void halpwm_Init(void)
     tmr_cnt_dir_set(TMR1, TMR_COUNT_TWO_WAY_1);
     tmr_clock_source_div_set(TMR1, DEADTIME_CLK_DIV);
 
-    /* ---- CH1/2/3 initial duty: 50% ---- */
-    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_1, HALF_PWM_PERIOD);
-    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_2, HALF_PWM_PERIOD);
-    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_3, HALF_PWM_PERIOD);
+    /* ---- CH2/3 duty: 50% ---- */
+    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_1, PWM_PERIOD / 2U);
+    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_2, PWM_PERIOD / 2U);
+    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_3, PWM_PERIOD / 2U);
 
     /* ---- CH1/2/3 output config: complementary PWM mode A ---- */
     tmr_output_default_para_init(&tmr_output_struct);
@@ -94,7 +94,9 @@ void halpwm_Init(void)
     /* ---- CH4: ADC trigger output ---- */
     tmr_output_struct.oc_mode = TMR_OUTPUT_CONTROL_PWM_MODE_A;
     tmr_output_channel_config(TMR1, TMR_SELECT_CHANNEL_4, &tmr_output_struct);
-    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_4, HALF_PWM_PERIOD / 2U);
+    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_4, PWM_PERIOD / 4U);
+
+    tmr_output_channel_switch_set(TMR1, TMR_SELECT_CHANNEL_4, TRUE);
 
     /* ---- Brake / dead-time ---- */
     tmr_brkdt_default_para_init(&tmr_brkdt_config_struct);
@@ -108,7 +110,7 @@ void halpwm_Init(void)
     tmr_brkdt_config(TMR1, &tmr_brkdt_config_struct);
 
     /* ---- Primary overflow as output ---- */
-    tmr_primary_mode_select(TMR1, TMR_PRIMARY_SEL_OVERFLOW);
+    tmr_output_channel_switch_set(TMR1, TMR_SELECT_CHANNEL_4, TRUE);
 
     /* ---- Clear flags, enable interrupts ---- */
     tmr_flag_clear(TMR1, TMR_OVF_FLAG | TMR_BRK_FLAG | TMR_C4_INT);

@@ -40,6 +40,9 @@ typedef struct {
     /* ---------- Stream ---------- */
     mdi_stream_t *ptSerial;       /**< USART1 (PB6/7 remapped) */
 
+    /* ---------- Buttons ---------- */
+    mdi_gpio_t   *ptButtonStart;  /**< PA12, Start/Stop Button */
+
 } mdi_hardware_t;
 
 extern const mdi_hardware_t HW;

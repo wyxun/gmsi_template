@@ -7,6 +7,7 @@
 #include <string.h>
 #include "peripheral.h"
 #include "mdi_hw.h"
+#include "haladc.h"
 #include "foc_app.h"
 #include "foc_core.h"
 #include "foc_hal.h"
@@ -139,10 +140,16 @@ PERFC_PT_BEGIN(this.chState)
                     ptMotor->tCurrent.tOps.fnGetRaw(&raw_u, &raw_v, &raw_w);
                 }
 
-                MLOGF(T, "[SVPWM] Peak: %.2f%%, Valley: %.2f%%, Vq: %.3f | Iu=%.3f, Iv=%.3f, Iw=%.3f | Raw: U=%lu V=%lu W=%lu\r\n",
-                      _D(s_qPeakDuty)*100.0, _D(s_qMinDuty)*100.0, _D(tVdq.qBetaOrQ),
+                /* Read potentiometer value as general ADC status check */
+                uint16_t pot = haladc_GetOrdinary(2);
+                MLOGF(T, "[SVPWM] Vq: %.3f | Iu=%.3f, Iv=%.3f, Iw=%.3f | Raw: U=%lu V=%lu W=%lu | Offset: U=%lu V=%lu W=%lu | Pot=%u\r\n",
+                      _D(tVdq.qBetaOrQ),
                       _D(ptMotor->tCurrent.qIu), _D(ptMotor->tCurrent.qIv), _D(ptMotor->tCurrent.qIw),
-                      (unsigned long)raw_u, (unsigned long)raw_v, (unsigned long)raw_w);
+                      (unsigned long)raw_u, (unsigned long)raw_v, (unsigned long)raw_w,
+                      (unsigned long)ptMotor->tCurrent.tCalib.wOffsetU,
+                      (unsigned long)ptMotor->tCurrent.tCalib.wOffsetV,
+                      (unsigned long)ptMotor->tCurrent.tCalib.wOffsetW,
+                      pot);
                 s_qPeakDuty = 0;
                 s_qMinDuty  = Q_ONE;
             }
@@ -175,6 +182,30 @@ static int foc_app_Run(uintptr_t wObjectAddr)
     wEvent = mbase_EventPend(ptThis->ptBase);
     (void)wEvent;
 
+    /* PB2 按键消抖与控制启停 */
+    {
+        static bool s_bLastBtnState = false;
+        static uint32_t s_wLastBtnTick = 0;
+        bool bCurrBtnState = (MDI_Read(HW.ptButtonStart) == MDI_GPIO_LOW);
+
+        if (bCurrBtnState != s_bLastBtnState) {
+            if (get_system_ms() - s_wLastBtnTick >= 50) { // 50ms 消抖
+                s_bLastBtnState = bCurrBtnState;
+                s_wLastBtnTick = get_system_ms();
+
+                if (bCurrBtnState) { // 按键被按下
+                    if (ptThis->ptMotor->tRt.eRunState == MOTOR_STATE_IDLE) {
+                        MLOG(I, "[Button] Press: Starting Motor...\r\n");
+                        foc_app_Start(ptThis);
+                    } else {
+                        MLOG(I, "[Button] Press: Stopping Motor...\r\n");
+                        foc_app_Stop(ptThis);
+                    }
+                }
+            }
+        }
+    }
+
     /* 物理串口接收等待：当有串口输入数据时，跨模块 Post 转发给 TEMPLATE_CLASS 的 RingBuffer，达到 Echo 效果 */
     uint8_t chBuf[64];
     int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
@@ -186,8 +217,9 @@ static int foc_app_Run(uintptr_t wObjectAddr)
 
     if (get_system_ms() - this.lLastHeartbeat >= 1000) {
         this.lLastHeartbeat = get_system_ms();
-        MLOGF(T, "[Heartbeat] foc_app is alive, motor_state: %d\r\n",
-              (int)ptThis->ptMotor->tRt.eRunState);
+        extern uint8_t g_chGLogMask;
+        MLOGF(T, "[Heartbeat] foc_app is alive, motor_state: %d, Mask: 0x%02X\r\n",
+              (int)ptThis->ptMotor->tRt.eRunState, (unsigned int)g_chGLogMask);
     }
 
     return MODUS_SUCCESS;

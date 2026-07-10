@@ -122,10 +122,13 @@ void haladc_Init(void)
     /* Preempt trigger: TMR1 CH4 */
     adc_preempt_conversion_trigger_set(ADC1, ADC12_PREEMPT_TRIG_TMR1CH4, TRUE);
 
+    /* Disable preempt auto mode to allow external TMR1 CH4 trigger */
+    adc_preempt_auto_mode_enable(ADC1, FALSE);
+
     /* ---- Voltage monitor on preempt (overcurrent) ---- */
-    adc_voltage_monitor_enable(ADC1, ADC_VMONITOR_ALL_PREEMPT);
-    adc_voltage_monitor_threshold_value_set(ADC1, 0xFFF, 0x000);
-    adc_interrupt_enable(ADC1, ADC_VMOR_INT, TRUE);
+    /* adc_voltage_monitor_enable(ADC1, ADC_VMONITOR_ALL_PREEMPT); */
+    /* adc_voltage_monitor_threshold_value_set(ADC1, 0xFFF, 0x000); */
+    /* adc_interrupt_enable(ADC1, ADC_VMOR_INT, TRUE); */
 
     /* ---- NVIC ---- */
     nvic_irq_enable(ADC1_2_IRQn, 1, 0);

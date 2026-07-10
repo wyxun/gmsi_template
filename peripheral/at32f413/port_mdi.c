@@ -86,6 +86,13 @@ static mdi_gpio_t s_tLedStatus3 = {
     .fnGet = at32_gpio_Get_ActiveLow, .fnToggle = at32_gpio_Toggle,
 };
 
+/* ---- Button GPIO instances (active-low but we read physical level) ---- */
+static void *s_apvButtonStartPriv[] = { GPIOA, (void *)(uintptr_t)GPIO_PINS_12 };
+static mdi_gpio_t s_tButtonStart = {
+    .pPriv = s_apvButtonStartPriv, .fnSet = NULL,
+    .fnGet = at32_gpio_Get, .fnToggle = NULL,
+};
+
 /* ---- Comp (brake) GPIO instance (input only) ---- */
 static void *s_apvCompBrkPriv[] = { GPIOB, (void *)(uintptr_t)GPIO_PINS_12 };
 static mdi_gpio_t s_tCompBrk = {
@@ -271,4 +278,5 @@ const mdi_hardware_t HW = {
     .ptAdcBusV    = &s_tAdcBusV,
     .ptAdcTemp    = &s_tAdcTemp,
     .ptSerial     = &s_tStreamSerial,
+    .ptButtonStart = &s_tButtonStart,
 };

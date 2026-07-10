@@ -90,9 +90,9 @@ void phase_testC(foc_app_t *ptApp)
     }
 
     MLOG(I, "\r\n=== Phase C: SVPWM & Open-Loop Test ===\r\n");
-    MLOG(I, "[Test] Requesting Motor Start (IDLE -> START -> OPEN_LOOP)...\r\n");
+    MLOG(I, "[Test] Motor waiting for PA12 button press to start...\r\n");
 
-    foc_app_Start(ptApp);
+    /* foc_app_Start(ptApp); // 默认不自动启动 */
 }
 
 /* ---------------------------------------------------------------------------

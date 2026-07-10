@@ -70,6 +70,18 @@ static void SystemClock_Config(void)
  *  peripheral_Init — main() calls this first
  *  Init order: clock → LED → PWM → ADC → USART → SysTick
  * -------------------------------------------------------------------------- */
+static void halbutton_Init(void)
+{
+    gpio_init_type gpio_init_struct = {0};
+    crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
+    
+    gpio_default_para_init(&gpio_init_struct);
+    gpio_init_struct.gpio_pins = GPIO_PINS_12;
+    gpio_init_struct.gpio_mode = GPIO_MODE_INPUT;
+    gpio_init_struct.gpio_pull = GPIO_PULL_UP;
+    gpio_init(GPIOA, &gpio_init_struct);
+}
+
 void peripheral_Init(void)
 {
     /* NVIC: 4-bit preemption priority, 0-bit sub-priority */
@@ -81,6 +93,9 @@ void peripheral_Init(void)
     halpwm_Init();
     haladc_Init();
     halusart_Init();
+
+    /* 最后初始化按键以防其他外设初始化对其造成覆盖 */
+    halbutton_Init();
 
     /* SysTick 1ms interrupt */
     SysTick_Config(SystemCoreClock / 1000U);
