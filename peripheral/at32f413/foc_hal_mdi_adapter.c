@@ -45,13 +45,13 @@ void foc_hal_mdi_register(void)
 static void mdi_pwm_set_duty(q_type duty_u, q_type duty_v, q_type duty_w)
 {
 #if FOC_USE_FPU_HARDWARE
-    halpwm_SetDuty((uint32_t)(duty_u * 1000.0f),
-                   (uint32_t)(duty_v * 1000.0f),
-                   (uint32_t)(duty_w * 1000.0f));
+    halpwm_SetDuty((uint32_t)(duty_u * (float)PWM_PERIOD),
+                   (uint32_t)(duty_v * (float)PWM_PERIOD),
+                   (uint32_t)(duty_w * (float)PWM_PERIOD));
 #else
-    halpwm_SetDuty((uint32_t)((duty_u * 1000) >> Q_SHIFT),
-                   (uint32_t)((duty_v * 1000) >> Q_SHIFT),
-                   (uint32_t)((duty_w * 1000) >> Q_SHIFT));
+    halpwm_SetDuty((uint32_t)((duty_u * PWM_PERIOD) >> Q_SHIFT),
+                   (uint32_t)((duty_v * PWM_PERIOD) >> Q_SHIFT),
+                   (uint32_t)((duty_w * PWM_PERIOD) >> Q_SHIFT));
 #endif
 }
 

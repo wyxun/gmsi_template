@@ -16,17 +16,6 @@
 #include "at32f413.h"
 #include "halpwm.h"
 
-/* PWM frequency: 20kHz center-aligned, PCLK2 = 100MHz */
-#define PWM_FREQ_HZ           20000U
-#define PWM_PERIOD            ((100000000U / PWM_FREQ_HZ / 2U) - 1U)  /* 2499 */
-#define HALF_PWM_PERIOD       (PWM_PERIOD / 2U)
-
-/* Dead-time: Tdts = 1 / (PCLK2 / DIV) */
-#define DEADTIME_CLK_DIV      TMR_CLOCK_DIV1
-#define DEADTIME_NS           1000U         /* 1us */
-/* DT = DEADTIME_NS / (1 / 100MHz) = 100 clocks */
-#define DEADTIME_VAL          100U
-
 void halpwm_Init(void)
 {
     gpio_init_type gpio_init_struct = {0};

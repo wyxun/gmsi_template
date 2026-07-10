@@ -14,6 +14,7 @@ void halusart_Init(void)
 
     crm_periph_clock_enable(CRM_USART1_PERIPH_CLOCK, TRUE);
     crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
+    crm_periph_clock_enable(CRM_IOMUX_PERIPH_CLOCK, TRUE);
 
     gpio_default_para_init(&gpio_init_struct);
 
