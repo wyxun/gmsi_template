@@ -17,7 +17,7 @@ ifdef target
     TARGET_CHIP = $(target)
 endif
 
-TARGET_CHIP ?= at32f413
+TARGET_CHIP ?= at32f407
 CLASS_SOURCES = class/template_class.c
 
 include target/$(TARGET_CHIP)/target.mk

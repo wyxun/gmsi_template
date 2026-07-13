@@ -27,3 +27,8 @@
 [submodule "third_party/grblhal/core"]
 	path = third_party/grblhal/core
 	url = https://github.com/grblHAL/core.git
+
+[submodule "vendor/cortex-m/AT32F403A_407_Firmware_Library"]
+	path = vendor/cortex-m/AT32F403A_407_Firmware_Library
+	url = https://ghfast.top/https://github.com/ArteryTek/AT32F403A_407_Firmware_Library.git
+	ignore = untracked

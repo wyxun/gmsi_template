@@ -1,0 +1,162 @@
+/**
+ * @file   port_sys.c
+ * @brief  AT32F407 AT-START-F407 system-level init (clock + USART1 + LED + SysTick)
+ *
+ * Clock: HEXT 8MHz / 2 × 60 = 240MHz SYSCLK (AT32F407 max)
+ *        HCLK  = 240MHz
+ *        APB2  = 120MHz (PCLK2)
+ *        APB1  =  60MHz (PCLK1)
+ */
+
+#include "peripheral.h"
+#include "at32f403a_407.h"
+#include "port_mdi.h"
+
+/* --------------------------------------------------------------------------
+ *  System clock: HEXT 8MHz / 2 × 60 = 240MHz
+ *               Fallback: HICK 8MHz (no PLL) if HEXT fails
+ * -------------------------------------------------------------------------- */
+static void SystemClock_Config(void)
+{
+    /* Reset CRM */
+    crm_reset();
+
+    /* Enable HICK (needed as fallback; 8 MHz internal RC) */
+    crm_clock_source_enable(CRM_CLOCK_SOURCE_HICK, TRUE);
+    while (crm_flag_get(CRM_HICK_STABLE_FLAG) != SET);
+
+    /* Try HEXT (8MHz external crystal on AT-START-F407) */
+    crm_clock_source_enable(CRM_CLOCK_SOURCE_HEXT, TRUE);
+    if (crm_hext_stable_wait() == ERROR) {
+        /* No HEXT — stay on HICK 8MHz, skip PLL */
+        crm_ahb_div_set(CRM_AHB_DIV_1);
+        crm_apb2_div_set(CRM_APB2_DIV_1);
+        crm_apb1_div_set(CRM_APB1_DIV_1);
+        system_core_clock_update();
+        return;
+    }
+
+    /* PLL source = HEXT/2 = 4MHz, ×60 = 240MHz, range > 72MHz */
+    crm_pll_config(CRM_PLL_SOURCE_HEXT_DIV, CRM_PLL_MULT_60,
+                   CRM_PLL_OUTPUT_RANGE_GT72MHZ);
+
+    /* Enable PLL */
+    crm_clock_source_enable(CRM_CLOCK_SOURCE_PLL, TRUE);
+    while (crm_flag_get(CRM_PLL_STABLE_FLAG) != SET);
+
+    /* AHB / APB dividers */
+    crm_ahb_div_set(CRM_AHB_DIV_1);
+    crm_apb2_div_set(CRM_APB2_DIV_2);
+    crm_apb1_div_set(CRM_APB1_DIV_4);
+
+    /* Auto step mode for smooth clock switch */
+    crm_auto_step_mode_enable(TRUE);
+
+    /* Switch system clock to PLL */
+    crm_sysclk_switch(CRM_SCLK_PLL);
+    while (crm_sysclk_switch_status_get() != CRM_SCLK_PLL);
+
+    crm_auto_step_mode_enable(FALSE);
+
+    /* Update global SystemCoreClock */
+    system_core_clock_update();
+}
+
+/* --------------------------------------------------------------------------
+ *  USART1 init — PA9=TX, PA10=RX, 115200-8-N-1
+ *  AT-START-F407 connects these to the on-board ST-Link VCP.
+ * -------------------------------------------------------------------------- */
+static void halusart_Init(void)
+{
+    gpio_init_type gpio_init_struct;
+
+    crm_periph_clock_enable(CRM_USART1_PERIPH_CLOCK, TRUE);
+    crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
+    crm_periph_clock_enable(CRM_IOMUX_PERIPH_CLOCK, TRUE);
+
+    gpio_default_para_init(&gpio_init_struct);
+
+    /* USART1 TX — PA9 */
+    gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+    gpio_init_struct.gpio_out_type  = GPIO_OUTPUT_PUSH_PULL;
+    gpio_init_struct.gpio_mode      = GPIO_MODE_MUX;
+    gpio_init_struct.gpio_pins      = GPIO_PINS_9;
+    gpio_init_struct.gpio_pull      = GPIO_PULL_NONE;
+    gpio_init(GPIOA, &gpio_init_struct);
+
+    /* USART1 RX — PA10 */
+    gpio_init_struct.gpio_pins = GPIO_PINS_10;
+    gpio_init(GPIOA, &gpio_init_struct);
+
+    nvic_irq_enable(USART1_IRQn, 8, 0);
+
+    usart_init(USART1, 115200, USART_DATA_8BITS, USART_STOP_1_BIT);
+    usart_transmitter_enable(USART1, TRUE);
+    usart_receiver_enable(USART1, TRUE);
+    usart_parity_selection_config(USART1, USART_PARITY_NONE);
+    usart_hardware_flow_control_set(USART1, USART_HARDWARE_FLOW_NONE);
+
+    usart_interrupt_enable(USART1, USART_RDBF_INT, TRUE);
+    usart_enable(USART1, TRUE);
+
+    usart_flag_clear(USART1, USART_TDBE_FLAG);
+    usart_flag_clear(USART1, USART_TDC_FLAG);
+    usart_flag_clear(USART1, USART_RDBF_FLAG);
+    usart_interrupt_enable(USART1, USART_TDC_INT, TRUE);
+
+    /* Bind USART1 to MDI stream instance */
+    at32_usart1_init();
+}
+
+/* --------------------------------------------------------------------------
+ *  Status LED init — PD13, push-pull, active-low
+ * -------------------------------------------------------------------------- */
+static void halled_Init(void)
+{
+    gpio_init_type gpio_init_struct;
+
+    crm_periph_clock_enable(CRM_GPIOD_PERIPH_CLOCK, TRUE);
+
+    gpio_default_para_init(&gpio_init_struct);
+    gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+    gpio_init_struct.gpio_out_type  = GPIO_OUTPUT_PUSH_PULL;
+    gpio_init_struct.gpio_mode      = GPIO_MODE_OUTPUT;
+    gpio_init_struct.gpio_pins      = GPIO_PINS_13;
+    gpio_init_struct.gpio_pull      = GPIO_PULL_NONE;
+    gpio_init(GPIOD, &gpio_init_struct);
+
+    /* LED off by default (active-low, set HIGH = off) */
+    gpio_bits_set(GPIOD, GPIO_PINS_13);
+}
+
+/* --------------------------------------------------------------------------
+ *  peripheral_Init — main() calls this first
+ * -------------------------------------------------------------------------- */
+void peripheral_Init(void)
+{
+    /* NVIC: 4-bit preemption priority, 0-bit sub-priority */
+    nvic_priority_group_config(NVIC_PRIORITY_GROUP_4);
+
+    SystemClock_Config();
+
+    halled_Init();
+    halusart_Init();
+
+    /* SysTick 1ms interrupt */
+    SysTick_Config(SystemCoreClock / 1000U);
+}
+
+/* --------------------------------------------------------------------------
+ *  System clock query
+ * -------------------------------------------------------------------------- */
+uint32_t get_system_core_clock_hz(void)
+{
+    return SystemCoreClock;
+}
+
+/* --------------------------------------------------------------------------
+ *  Unused required symbols
+ * -------------------------------------------------------------------------- */
+void peripheral_Clock(void) {}
+void peripheral_EnableIRQ(void) {}
+void peripheral_DisableIRQ(void) {}
