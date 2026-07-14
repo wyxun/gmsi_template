@@ -85,6 +85,8 @@ static void halusart_Init(void)
     gpio_init(GPIOA, &gpio_init_struct);
 
     /* USART1 RX — PA10 */
+    gpio_init_struct.gpio_mode = GPIO_MODE_INPUT;
+    gpio_init_struct.gpio_pull = GPIO_PULL_UP;
     gpio_init_struct.gpio_pins = GPIO_PINS_10;
     gpio_init(GPIOA, &gpio_init_struct);
 
@@ -102,7 +104,6 @@ static void halusart_Init(void)
     usart_flag_clear(USART1, USART_TDBE_FLAG);
     usart_flag_clear(USART1, USART_TDC_FLAG);
     usart_flag_clear(USART1, USART_RDBF_FLAG);
-    usart_interrupt_enable(USART1, USART_TDC_INT, TRUE);
 
     /* Bind USART1 to MDI stream instance */
     at32_usart1_init();

@@ -182,12 +182,19 @@ static void grblhal_tool_select(tool_data_t *tool, bool next)
 }
 
 /* =========================================================================
+ *  Settings changed — stub settings change handler
+ * ========================================================================= */
+static void grblhal_settings_changed(settings_t *settings, settings_changed_flags_t changed)
+{
+    (void)settings;
+    (void)changed;
+}
+
+/* =========================================================================
  *  driver_init — assembles the full hal struct
  * ========================================================================= */
 bool driver_init(void)
 {
-    memset(&hal, 0, sizeof(grbl_hal_t));
-
     /* Required properties */
     hal.info            = "modus_template stub driver";
     hal.driver_version  = "260710";
@@ -196,6 +203,8 @@ bool driver_init(void)
     hal.f_mcu           = 170U;
     hal.rx_buffer_size  = 256U;
     hal.driver_cap.value = 0;
+    hal.driver_cap.amass_level = 3;
+    hal.driver_cap.step_pulse_delay = 1;
     hal.signals_cap.mask = 0;
     hal.limits_cap.bits  = 0;
     hal.home_cap         = (home_signals_t){0};
@@ -257,6 +266,8 @@ bool driver_init(void)
     hal.nvs.memcpy_to_flash   = NULL;
     hal.nvs.get_byte  = NULL;
     hal.nvs.put_byte  = NULL;
+
+    hal.settings_changed = grblhal_settings_changed;
 
     return true;
 }

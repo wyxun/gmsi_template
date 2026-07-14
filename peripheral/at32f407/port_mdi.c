@@ -15,7 +15,7 @@
 /*============================================================================
  * AT32F407 USART1 adapter (same ringbuf pattern as AT32F413)
  *===========================================================================*/
-#define USART1_TX_BUFFER_SIZE  256
+#define USART1_TX_BUFFER_SIZE  2048
 #define USART1_RX_BUFFER_SIZE  256
 
 #define USART_RXFLAG_IDLE   0
@@ -110,20 +110,17 @@ void at32_usart_timer_1ms(at32_usart_priv_t *ptPriv)
 static int32_t at32_stream_Write(void *pPriv, const uint8_t *pchData, uint32_t wLen)
 {
     at32_usart_priv_t *ptPriv = (at32_usart_priv_t *)pPriv;
+    if (NULL == ptPriv || NULL == ptPriv->ptUsart) return 0;
+
+    usart_type *ptHW = ptPriv->ptUsart;
     uint32_t i;
 
     for (i = 0; i < wLen; i++) {
-        if (mringbuf_Write(&ptPriv->tTxQueue, pchData[i]) == 0) break;
+        /* 直接轮询 TDBE 硬件标志，确保 TDR 为空后再写入 */
+        while (usart_flag_get(ptHW, USART_TDBE_FLAG) == RESET) {}
+        usart_data_transmit(ptHW, pchData[i]);
     }
 
-    if (ptPriv->chTXFlag == USART_TXFLAG_IDLE
-        && mringbuf_GetUsed(&ptPriv->tTxQueue) > 0) {
-        uint8_t chData;
-        if (mringbuf_Read(&ptPriv->tTxQueue, &chData) == 1) {
-            usart_data_transmit(ptPriv->ptUsart, chData);
-            ptPriv->chTXFlag = USART_TXFLAG_BUSY;
-        }
-    }
     return i;
 }
 
@@ -164,26 +161,32 @@ void at32_usart_irq_handler(at32_usart_priv_t *ptPriv)
     uint8_t chData;
     usart_type *ptHW = ptPriv->ptUsart;
 
+    /* 清除可能发生的溢出与帧错误，防止接收锁死 */
+    if (usart_flag_get(ptHW, USART_ROERR_FLAG) != RESET ||
+        usart_flag_get(ptHW, USART_FERR_FLAG) != RESET ||
+        usart_flag_get(ptHW, USART_NERR_FLAG) != RESET ||
+        usart_flag_get(ptHW, USART_PERR_FLAG) != RESET) {
+        usart_flag_clear(ptHW, USART_ROERR_FLAG);
+        usart_flag_clear(ptHW, USART_FERR_FLAG);
+        usart_flag_clear(ptHW, USART_NERR_FLAG);
+        usart_flag_clear(ptHW, USART_PERR_FLAG);
+        (void)usart_data_receive(ptHW);
+    }
+
     if (ptHW->ctrl1_bit.rdbfien != RESET) {
         if (usart_flag_get(ptHW, USART_RDBF_FLAG) != RESET) {
             uint8_t ch = usart_data_receive(ptHW);
-            mringbuf_Write(&ptPriv->tRxQueue, ch);
+            extern bool protocol_enqueue_realtime_command(uint8_t c);
+            if (!protocol_enqueue_realtime_command(ch)) {
+                mringbuf_Write(&ptPriv->tRxQueue, ch);
+            }
             ptPriv->chRXFinishTime = USART_DELAYTIME;
             ptPriv->chRXFlag = USART_RXFLAG_BUSY;
         }
     }
 
-    if (ptHW->ctrl1_bit.tdcien != RESET) {
-        if (usart_flag_get(ptHW, USART_TDC_FLAG) != RESET) {
-            usart_flag_clear(ptHW, USART_TDC_FLAG);
-            if (mringbuf_Read(&ptPriv->tTxQueue, &chData) == 1) {
-                usart_data_transmit(ptHW, chData);
-                ptPriv->chTXFlag = USART_TXFLAG_BUSY;
-            } else {
-                ptPriv->chTXFlag = USART_TXFLAG_IDLE;
-            }
-        }
-    }
+
+    /* 发送方向：直接轮询发送，无需 TDBE 中断，保留此段注释供将来恢复中断驱动 */
 }
 
 /*============================================================================

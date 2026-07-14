@@ -75,16 +75,16 @@ MODUS_USE_LOG    = 1
 
 # Build mode overrides (MUST be before modus.mk include)
 ifeq ($(BUILD),release)
-    # Production: minimum size, no debug modules
-    OPT = -Oz
+    # Production: no debug modules
+    OPT = -Os
     MSHELL_ENABLE    = 0
     MWAVEFORM_ENABLE = 0
     MSTORAGE_ENABLE  = 0
     MBLINFO_ENABLE   = 0
     MODUS_USE_LOG    = 0
 else ifeq ($(BUILD),debug-rel)
-    # Release-close debugging: same -Oz, but debug modules on
-    OPT = -Oz
+    # Release-close debugging: same -Os, but debug modules on
+    OPT = -Os
 else
     # Daily development: no optimization
     OPT = -O0

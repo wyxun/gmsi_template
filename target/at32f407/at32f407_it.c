@@ -35,9 +35,15 @@ void PendSV_Handler(void)           {}
 
 void SysTick_Handler(void)
 {
+    static uint32_t s_wLedTicks = 0;
     perfc_port_insert_to_system_timer_insert_ovf_handler();
     modus_Clock();
     at32_usart_timer_1ms(&s_tUsart1Priv);
+
+    if (++s_wLedTicks >= 500) {
+        s_wLedTicks = 0;
+        gpio_bits_toggle(GPIOD, GPIO_PINS_13);
+    }
 }
 
 /* --------------------------------------------------------------------------
