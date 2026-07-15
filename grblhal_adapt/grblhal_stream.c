@@ -43,6 +43,8 @@ static int32_t uart_read(void)
     uint8_t ch;
     if (HW.ptSerial != NULL && HW.ptSerial->pPriv != NULL) {
         at32_usart_priv_t *ptPriv = (at32_usart_priv_t *)HW.ptSerial->pPriv;
+        extern void at32_usart_rx_dma_poll(void);
+        at32_usart_rx_dma_poll();
         while (mringbuf_Read(&ptPriv->tRxQueue, &ch) > 0) {
             if (protocol_enqueue_realtime_command(ch)) {
                 continue;
@@ -58,6 +60,8 @@ static void uart_reset_read_buffer(void)
     uint8_t ch;
     if (HW.ptSerial != NULL && HW.ptSerial->pPriv != NULL) {
         at32_usart_priv_t *ptPriv = (at32_usart_priv_t *)HW.ptSerial->pPriv;
+        extern void at32_usart_rx_dma_poll(void);
+        at32_usart_rx_dma_poll();
         while (mringbuf_Read(&ptPriv->tRxQueue, &ch) > 0) {}
     }
 }

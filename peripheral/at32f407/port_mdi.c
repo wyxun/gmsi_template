@@ -8,12 +8,14 @@
 
 #include "mdi_hw.h"
 #include "at32f403a_407.h"
+#include "at32f403a_407_dma.h"
 #include "mdi/mdi.h"
+#include <stdbool.h>
 
 #include "port_mdi.h"
 
 /*============================================================================
- * AT32F407 USART1 adapter (same ringbuf pattern as AT32F413)
+ * AT32F407 USART1 adapter (optimized DMA-driven stream pattern)
  *===========================================================================*/
 #define USART1_TX_BUFFER_SIZE  2048
 #define USART1_RX_BUFFER_SIZE  256
@@ -29,6 +31,11 @@
 
 static uint8_t s_chUsart1TxBuf[USART1_TX_BUFFER_SIZE];
 static uint8_t s_chUsart1RxBuf[USART1_RX_BUFFER_SIZE];
+
+/* DMA TX flat buffer and state */
+static uint8_t s_chUsart1DmaTxBuf[512];
+static volatile bool s_bTxDmaActive = false;
+static uint32_t s_wRxReadPtr = 0;
 
 /* ---- GPIO wrappers ---- */
 
@@ -68,9 +75,133 @@ static mdi_gpio_t s_tLedStatus = {
     .fnGet = at32_gpio_Get_ActiveLow, .fnToggle = at32_gpio_Toggle,
 };
 
-/* ---- USART1 ringbuf logic (reused from AT32F413) ---- */
+/* ---- USART1 DMA & Ringbuffer logic ---- */
 
 at32_usart_priv_t s_tUsart1Priv = { .ptUsart = NULL };
+
+void at32_usart_dma_init(void)
+{
+    dma_init_type dma_init_struct;
+
+    // Enable DMA1 clock
+    crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
+
+    // 1. Configure DMA1 Channel 3 for USART1 RX
+    dma_reset(DMA1_CHANNEL3);
+    dma_default_para_init(&dma_init_struct);
+    dma_init_struct.buffer_size = USART1_RX_BUFFER_SIZE;
+    dma_init_struct.direction = DMA_DIR_PERIPHERAL_TO_MEMORY;
+    dma_init_struct.memory_base_addr = (uint32_t)s_chUsart1RxBuf;
+    dma_init_struct.memory_data_width = DMA_MEMORY_DATA_WIDTH_BYTE;
+    dma_init_struct.memory_inc_enable = TRUE;
+    dma_init_struct.peripheral_base_addr = (uint32_t)&USART1->dt;
+    dma_init_struct.peripheral_data_width = DMA_PERIPHERAL_DATA_WIDTH_BYTE;
+    dma_init_struct.peripheral_inc_enable = FALSE;
+    dma_init_struct.priority = DMA_PRIORITY_HIGH;
+    dma_init_struct.loop_mode_enable = TRUE; // Circular mode!
+    dma_init(DMA1_CHANNEL3, &dma_init_struct);
+
+    // Enable Half Transfer and Full Transfer interrupts for RX DMA
+    dma_interrupt_enable(DMA1_CHANNEL3, DMA_HDT_INT, TRUE);
+    dma_interrupt_enable(DMA1_CHANNEL3, DMA_FDT_INT, TRUE);
+
+    // Configure flexible DMA channel for USART1 RX
+    dma_flexible_config(DMA1, FLEX_CHANNEL3, DMA_FLEXIBLE_UART1_RX);
+
+    // Enable DMA1 Channel 3 NVIC interrupt
+    nvic_irq_enable(DMA1_Channel3_IRQn, 8, 1);
+
+    // Enable DMA1 Channel 3
+    dma_channel_enable(DMA1_CHANNEL3, TRUE);
+
+    // 2. Configure DMA1 Channel 4 for USART1 TX
+    dma_reset(DMA1_CHANNEL4);
+    dma_default_para_init(&dma_init_struct);
+    dma_init_struct.buffer_size = 0; // Will be set dynamically
+    dma_init_struct.direction = DMA_DIR_MEMORY_TO_PERIPHERAL;
+    dma_init_struct.memory_base_addr = (uint32_t)s_chUsart1DmaTxBuf;
+    dma_init_struct.memory_data_width = DMA_MEMORY_DATA_WIDTH_BYTE;
+    dma_init_struct.memory_inc_enable = TRUE;
+    dma_init_struct.peripheral_base_addr = (uint32_t)&USART1->dt;
+    dma_init_struct.peripheral_data_width = DMA_PERIPHERAL_DATA_WIDTH_BYTE;
+    dma_init_struct.peripheral_inc_enable = FALSE;
+    dma_init_struct.priority = DMA_PRIORITY_MEDIUM;
+    dma_init_struct.loop_mode_enable = FALSE; // Normal mode
+    dma_init(DMA1_CHANNEL4, &dma_init_struct);
+
+    // Enable Full Transfer interrupt for TX DMA
+    dma_interrupt_enable(DMA1_CHANNEL4, DMA_FDT_INT, TRUE);
+
+    // Configure flexible DMA channel for USART1 TX
+    dma_flexible_config(DMA1, FLEX_CHANNEL4, DMA_FLEXIBLE_UART1_TX);
+
+    // Enable DMA1 Channel 4 NVIC interrupt
+    nvic_irq_enable(DMA1_Channel4_IRQn, 8, 2);
+
+    // Keep DMA1 Channel 4 disabled until we start transmitting
+    dma_channel_enable(DMA1_CHANNEL4, FALSE);
+}
+
+void at32_usart_rx_dma_poll(void)
+{
+    if (s_tUsart1Priv.ptUsart == NULL) return;
+    
+    // Disable USART1 IRQ to prevent re-entrancy during extraction
+    nvic_irq_disable(USART1_IRQn);
+    
+    uint16_t hwRemaining = dma_data_number_get(DMA1_CHANNEL3);
+    uint32_t wWritePtr = USART1_RX_BUFFER_SIZE - hwRemaining;
+    
+    while (s_wRxReadPtr != wWritePtr) {
+        uint8_t ch = s_chUsart1RxBuf[s_wRxReadPtr];
+        s_wRxReadPtr = (s_wRxReadPtr + 1) % USART1_RX_BUFFER_SIZE;
+        
+        extern bool protocol_enqueue_realtime_command(uint8_t c);
+        if (!protocol_enqueue_realtime_command(ch)) {
+            mringbuf_Write(&s_tUsart1Priv.tRxQueue, ch);
+        }
+    }
+    
+    nvic_irq_enable(USART1_IRQn, 8, 0);
+}
+
+void at32_usart_tx_dma_start(void)
+{
+    nvic_irq_disable(DMA1_Channel4_IRQn);
+    
+    if (s_bTxDmaActive) {
+        nvic_irq_enable(DMA1_Channel4_IRQn, 8, 2);
+        return;
+    }
+    
+    uint16_t hwCount = (uint16_t)mringbuf_GetUsed(&s_tUsart1Priv.tTxQueue);
+    if (hwCount == 0) {
+        nvic_irq_enable(DMA1_Channel4_IRQn, 8, 2);
+        return;
+    }
+    
+    if (hwCount > sizeof(s_chUsart1DmaTxBuf)) {
+        hwCount = sizeof(s_chUsart1DmaTxBuf);
+    }
+    
+    for (uint16_t i = 0; i < hwCount; i++) {
+        mringbuf_Read(&s_tUsart1Priv.tTxQueue, &s_chUsart1DmaTxBuf[i]);
+    }
+    
+    s_bTxDmaActive = true;
+    
+    dma_channel_enable(DMA1_CHANNEL4, FALSE);
+    DMA1_CHANNEL4->dtcnt = hwCount;
+    dma_channel_enable(DMA1_CHANNEL4, TRUE);
+    
+    nvic_irq_enable(DMA1_Channel4_IRQn, 8, 2);
+}
+
+void at32_usart_tx_dma_isr(void)
+{
+    s_bTxDmaActive = false;
+    at32_usart_tx_dma_start();
+}
 
 void at32_usart1_init(void)
 {
@@ -78,6 +209,7 @@ void at32_usart1_init(void)
     at32_usart_init(&s_tUsart1Priv, USART1,
                     s_chUsart1TxBuf, USART1_TX_BUFFER_SIZE,
                     s_chUsart1RxBuf, USART1_RX_BUFFER_SIZE);
+    at32_usart_dma_init();
 }
 
 void at32_usart_init(at32_usart_priv_t *ptPriv,
@@ -97,14 +229,7 @@ void at32_usart_init(at32_usart_priv_t *ptPriv,
 
 void at32_usart_timer_1ms(at32_usart_priv_t *ptPriv)
 {
-    if (NULL == ptPriv) return;
-    if (ptPriv->chRXFlag == USART_RXFLAG_BUSY) {
-        if (ptPriv->chRXFinishTime > 0) {
-            ptPriv->chRXFinishTime--;
-        } else {
-            ptPriv->chRXFlag = USART_RXFLAG_FINISH;
-        }
-    }
+    (void)ptPriv;
 }
 
 static int32_t at32_stream_Write(void *pPriv, const uint8_t *pchData, uint32_t wLen)
@@ -112,15 +237,14 @@ static int32_t at32_stream_Write(void *pPriv, const uint8_t *pchData, uint32_t w
     at32_usart_priv_t *ptPriv = (at32_usart_priv_t *)pPriv;
     if (NULL == ptPriv || NULL == ptPriv->ptUsart) return 0;
 
-    usart_type *ptHW = ptPriv->ptUsart;
     uint32_t i;
-
     for (i = 0; i < wLen; i++) {
-        /* 直接轮询 TDBE 硬件标志，确保 TDR 为空后再写入 */
-        while (usart_flag_get(ptHW, USART_TDBE_FLAG) == RESET) {}
-        usart_data_transmit(ptHW, pchData[i]);
+        if (mringbuf_Write(&ptPriv->tTxQueue, pchData[i]) == 0) {
+            break;
+        }
     }
 
+    at32_usart_tx_dma_start();
     return i;
 }
 
@@ -130,7 +254,7 @@ static int32_t at32_stream_Read(void *pPriv, uint8_t *pchBuf, uint32_t wLen)
     uint32_t i = 0;
     uint16_t hwRead;
 
-    if (ptPriv->chRXFlag != USART_RXFLAG_FINISH) return 0;
+    at32_usart_rx_dma_poll();
 
     do {
         hwRead = mringbuf_Read(&ptPriv->tRxQueue, &pchBuf[i]);
@@ -138,14 +262,13 @@ static int32_t at32_stream_Read(void *pPriv, uint8_t *pchBuf, uint32_t wLen)
         if (i >= wLen) break;
     } while (hwRead > 0);
 
-    ptPriv->chRXFlag = USART_RXFLAG_IDLE;
     return i;
 }
 
 static int32_t at32_stream_IsBusy(void *pPriv)
 {
-    at32_usart_priv_t *ptPriv = (at32_usart_priv_t *)pPriv;
-    return (ptPriv->chTXFlag == USART_TXFLAG_BUSY) ? 1 : 0;
+    (void)pPriv;
+    return s_bTxDmaActive ? 1 : 0;
 }
 
 static mdi_stream_t s_tStreamSerial = {
@@ -158,7 +281,6 @@ static mdi_stream_t s_tStreamSerial = {
 void at32_usart_irq_handler(at32_usart_priv_t *ptPriv)
 {
     if (NULL == ptPriv || NULL == ptPriv->ptUsart) return;
-    uint8_t chData;
     usart_type *ptHW = ptPriv->ptUsart;
 
     /* 清除可能发生的溢出与帧错误，防止接收锁死 */
@@ -173,20 +295,14 @@ void at32_usart_irq_handler(at32_usart_priv_t *ptPriv)
         (void)usart_data_receive(ptHW);
     }
 
-    if (ptHW->ctrl1_bit.rdbfien != RESET) {
-        if (usart_flag_get(ptHW, USART_RDBF_FLAG) != RESET) {
-            uint8_t ch = usart_data_receive(ptHW);
-            extern bool protocol_enqueue_realtime_command(uint8_t c);
-            if (!protocol_enqueue_realtime_command(ch)) {
-                mringbuf_Write(&ptPriv->tRxQueue, ch);
-            }
-            ptPriv->chRXFinishTime = USART_DELAYTIME;
-            ptPriv->chRXFlag = USART_RXFLAG_BUSY;
+    if (ptHW->ctrl1_bit.idleien != RESET) {
+        if (usart_flag_get(ptHW, USART_IDLEF_FLAG) != RESET) {
+            /* Clear IDLE flag by reading STS and then DT */
+            (void)ptHW->sts;
+            (void)ptHW->dt;
+            at32_usart_rx_dma_poll();
         }
     }
-
-
-    /* 发送方向：直接轮询发送，无需 TDBE 中断，保留此段注释供将来恢复中断驱动 */
 }
 
 /*============================================================================

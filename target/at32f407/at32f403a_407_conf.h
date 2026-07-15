@@ -25,6 +25,7 @@ extern "C" {
 #define DEBUG_MODULE_ENABLED
 #define FLASH_MODULE_ENABLED
 #define MISC_MODULE_ENABLED
+#define DMA_MODULE_ENABLED
 
 /* ---- Includes ------------------------------------------------------------ */
 #ifdef CRM_MODULE_ENABLED
@@ -44,6 +45,9 @@ extern "C" {
 #endif
 #ifdef MISC_MODULE_ENABLED
     #include "at32f403a_407_misc.h"
+#endif
+#ifdef DMA_MODULE_ENABLED
+    #include "at32f403a_407_dma.h"
 #endif
 
 #ifdef __cplusplus

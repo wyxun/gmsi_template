@@ -3,7 +3,7 @@
 # Toolchain : LLVM Embedded Toolchain for Arm (Windows)
 # Usage     : make [BUILD=debug|release] [TARGET_CHIP=stm32g431] ...
 # ==============================================================================
-SW_ROOT ?= D:/software
+SW_ROOT ?= D:/0_software
 MSYS2_BIN = $(SW_ROOT)/msys64/mingw64/bin
 MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 
@@ -66,6 +66,8 @@ MODUS_ROOT = modus
 # Build mode: BUILD=debug (default) | BUILD=debug-rel | BUILD=release
 BUILD ?= debug
 
+MODUS_ENABLE ?= 1
+
 # Module switches — default for debug; overridden by release below
 MSHELL_ENABLE    = 1
 MWAVEFORM_ENABLE = 1
@@ -75,8 +77,9 @@ MODUS_USE_LOG    = 1
 
 # Build mode overrides (MUST be before modus.mk include)
 ifeq ($(BUILD),release)
-    # Production: no debug modules
+    # Production: no debug modules, completely compiled-out MODUS
     OPT = -Os
+    MODUS_ENABLE = 0
     MSHELL_ENABLE    = 0
     MWAVEFORM_ENABLE = 0
     MSTORAGE_ENABLE  = 0
@@ -93,7 +96,25 @@ endif
 # 默认关闭 MODUS 内置移植，各芯片 target.mk 可自行覆盖启用
 MODUS_USE_DEFAULT_PERFC_PORT ?= 0
 
-include $(MODUS_ROOT)/modus.mk
+ifeq ($(MODUS_ENABLE),1)
+    include $(MODUS_ROOT)/modus.mk
+    C_DEFS += -DMODUS_ENABLE=1
+else
+    C_DEFS += -DMODUS_ENABLE=0
+    MODUS_INCLUDES = \
+        -I$(MODUS_ROOT) \
+        -I$(MODUS_ROOT)/src \
+        -I$(MODUS_ROOT)/src/mdi \
+        -I$(MODUS_ROOT)/src/arch \
+        -I$(MODUS_ROOT)/src/arch/cortex-m \
+        -I$(MODUS_ROOT)/src/arch/riscv \
+        -I$(LIB_PLOOC_DIR) \
+        -I$(LIB_PERF_DIR)
+    MODUS_CFLAGS = -DMSHELL_ENABLE=0 -DMWAVEFORM_ENABLE=0
+    MODUS_SRCS = \
+        $(MODUS_ROOT)/src/arch/perfc_port.c \
+        $(MODUS_ROOT)/src/utilities/mringbuf.c
+endif
 
 # grblHAL CNC controller (opt-in per target via GRBLHAL_ENABLE=1)
 ifdef GRBLHAL_ENABLE
@@ -127,8 +148,11 @@ C_SOURCES = \
     $(MODUS_SRCS) \
     $(PERIF_LIB_SOURCES) \
     $(PERIPHERAL_SOURCES) \
-    $(CLASS_SOURCES) \
     $(FOC_SOURCES)
+
+ifeq ($(MODUS_ENABLE),1)
+    C_SOURCES += $(CLASS_SOURCES)
+endif
 
 # grblHAL sources (only when enabled)
 ifdef GRBLHAL_ENABLE

@@ -98,12 +98,15 @@ static void halusart_Init(void)
     usart_parity_selection_config(USART1, USART_PARITY_NONE);
     usart_hardware_flow_control_set(USART1, USART_HARDWARE_FLOW_NONE);
 
-    usart_interrupt_enable(USART1, USART_RDBF_INT, TRUE);
+    /* Enable USART DMA RX/TX and the IDLE interrupt */
+    usart_dma_transmitter_enable(USART1, TRUE);
+    usart_dma_receiver_enable(USART1, TRUE);
+    usart_interrupt_enable(USART1, USART_IDLE_INT, TRUE);
     usart_enable(USART1, TRUE);
 
     usart_flag_clear(USART1, USART_TDBE_FLAG);
     usart_flag_clear(USART1, USART_TDC_FLAG);
-    usart_flag_clear(USART1, USART_RDBF_FLAG);
+    usart_flag_clear(USART1, USART_IDLEF_FLAG);
 
     /* Bind USART1 to MDI stream instance */
     at32_usart1_init();
