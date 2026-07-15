@@ -29,8 +29,9 @@ void grblhal_stream_init(void);
 /* Driver init (called from grblhal_class_Init) */
 bool driver_init(void);
 
-/* get_elapsed_ticks — driven by grblhal_Clock 1ms tick */
+/* get_elapsed_ticks — driven by 1ms SysTick */
 uint32_t grblhal_get_ticks(void);
+void grblhal_ticks_inc(void);
 
 /* Individual handler groups (implemented in grblhal_stubs.c) */
 void  grblhal_stepper_wake_up(void);

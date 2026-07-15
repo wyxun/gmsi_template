@@ -14,6 +14,18 @@
 #include "canbus.h"
 #include "encoders.h"
 
+static volatile uint32_t s_wGrblhalTicks = 0;
+
+uint32_t grblhal_get_ticks(void)
+{
+    return s_wGrblhalTicks;
+}
+
+void grblhal_ticks_inc(void)
+{
+    s_wGrblhalTicks++;
+}
+
 /* =========================================================================
  *  driver_setup
  * ========================================================================= */
@@ -319,6 +331,28 @@ status_code_t modbus_message(uint8_t server, modbus_function_t function, uint16_
     (void)address;
     (void)values;
     (void)registers;
-    (void)callback;
     return Status_GcodeUnsupportedCommand;
 }
+
+#if !defined(MSHELL_ENABLE) || (MSHELL_ENABLE == 0)
+// Provide dummy SEGGER RTT functions if RTT is not included in the release build
+unsigned SEGGER_RTT_WriteString(unsigned BufferIndex, const char* s)
+{
+    (void)BufferIndex;
+    (void)s;
+    return 0;
+}
+unsigned SEGGER_RTT_Write(unsigned BufferIndex, const void* pBuffer, unsigned NumBytes)
+{
+    (void)BufferIndex;
+    (void)pBuffer;
+    (void)NumBytes;
+    return 0;
+}
+unsigned SEGGER_RTT_PutChar(unsigned BufferIndex, char c)
+{
+    (void)BufferIndex;
+    (void)c;
+    return 0;
+}
+#endif
