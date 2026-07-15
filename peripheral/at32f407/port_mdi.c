@@ -17,8 +17,8 @@
 /*============================================================================
  * AT32F407 USART1 adapter (optimized DMA-driven stream pattern)
  *===========================================================================*/
-#define USART1_TX_BUFFER_SIZE  2048
-#define USART1_RX_BUFFER_SIZE  256
+#define USART2_TX_BUFFER_SIZE  2048
+#define USART2_RX_BUFFER_SIZE  256
 
 #define USART_RXFLAG_IDLE   0
 #define USART_RXFLAG_BUSY   1
@@ -29,11 +29,11 @@
 
 #define USART_DELAYTIME     5
 
-static uint8_t s_chUsart1TxBuf[USART1_TX_BUFFER_SIZE];
-static uint8_t s_chUsart1RxBuf[USART1_RX_BUFFER_SIZE];
+static uint8_t s_chUsart2TxBuf[USART2_TX_BUFFER_SIZE];
+static uint8_t s_chUsart2RxBuf[USART2_RX_BUFFER_SIZE];
 
 /* DMA TX flat buffer and state */
-static uint8_t s_chUsart1DmaTxBuf[512];
+static uint8_t s_chUsart2DmaTxBuf[512];
 static volatile bool s_bTxDmaActive = false;
 static uint32_t s_wRxReadPtr = 0;
 
@@ -75,9 +75,9 @@ static mdi_gpio_t s_tLedStatus = {
     .fnGet = at32_gpio_Get_ActiveLow, .fnToggle = at32_gpio_Toggle,
 };
 
-/* ---- USART1 DMA & Ringbuffer logic ---- */
+/* ---- USART2 DMA & Ringbuffer logic ---- */
 
-at32_usart_priv_t s_tUsart1Priv = { .ptUsart = NULL };
+at32_usart_priv_t s_tUsart2Priv = { .ptUsart = NULL };
 
 void at32_usart_dma_init(void)
 {
@@ -86,15 +86,15 @@ void at32_usart_dma_init(void)
     // Enable DMA1 clock
     crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
 
-    // 1. Configure DMA1 Channel 3 for USART1 RX
+    // 1. Configure DMA1 Channel 3 for USART2 RX
     dma_reset(DMA1_CHANNEL3);
     dma_default_para_init(&dma_init_struct);
-    dma_init_struct.buffer_size = USART1_RX_BUFFER_SIZE;
+    dma_init_struct.buffer_size = USART2_RX_BUFFER_SIZE;
     dma_init_struct.direction = DMA_DIR_PERIPHERAL_TO_MEMORY;
-    dma_init_struct.memory_base_addr = (uint32_t)s_chUsart1RxBuf;
+    dma_init_struct.memory_base_addr = (uint32_t)s_chUsart2RxBuf;
     dma_init_struct.memory_data_width = DMA_MEMORY_DATA_WIDTH_BYTE;
     dma_init_struct.memory_inc_enable = TRUE;
-    dma_init_struct.peripheral_base_addr = (uint32_t)&USART1->dt;
+    dma_init_struct.peripheral_base_addr = (uint32_t)&USART2->dt;
     dma_init_struct.peripheral_data_width = DMA_PERIPHERAL_DATA_WIDTH_BYTE;
     dma_init_struct.peripheral_inc_enable = FALSE;
     dma_init_struct.priority = DMA_PRIORITY_HIGH;
@@ -105,8 +105,8 @@ void at32_usart_dma_init(void)
     dma_interrupt_enable(DMA1_CHANNEL3, DMA_HDT_INT, TRUE);
     dma_interrupt_enable(DMA1_CHANNEL3, DMA_FDT_INT, TRUE);
 
-    // Configure flexible DMA channel for USART1 RX
-    dma_flexible_config(DMA1, FLEX_CHANNEL3, DMA_FLEXIBLE_UART1_RX);
+    // Configure flexible DMA channel for USART2 RX
+    dma_flexible_config(DMA1, FLEX_CHANNEL3, DMA_FLEXIBLE_UART2_RX);
 
     // Enable DMA1 Channel 3 NVIC interrupt
     nvic_irq_enable(DMA1_Channel3_IRQn, 8, 1);
@@ -114,15 +114,15 @@ void at32_usart_dma_init(void)
     // Enable DMA1 Channel 3
     dma_channel_enable(DMA1_CHANNEL3, TRUE);
 
-    // 2. Configure DMA1 Channel 4 for USART1 TX
+    // 2. Configure DMA1 Channel 4 for USART2 TX
     dma_reset(DMA1_CHANNEL4);
     dma_default_para_init(&dma_init_struct);
     dma_init_struct.buffer_size = 0; // Will be set dynamically
     dma_init_struct.direction = DMA_DIR_MEMORY_TO_PERIPHERAL;
-    dma_init_struct.memory_base_addr = (uint32_t)s_chUsart1DmaTxBuf;
+    dma_init_struct.memory_base_addr = (uint32_t)s_chUsart2DmaTxBuf;
     dma_init_struct.memory_data_width = DMA_MEMORY_DATA_WIDTH_BYTE;
     dma_init_struct.memory_inc_enable = TRUE;
-    dma_init_struct.peripheral_base_addr = (uint32_t)&USART1->dt;
+    dma_init_struct.peripheral_base_addr = (uint32_t)&USART2->dt;
     dma_init_struct.peripheral_data_width = DMA_PERIPHERAL_DATA_WIDTH_BYTE;
     dma_init_struct.peripheral_inc_enable = FALSE;
     dma_init_struct.priority = DMA_PRIORITY_MEDIUM;
@@ -132,8 +132,8 @@ void at32_usart_dma_init(void)
     // Enable Full Transfer interrupt for TX DMA
     dma_interrupt_enable(DMA1_CHANNEL4, DMA_FDT_INT, TRUE);
 
-    // Configure flexible DMA channel for USART1 TX
-    dma_flexible_config(DMA1, FLEX_CHANNEL4, DMA_FLEXIBLE_UART1_TX);
+    // Configure flexible DMA channel for USART2 TX
+    dma_flexible_config(DMA1, FLEX_CHANNEL4, DMA_FLEXIBLE_UART2_TX);
 
     // Enable DMA1 Channel 4 NVIC interrupt
     nvic_irq_enable(DMA1_Channel4_IRQn, 8, 2);
@@ -144,25 +144,25 @@ void at32_usart_dma_init(void)
 
 void at32_usart_rx_dma_poll(void)
 {
-    if (s_tUsart1Priv.ptUsart == NULL) return;
+    if (s_tUsart2Priv.ptUsart == NULL) return;
     
-    // Disable USART1 IRQ to prevent re-entrancy during extraction
-    nvic_irq_disable(USART1_IRQn);
+    // Disable USART2 IRQ to prevent re-entrancy during extraction
+    nvic_irq_disable(USART2_IRQn);
     
     uint16_t hwRemaining = dma_data_number_get(DMA1_CHANNEL3);
-    uint32_t wWritePtr = USART1_RX_BUFFER_SIZE - hwRemaining;
+    uint32_t wWritePtr = USART2_RX_BUFFER_SIZE - hwRemaining;
     
     while (s_wRxReadPtr != wWritePtr) {
-        uint8_t ch = s_chUsart1RxBuf[s_wRxReadPtr];
-        s_wRxReadPtr = (s_wRxReadPtr + 1) % USART1_RX_BUFFER_SIZE;
+        uint8_t ch = s_chUsart2RxBuf[s_wRxReadPtr];
+        s_wRxReadPtr = (s_wRxReadPtr + 1) % USART2_RX_BUFFER_SIZE;
         
         extern bool protocol_enqueue_realtime_command(uint8_t c);
         if (!protocol_enqueue_realtime_command(ch)) {
-            mringbuf_Write(&s_tUsart1Priv.tRxQueue, ch);
+            mringbuf_Write(&s_tUsart2Priv.tRxQueue, ch);
         }
     }
     
-    nvic_irq_enable(USART1_IRQn, 8, 0);
+    nvic_irq_enable(USART2_IRQn, 8, 0);
 }
 
 void at32_usart_tx_dma_start(void)
@@ -174,18 +174,18 @@ void at32_usart_tx_dma_start(void)
         return;
     }
     
-    uint16_t hwCount = (uint16_t)mringbuf_GetUsed(&s_tUsart1Priv.tTxQueue);
+    uint16_t hwCount = (uint16_t)mringbuf_GetUsed(&s_tUsart2Priv.tTxQueue);
     if (hwCount == 0) {
         nvic_irq_enable(DMA1_Channel4_IRQn, 8, 2);
         return;
     }
     
-    if (hwCount > sizeof(s_chUsart1DmaTxBuf)) {
-        hwCount = sizeof(s_chUsart1DmaTxBuf);
+    if (hwCount > sizeof(s_chUsart2DmaTxBuf)) {
+        hwCount = sizeof(s_chUsart2DmaTxBuf);
     }
     
     for (uint16_t i = 0; i < hwCount; i++) {
-        mringbuf_Read(&s_tUsart1Priv.tTxQueue, &s_chUsart1DmaTxBuf[i]);
+        mringbuf_Read(&s_tUsart2Priv.tTxQueue, &s_chUsart2DmaTxBuf[i]);
     }
     
     s_bTxDmaActive = true;
@@ -203,12 +203,12 @@ void at32_usart_tx_dma_isr(void)
     at32_usart_tx_dma_start();
 }
 
-void at32_usart1_init(void)
+void at32_usart2_init(void)
 {
-    if (s_tUsart1Priv.ptUsart != NULL) return;
-    at32_usart_init(&s_tUsart1Priv, USART1,
-                    s_chUsart1TxBuf, USART1_TX_BUFFER_SIZE,
-                    s_chUsart1RxBuf, USART1_RX_BUFFER_SIZE);
+    if (s_tUsart2Priv.ptUsart != NULL) return;
+    at32_usart_init(&s_tUsart2Priv, USART2,
+                    s_chUsart2TxBuf, USART2_TX_BUFFER_SIZE,
+                    s_chUsart2RxBuf, USART2_RX_BUFFER_SIZE);
     at32_usart_dma_init();
 }
 
@@ -272,7 +272,7 @@ static int32_t at32_stream_IsBusy(void *pPriv)
 }
 
 static mdi_stream_t s_tStreamSerial = {
-    .pPriv    = &s_tUsart1Priv,
+    .pPriv    = &s_tUsart2Priv,
     .fnWrite  = at32_stream_Write,
     .fnRead   = at32_stream_Read,
     .fnIsBusy = at32_stream_IsBusy,

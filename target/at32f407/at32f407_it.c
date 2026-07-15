@@ -20,7 +20,7 @@ extern void peripheral_Clock(void);
 
 /* USART private instance (defined in port_mdi.c) */
 #include "port_mdi.h"
-extern at32_usart_priv_t s_tUsart1Priv;
+extern at32_usart_priv_t s_tUsart2Priv;
 
 /* --------------------------------------------------------------------------
  *  Cortex-M4 Core Exceptions
@@ -45,7 +45,7 @@ void SysTick_Handler(void)
 #endif
     extern void grblhal_ticks_inc(void);
     grblhal_ticks_inc();
-    at32_usart_timer_1ms(&s_tUsart1Priv);
+    at32_usart_timer_1ms(&s_tUsart2Priv);
 
     if (++s_wLedTicks >= 500) {
         s_wLedTicks = 0;
@@ -58,7 +58,8 @@ void SysTick_Handler(void)
  * -------------------------------------------------------------------------- */
 
 /* ---- USART1 (grblHAL serial I/O) ---- */
-void USART1_IRQHandler(void)        { at32_usart_irq_handler(&s_tUsart1Priv); }
+void USART1_IRQHandler(void)        {}
+void USART2_IRQHandler(void)        { at32_usart_irq_handler(&s_tUsart2Priv); }
 
 /* ---- Stubs (all other IRQs) ---- */
 void WWDT_IRQHandler(void)                  {}
@@ -111,13 +112,19 @@ void TMR1_CH_IRQHandler(void)               {}
 void TMR2_GLOBAL_IRQHandler(void)           {}
 void TMR3_GLOBAL_IRQHandler(void)           {}
 void TMR4_GLOBAL_IRQHandler(void)           {}
-void TMR5_GLOBAL_IRQHandler(void)           {}
+void TMR5_GLOBAL_IRQHandler(void)
+{
+    if (TMR5->ists & 0x0001) { /* OVF / Update interrupt flag */
+        TMR5->ists = ~0x0001;  /* Clear flag */
+        extern void grblhal_stepper_isr(void);
+        grblhal_stepper_isr();
+    }
+}
 void TMR8_BRK_IRQHandler(void)              {}
 void TMR8_OVF_IRQHandler(void)              {}
 void TMR8_TRG_HALL_IRQHandler(void)         {}
 void TMR8_CH_IRQHandler(void)               {}
 void ADC1_2_IRQHandler(void)                {}
-void USART2_IRQHandler(void)                {}
 void USART3_IRQHandler(void)                {}
 void UART4_IRQHandler(void)                 {}
 void UART5_IRQHandler(void)                 {}
@@ -126,9 +133,13 @@ void SPI2_IRQHandler(void)                  {}
 void I2C1_EVT_IRQHandler(void)              {}
 void I2C1_ERR_IRQHandler(void)              {}
 void I2C2_EVT_IRQHandler(void)              {}
-void I2C2_ERR_IRQHandler(void)              {}
 void USBFS_H_CAN1_TX_IRQHandler(void)       {}
-void USBFS_L_CAN1_RX0_IRQHandler(void)      {}
+void USBFS_L_CAN1_RX0_IRQHandler(void)
+{
+    extern void usbd_irq_handler(void *udev);
+    extern void *get_usb_core_dev(void);
+    usbd_irq_handler(get_usb_core_dev());
+}
 void CAN1_RX1_IRQHandler(void)              {}
 void CAN1_SE_IRQHandler(void)               {}
 void CAN2_TX_IRQHandler(void)               {}

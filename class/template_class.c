@@ -69,13 +69,13 @@ int template_class_Run(uintptr_t wObjectAddr)
     /* 基于 perf_counter FSM 的轮询状态机 */
     PERFC_PT_BEGIN(this.chState)
 
-    /* 软定时器驱动非阻塞闪灯示范 */
+    /* 软定时器驱动非阻塞闪灯示范（此处已注释，以避免与主心跳 SysTick 冲突） */
     mbase_TimerStart(&this.tLedTimer, 200);
     while (1) {
         PERFC_PT_WAIT_UNTIL(mbase_TimerPoll(&this.tLedTimer))
-        if (HW.ptLedStatus != NULL) {
-            MDI_Toggle(HW.ptLedStatus);
-        }
+        // if (HW.ptLedStatus != NULL) {
+        //     MDI_Toggle(HW.ptLedStatus);
+        // }
         mbase_TimerStart(&this.tLedTimer, 200);
     }
 

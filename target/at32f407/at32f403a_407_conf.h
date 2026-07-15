@@ -26,6 +26,9 @@ extern "C" {
 #define FLASH_MODULE_ENABLED
 #define MISC_MODULE_ENABLED
 #define DMA_MODULE_ENABLED
+#define USB_MODULE_ENABLED
+#define ACC_MODULE_ENABLED
+#define TMR_MODULE_ENABLED
 
 /* ---- Includes ------------------------------------------------------------ */
 #ifdef CRM_MODULE_ENABLED
@@ -48,6 +51,15 @@ extern "C" {
 #endif
 #ifdef DMA_MODULE_ENABLED
     #include "at32f403a_407_dma.h"
+#endif
+#ifdef USB_MODULE_ENABLED
+    #include "at32f403a_407_usb.h"
+#endif
+#ifdef ACC_MODULE_ENABLED
+    #include "at32f403a_407_acc.h"
+#endif
+#ifdef TMR_MODULE_ENABLED
+    #include "at32f403a_407_tmr.h"
 #endif
 
 #ifdef __cplusplus

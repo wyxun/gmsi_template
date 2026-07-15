@@ -23,6 +23,6 @@ void at32_usart_timer_1ms(at32_usart_priv_t *ptPriv);
 void at32_usart_irq_handler(at32_usart_priv_t *ptPriv);
 
 /* Instance Wrappers */
-void at32_usart1_init(void);
+void at32_usart2_init(void);
 
 #endif /* __PORT_MDI_H__ */

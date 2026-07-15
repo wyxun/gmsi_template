@@ -13,6 +13,8 @@
 #include "modbus.h"
 #include "canbus.h"
 #include "encoders.h"
+#include "port_nvs.h"
+#include "at32f403a_407.h"
 
 static volatile uint32_t s_wGrblhalTicks = 0;
 
@@ -49,6 +51,34 @@ bool grblhal_driver_setup(settings_t *settings)
     s_fnPrevExecuteRealtime = grbl.on_execute_realtime;
     grbl.on_execute_realtime = debug_modus_realtime_hook;
 #endif
+
+    /* Enable DWT Cycle Counter for precise microsecond delays */
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    *(volatile uint32_t *)0xE0001FB0 = 0xC5ACCE55; /* Unlock DWT write access on Cortex-M4 */
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+    /* Initialize TMR5 for Stepper Pulse Timer */
+    crm_periph_clock_enable(CRM_TMR5_PERIPH_CLOCK, TRUE);
+    tmr_reset(TMR5);
+    
+    /* TMR5 basic setup: 32-bit timer, counting up, no prescaler (runs at SystemCoreClock) */
+    tmr_base_init(TMR5, 0xFFFFFFFF, 0);
+    tmr_cnt_dir_set(TMR5, TMR_COUNT_UP);
+    
+    /* Enable TMR5 Update (Overflow) Interrupt */
+    tmr_interrupt_enable(TMR5, TMR_OVF_INT, TRUE);
+    
+    /* Configure NVIC for TMR5 (Priority 0, highest) */
+    nvic_irq_enable(TMR5_GLOBAL_IRQn, 0, 0);
+
+    /* Explicitly call my_plugin_init() here.
+     * grbllib.c in this build does NOT include plugins_init.h,
+     * so the weak symbol is never referenced and --gc-sections strips
+     * the entire app_plugins.o.  Calling it from driver_setup (which IS
+     * in the live call-graph) keeps it alive. */
+    extern void my_plugin_init(void);
+    my_plugin_init();
+
     return true;
 }
 
@@ -99,6 +129,10 @@ void grblhal_limits_enable(bool on, axes_signals_t homing_cycle)
 limit_signals_t grblhal_limits_get_state(void)
 {
     limit_signals_t sig = {0};
+    /* Read limit switches (active-low due to pull-up; RESET/0 = triggered) */
+    sig.min.x = (gpio_input_data_bit_read(X_LIMIT_PORT, X_LIMIT_PIN) == RESET);
+    sig.min.y = (gpio_input_data_bit_read(Y_LIMIT_PORT, Y_LIMIT_PIN) == RESET);
+    sig.min.z = (gpio_input_data_bit_read(Z_LIMIT_PORT, Z_LIMIT_PIN) == RESET);
     return sig;
 }
 
@@ -146,29 +180,94 @@ static void grblhal_spindle_reset_data(void)
  * ========================================================================= */
 void grblhal_stepper_wake_up(void)
 {
-    SEGGER_RTT_WriteString(0, "[grblHAL] stepper wake_up\n");
+    /* Clear update flag and enable TMR5 counter */
+    tmr_flag_clear(TMR5, TMR_OVF_FLAG);
+    tmr_counter_enable(TMR5, TRUE);
 }
 
 void grblhal_stepper_go_idle(bool clear_signals)
 {
     (void)clear_signals;
-    SEGGER_RTT_WriteString(0, "[grblHAL] stepper go_idle\n");
+    /* Disable TMR5 counter */
+    tmr_counter_enable(TMR5, FALSE);
 }
 
 void grblhal_stepper_enable(axes_signals_t enable, bool hold)
 {
-    (void)enable;
     (void)hold;
+    /* CNC Shield Stepper Enable is active-low (LOW = Enable, HIGH = Disable) */
+    if (enable.mask == 0) {
+        gpio_bits_set(STEPPER_EN_PORT, STEPPER_EN_PIN);
+    } else {
+        gpio_bits_reset(STEPPER_EN_PORT, STEPPER_EN_PIN);
+    }
 }
 
 void grblhal_stepper_cycles_per_tick(uint32_t cycles_per_tick)
 {
-    (void)cycles_per_tick;
+    if (cycles_per_tick < 2) {
+        cycles_per_tick = 2;
+    }
+    /* Write new period value to 32-bit TMR5 */
+    tmr_period_value_set(TMR5, cycles_per_tick - 1);
 }
 
 void grblhal_stepper_pulse_start(stepper_t *stepper)
 {
-    (void)stepper;
+    /* 1. Output Direction Signals if changed */
+    if (stepper->dir_changed.value != 0) {
+        if (stepper->dir_out.x) {
+            gpio_bits_set(X_DIR_PORT, X_DIR_PIN);  /* X-DIR HIGH */
+        } else {
+            gpio_bits_reset(X_DIR_PORT, X_DIR_PIN); /* X-DIR LOW */
+        }
+        if (stepper->dir_out.y) {
+            gpio_bits_set(Y_DIR_PORT, Y_DIR_PIN);  /* Y-DIR HIGH */
+        } else {
+            gpio_bits_reset(Y_DIR_PORT, Y_DIR_PIN); /* Y-DIR LOW */
+        }
+        if (stepper->dir_out.z) {
+            gpio_bits_set(Z_DIR_PORT, Z_DIR_PIN);  /* Z-DIR HIGH */
+        } else {
+            gpio_bits_reset(Z_DIR_PORT, Z_DIR_PIN); /* Z-DIR LOW */
+        }
+    }
+
+    /* 2. Output Step Pulses HIGH */
+    if (stepper->step_out.x) {
+        gpio_bits_set(X_STEP_PORT, X_STEP_PIN); /* X-STEP HIGH */
+    }
+    if (stepper->step_out.y) {
+        gpio_bits_set(Y_STEP_PORT, Y_STEP_PIN); /* Y-STEP HIGH */
+    }
+    if (stepper->step_out.z) {
+        gpio_bits_set(Z_STEP_PORT, Z_STEP_PIN); /* Z-STEP HIGH */
+    }
+
+    /* 3. Delay for minimum step pulse width (hal.step_us_min microseconds) using DWT */
+    uint32_t delay_ticks = (uint32_t)(hal.step_us_min * 240.0f); /* 240 ticks per microsecond at 240MHz */
+    uint32_t start_time = DWT->CYCCNT;
+    while ((DWT->CYCCNT - start_time) < delay_ticks) {
+        /* spin */
+    }
+
+    /* 4. Reset Step Pins LOW */
+    if (stepper->step_out.x) {
+        gpio_bits_reset(X_STEP_PORT, X_STEP_PIN); /* X-STEP LOW */
+    }
+    if (stepper->step_out.y) {
+        gpio_bits_reset(Y_STEP_PORT, Y_STEP_PIN); /* Y-STEP LOW */
+    }
+    if (stepper->step_out.z) {
+        gpio_bits_reset(Z_STEP_PORT, Z_STEP_PIN); /* Z-STEP LOW */
+    }
+}
+
+void grblhal_stepper_isr(void)
+{
+    if (hal.stepper.interrupt_callback != NULL) {
+        hal.stepper.interrupt_callback();
+    }
 }
 
 /* =========================================================================
@@ -219,17 +318,27 @@ static void grblhal_settings_changed(settings_t *settings, settings_changed_flag
     (void)changed;
 }
 
+static bool grblhal_nvs_read_flash(uint8_t *dest)
+{
+    return port_nvs_read(dest, hal.nvs.size);
+}
+
+static bool grblhal_nvs_write_flash(uint8_t *source)
+{
+    return port_nvs_write(source, hal.nvs.size);
+}
+
 /* =========================================================================
  *  driver_init — assembles the full hal struct
  * ========================================================================= */
 bool driver_init(void)
 {
     /* Required properties */
-    hal.info            = "modus_template stub driver";
-    hal.driver_version  = "260710";
+    hal.info            = "AT32F407 CNC Controller";
+    hal.driver_version  = "260715";
     hal.step_us_min     = 2.0f;
-    hal.f_step_timer    = 170000000U;
-    hal.f_mcu           = 170U;
+    hal.f_step_timer    = 240000000U;
+    hal.f_mcu           = 240U;
     hal.rx_buffer_size  = 256U;
     hal.driver_cap.value = 0;
     hal.driver_cap.amass_level = 3;
@@ -288,13 +397,17 @@ bool driver_init(void)
     /* Optional: get_elapsed_ticks (driven by grblhal_Clock) */
     hal.get_elapsed_ticks = grblhal_get_ticks;
 
-    /* NVS — NULL (use grblHAL compile-time defaults) */
-    hal.nvs.memcpy_from_nvs  = NULL;
-    hal.nvs.memcpy_to_nvs    = NULL;
-    hal.nvs.memcpy_from_flash = NULL;
-    hal.nvs.memcpy_to_flash   = NULL;
-    hal.nvs.get_byte  = NULL;
-    hal.nvs.put_byte  = NULL;
+    /* NVS — SPIM Flash configuration */
+    port_nvs_init();
+    hal.nvs.type = NVS_Flash;
+    hal.nvs.size = GRBL_NVS_SIZE;
+    hal.nvs.size_max = 2048;
+    hal.nvs.memcpy_from_flash = grblhal_nvs_read_flash;
+    hal.nvs.memcpy_to_flash   = grblhal_nvs_write_flash;
+    hal.nvs.memcpy_from_nvs   = NULL;
+    hal.nvs.memcpy_to_nvs     = NULL;
+    hal.nvs.get_byte          = NULL;
+    hal.nvs.put_byte          = NULL;
 
     hal.settings_changed = grblhal_settings_changed;
 

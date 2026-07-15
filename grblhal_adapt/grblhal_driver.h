@@ -19,6 +19,36 @@
 
 #undef message_t
 
+/* --------------------------------------------------------------------------
+ *  CNC Shield GPIO Port and Pin Mappings
+ * -------------------------------------------------------------------------- */
+#define STEPPER_EN_PORT         GPIOA
+#define STEPPER_EN_PIN          GPIO_PINS_9
+
+#define X_STEP_PORT             GPIOA
+#define X_STEP_PIN              GPIO_PINS_10
+#define X_DIR_PORT              GPIOB
+#define X_DIR_PIN               GPIO_PINS_4
+
+#define Y_STEP_PORT             GPIOB
+#define Y_STEP_PIN              GPIO_PINS_3
+#define Y_DIR_PORT              GPIOB
+#define Y_DIR_PIN               GPIO_PINS_10
+
+#define Z_STEP_PORT             GPIOB
+#define Z_STEP_PIN              GPIO_PINS_5
+#define Z_DIR_PORT              GPIOA
+#define Z_DIR_PIN               GPIO_PINS_8
+
+#define X_LIMIT_PORT            GPIOC
+#define X_LIMIT_PIN             GPIO_PINS_7
+
+#define Y_LIMIT_PORT            GPIOA
+#define Y_LIMIT_PIN             GPIO_PINS_15
+
+#define Z_LIMIT_PORT            GPIOA
+#define Z_LIMIT_PIN             GPIO_PINS_7
+
 #ifdef __cplusplus
 extern "C" {
 #endif

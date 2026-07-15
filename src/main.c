@@ -18,10 +18,8 @@ void user_trace_output(const char *str)
 {
     debug_transport_write_string(str);
 
-    /* Output to Serial too */
-    if (str && HW.ptSerial) {
-        MDI_Write(HW.ptSerial, (const uint8_t *)str, strlen(str));
-    }
+    /* MODUS debug/mlog/mshell output goes exclusively via RTT.
+       HW.ptSerial is reserved for grblHAL G-code stream I/O. */
 }
 #endif
 

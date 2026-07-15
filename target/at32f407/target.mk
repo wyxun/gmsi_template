@@ -11,7 +11,7 @@ CPU_FLAGS = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
 
 # Chip preprocessor defines
 C_DEFS += -DAT32F407VGT7 -DUSE_STDPERIPH_DRIVER
-C_DEFS += -DGRBLHAL_FULL_FEATURES=1 -DGRBLHAL_STREAM_UART=1
+C_DEFS += -DGRBLHAL_FULL_FEATURES=1 -DGRBLHAL_STREAM_USB=1
 
 # CMSIS / peripheral library paths
 CHIPLIB_ROOT = vendor/cortex-m/AT32F403A_407_Firmware_Library/libraries
@@ -27,7 +27,9 @@ SYSTEM_C     = $(CMSIS_DEV)/system_at32f403a_407.c
 IT_C         = target/at32f407/at32f407_it.c
 
 # Chip-specific include paths
-TARGET_INCLUDES = -I$(DRV_INC) -Itarget/at32f407
+TARGET_INCLUDES = -I$(DRV_INC) -Itarget/at32f407 \
+                  -Ivendor/cortex-m/AT32F403A_407_Firmware_Library/middlewares/usbd_drivers/inc \
+                  -Ivendor/cortex-m/AT32F403A_407_Firmware_Library/middlewares/usbd_class/cdc
 
 # ------------------------------------------------------------------
 # AT32F407 peripheral driver selection
@@ -38,7 +40,7 @@ USE_DRV_MISC   ?= 1
 USE_DRV_FLASH  ?= 1
 USE_DRV_USART  ?= 1
 USE_DRV_DEBUG  ?= 1
-USE_DRV_TMR    ?= 0
+USE_DRV_TMR    ?= 1
 USE_DRV_ADC    ?= 0
 USE_DRV_DMA    ?= 1
 USE_DRV_EXINT  ?= 0
@@ -52,7 +54,8 @@ USE_DRV_RTC    ?= 0
 USE_DRV_BPR    ?= 0
 USE_DRV_CRC    ?= 0
 USE_DRV_SDIO   ?= 0
-USE_DRV_USB    ?= 0
+USE_DRV_USB    ?= 1
+USE_DRV_ACC    ?= 1
 
 DRV_SOURCES =
 ifeq ($(USE_DRV_CRM),1)
@@ -103,8 +106,20 @@ endif
 ifeq ($(USE_DRV_PWC),1)
     DRV_SOURCES += $(DRV_SRC)/at32f403a_407_pwc.c
 endif
+ifeq ($(USE_DRV_USB),1)
+    DRV_SOURCES += $(DRV_SRC)/at32f403a_407_usb.c
+endif
+ifeq ($(USE_DRV_ACC),1)
+    DRV_SOURCES += $(DRV_SRC)/at32f403a_407_acc.c
+endif
 
-CHIP_SOURCES = $(DRV_SOURCES)
+USB_MID_SRC = vendor/cortex-m/AT32F403A_407_Firmware_Library/middlewares
+CHIP_SOURCES = $(DRV_SOURCES) \
+               $(USB_MID_SRC)/usbd_drivers/src/usbd_core.c \
+               $(USB_MID_SRC)/usbd_drivers/src/usbd_int.c \
+               $(USB_MID_SRC)/usbd_drivers/src/usbd_sdr.c \
+               $(USB_MID_SRC)/usbd_class/cdc/cdc_class.c \
+               $(USB_MID_SRC)/usbd_class/cdc/cdc_desc.c
 
 # grblHAL class source has been deprecated and removed
 
