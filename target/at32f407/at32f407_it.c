@@ -8,8 +8,11 @@
 
 #define CORE_DEBUG_OVERRIDE_FAULT_HANDLER
 #include "at32f403a_407.h"
+#include "at32f403a_407_dma.h"
 #include "perf_counter.h"
 #include "mdebug_cm.h"
+#include "mdi.h"
+#include "mdi_hw.h"
 
 /* Exported by main.c */
 extern void modus_Clock(void);
@@ -37,12 +40,16 @@ void SysTick_Handler(void)
 {
     static uint32_t s_wLedTicks = 0;
     perfc_port_insert_to_system_timer_insert_ovf_handler();
+#if MODUS_ENABLE
     modus_Clock();
+#endif
+    extern void grblhal_ticks_inc(void);
+    grblhal_ticks_inc();
     at32_usart_timer_1ms(&s_tUsart1Priv);
 
     if (++s_wLedTicks >= 500) {
         s_wLedTicks = 0;
-        gpio_bits_toggle(GPIOD, GPIO_PINS_13);
+        MDI_Toggle(HW.ptLedStatus);
     }
 }
 
@@ -69,8 +76,26 @@ void EXINT9_5_IRQHandler(void)              {}
 void EXINT15_10_IRQHandler(void)            {}
 void DMA1_Channel1_IRQHandler(void)         {}
 void DMA1_Channel2_IRQHandler(void)         {}
-void DMA1_Channel3_IRQHandler(void)         {}
-void DMA1_Channel4_IRQHandler(void)         {}
+
+void DMA1_Channel3_IRQHandler(void)
+{
+    if (dma_interrupt_flag_get(DMA1_HDT3_FLAG) != RESET || 
+        dma_interrupt_flag_get(DMA1_FDT3_FLAG) != RESET) {
+        dma_flag_clear(DMA1_GL3_FLAG);
+        extern void at32_usart_rx_dma_poll(void);
+        at32_usart_rx_dma_poll();
+    }
+}
+
+void DMA1_Channel4_IRQHandler(void)
+{
+    if (dma_interrupt_flag_get(DMA1_FDT4_FLAG) != RESET) {
+        dma_flag_clear(DMA1_GL4_FLAG);
+        extern void at32_usart_tx_dma_isr(void);
+        at32_usart_tx_dma_isr();
+    }
+}
+
 void DMA1_Channel5_IRQHandler(void)         {}
 void DMA1_Channel6_IRQHandler(void)         {}
 void DMA1_Channel7_IRQHandler(void)         {}
