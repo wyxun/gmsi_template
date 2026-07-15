@@ -40,7 +40,7 @@ USE_DRV_USART  ?= 1
 USE_DRV_DEBUG  ?= 1
 USE_DRV_TMR    ?= 0
 USE_DRV_ADC    ?= 0
-USE_DRV_DMA    ?= 0
+USE_DRV_DMA    ?= 1
 USE_DRV_EXINT  ?= 0
 USE_DRV_SPI    ?= 0
 USE_DRV_I2C    ?= 0
@@ -106,8 +106,7 @@ endif
 
 CHIP_SOURCES = $(DRV_SOURCES)
 
-# grblHAL class source
-CLASS_SOURCES += class/grblhal.c
+# grblHAL class source has been deprecated and removed
 
 # Compile grblHAL settings.c with __SETTINGS_C__ defined
 build/settings.o: CFLAGS += -D__SETTINGS_C__
