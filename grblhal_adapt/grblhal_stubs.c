@@ -26,12 +26,29 @@ void grblhal_ticks_inc(void)
     s_wGrblhalTicks++;
 }
 
+#if MODUS_ENABLE
+#include "modus.h"
+static on_execute_realtime_ptr s_fnPrevExecuteRealtime = NULL;
+
+static void debug_modus_realtime_hook(sys_state_t state)
+{
+    if (s_fnPrevExecuteRealtime) {
+        s_fnPrevExecuteRealtime(state);
+    }
+    modus_Run();
+}
+#endif
+
 /* =========================================================================
  *  driver_setup
  * ========================================================================= */
 bool grblhal_driver_setup(settings_t *settings)
 {
     (void)settings;
+#if MODUS_ENABLE
+    s_fnPrevExecuteRealtime = grbl.on_execute_realtime;
+    grbl.on_execute_realtime = debug_modus_realtime_hook;
+#endif
     return true;
 }
 
