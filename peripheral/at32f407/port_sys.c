@@ -201,6 +201,10 @@ static void cnc_gpio_Init(void)
     gpio_init_struct.gpio_pins = Z_LIMIT_PIN;
     gpio_init(Z_LIMIT_PORT, &gpio_init_struct);
 
+    /* Configure Probe Input */
+    gpio_init_struct.gpio_pins = PROBE_PIN;
+    gpio_init(PROBE_PORT, &gpio_init_struct);
+
     /* 5. Configure Spindle Outputs (D12 -> PA6, D13 -> PA5) */
     gpio_init_struct.gpio_mode           = GPIO_MODE_OUTPUT;
     gpio_init_struct.gpio_pull           = GPIO_PULL_NONE;

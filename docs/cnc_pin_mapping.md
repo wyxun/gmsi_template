@@ -20,6 +20,7 @@ This document details the mapping between the standard Arduino CNC Shield pin no
 | **D11** | Z-EndStop (Limit) | **PA7** | TMR3_CH2 / GPIO | Digital | Input (Pull-up) |
 | **D12** | SpinEnable (Spindle) | **PA6** | TMR3_CH1 / GPIO | Digital | Output / PWM |
 | **D13** | SpinDir (Spindle Dir) | **PA5** | GPIO | Digital | Output |
+| **A5** | Probe | **PC5** | GPIO | Digital | Input (Pull-up) |
 | **GND** | Ground | **GND** | Ground Reference | Power | Reference |
 | **AREF** | Analog Reference | **VREF+** | VREF+ Input/Output | Analog | Reference |
 
@@ -38,3 +39,7 @@ This document details the mapping between the standard Arduino CNC Shield pin no
 
 ### 3. Spindle Control (D12 ~ D13)
 * **SpinEnable (PA6)**: If simple ON/OFF control is configured, set as GPIO output. If variable spindle speed control is desired, configure PA6 for PWM output utilizing the AT32 internal timer (TMR3_CH1).
+
+### 4. Probe Input (A5)
+* **Probe Pin (PC5)**: Must be configured as a digital input with an internal pull-up. The probe is active-low (triggered when connected to ground).
+

@@ -49,6 +49,9 @@
 #define Z_LIMIT_PORT            GPIOA
 #define Z_LIMIT_PIN             GPIO_PINS_7
 
+#define PROBE_PORT              GPIOC
+#define PROBE_PIN               GPIO_PINS_5
+
 #ifdef __cplusplus
 extern "C" {
 #endif

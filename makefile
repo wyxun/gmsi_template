@@ -111,6 +111,9 @@ else
         -I$(LIB_PLOOC_DIR) \
         -I$(LIB_PERF_DIR)
     MODUS_CFLAGS = -DMSHELL_ENABLE=0 -DMWAVEFORM_ENABLE=0
+    ifeq ($(MODUS_USE_LOG),0)
+        MODUS_CFLAGS += -D__NO_USE_LOG__
+    endif
     MODUS_SRCS = \
         $(MODUS_ROOT)/src/arch/perfc_port.c \
         $(MODUS_ROOT)/src/utilities/mringbuf.c

@@ -100,20 +100,29 @@ void grblhal_delay_ms(uint32_t ms, delay_callback_ptr callback)
  * ========================================================================= */
 void grblhal_set_bits_atomic(volatile uint_fast16_t *value, uint_fast16_t bits)
 {
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
     *value |= bits;
+    __set_PRIMASK(primask);
 }
 
 uint_fast16_t grblhal_clear_bits_atomic(volatile uint_fast16_t *value, uint_fast16_t v)
 {
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
     uint_fast16_t prev = *value;
     *value &= ~v;
+    __set_PRIMASK(primask);
     return prev;
 }
 
 uint_fast16_t grblhal_set_value_atomic(volatile uint_fast16_t *value, uint_fast16_t bits)
 {
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
     uint_fast16_t prev = *value;
     *value = bits;
+    __set_PRIMASK(primask);
     return prev;
 }
 
@@ -180,8 +189,9 @@ static void grblhal_spindle_reset_data(void)
  * ========================================================================= */
 void grblhal_stepper_wake_up(void)
 {
-    /* Clear update flag and enable TMR5 counter */
+    /* Clear update flag, reset counter, and enable TMR5 counter */
     tmr_flag_clear(TMR5, TMR_OVF_FLAG);
+    tmr_counter_value_set(TMR5, 0);
     tmr_counter_enable(TMR5, TRUE);
 }
 
@@ -244,11 +254,13 @@ void grblhal_stepper_pulse_start(stepper_t *stepper)
         gpio_bits_set(Z_STEP_PORT, Z_STEP_PIN); /* Z-STEP HIGH */
     }
 
-    /* 3. Delay for minimum step pulse width (hal.step_us_min microseconds) using DWT */
+    /* 3. Delay for minimum step pulse width (hal.step_us_min microseconds) using CPU loop */
     uint32_t delay_ticks = (uint32_t)(hal.step_us_min * 240.0f); /* 240 ticks per microsecond at 240MHz */
-    uint32_t start_time = DWT->CYCCNT;
-    while ((DWT->CYCCNT - start_time) < delay_ticks) {
-        /* spin */
+    if (delay_ticks > 0) {
+        uint32_t count = delay_ticks / 3; // Approx 3 cycles per iteration
+        while (count--) {
+            __asm__ volatile("nop");
+        }
     }
 
     /* 4. Reset Step Pins LOW */
@@ -276,13 +288,15 @@ void grblhal_stepper_isr(void)
 static probe_state_t grblhal_probe_get_state(void)
 {
     probe_state_t s = {0};
+    s.triggered = (gpio_input_data_bit_read(PROBE_PORT, PROBE_PIN) == RESET);
+    s.connected = 1;
     return s;
 }
 
 static bool grblhal_probe_is_triggered(probe_id_t probe_id)
 {
     (void)probe_id;
-    return false;
+    return gpio_input_data_bit_read(PROBE_PORT, PROBE_PIN) == RESET;
 }
 
 /* =========================================================================
@@ -486,3 +500,17 @@ unsigned SEGGER_RTT_PutChar(unsigned BufferIndex, char c)
     return 0;
 }
 #endif
+
+#include <stdarg.h>
+#include <stdio.h>
+
+void rtt_printf(const char *fmt, ...)
+{
+    char buf[128];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    SEGGER_RTT_WriteString(0, buf);
+}
+
