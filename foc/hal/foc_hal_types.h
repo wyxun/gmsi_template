@@ -27,18 +27,23 @@ typedef struct {
 struct phase_current_handle_s;
 
 typedef struct {
-    void (*fnStartConversion)(void);
-    void (*fnOffsetCalib)(foc_adc_calib_t *ptCalib);
-    void (*fnGetRaw)(uint32_t *pwRawU, uint32_t *pwRawV, uint32_t *pwRawW);
-    void (*fnReconstruct)(struct phase_current_handle_s *ptHandle);
-} foc_adc_ops_t;
+    void *pContext;
+    foc_result_t (*fnStartConversion)(void *pContext);
+    foc_result_t (*fnOffsetCalib)(void *pContext,
+                                  foc_adc_calib_t *ptCalib);
+    foc_result_t (*fnGetRaw)(void *pContext,
+                             uint32_t *pwRawU,
+                             uint32_t *pwRawV,
+                             uint32_t *pwRawW);
+    foc_result_t (*fnReconstruct)(void *pContext,
+                                  struct phase_current_handle_s *ptHandle);
+} foc_adc_if_t;
 
 typedef struct phase_current_handle_s {
     q_type      qIu;
     q_type      qIv;
     q_type      qIw;
     current_sensing_type_t eTopology;
-    foc_adc_ops_t   tOps;
     foc_adc_calib_t tCalib;
 } phase_current_handle_t;
 

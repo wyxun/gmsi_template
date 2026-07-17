@@ -15,7 +15,4 @@
 #define HALADC_REG_TEMPERATURE      1U
 #define HALADC_REG_POTENTIOMETER    2U
 
-void foc_hal_adc_register(foc_adc_ops_t *ptOps);
-foc_adc_ops_t *foc_hal_adc_get(void);
-
 #endif /* __FOC_HAL_ADC_H__ */

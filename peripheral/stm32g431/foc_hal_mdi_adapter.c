@@ -1,140 +1,230 @@
-/**
- * @file  foc_hal_mdi_adapter.c
- * @brief GDI backend adapter 鈥?binds GDI peripheral drivers to FOC HAL ops
- *
- * Place under peripheral/<chip>/ as chip-specific binding layer.
- * Chip-agnostic FOC code under foc/ does not need modification.
- */
+/*******************************************************************************
+ * @file    foc_hal_mdi_adapter.c
+ * @brief   STM32G431 MDI to instance-scoped FOC HAL adapter
+ ******************************************************************************/
 
 #include "global_define.h"
 
 #if defined(FOC_SUPPORT) && FOC_SUPPORT
 
+#include "foc_hal_mdi_adapter.h"
+
 #include <stddef.h>
 #include <stdint.h>
-#include "foc_hal.h"
+
 #include "foc_config.h"
-#include "haltim1.h"
 #include "haladc.h"
-#include "mdi_hw.h"
 #include "mdi/mdi.h"
 
-static void mdi_pwm_set_duty(q_type duty_u, q_type duty_v, q_type duty_w);
-static void mdi_pwm_enable(bool en);
-static void mdi_pwm_emergency_stop(void);
-static void mdi_adc_start_conversion(void);
-static void mdi_adc_get_raw(uint32_t *raw_u, uint32_t *raw_v, uint32_t *raw_w);
-static void mdi_adc_offset_calib(foc_adc_calib_t *ptCalib);
-static void mdi_adc_reconstruct(phase_current_handle_t *ptHandle);
+static foc_result_t mdi_pwm_set_duty(void *pContext,
+                                     q_type qDutyU,
+                                     q_type qDutyV,
+                                     q_type qDutyW);
+static foc_result_t mdi_pwm_enable(void *pContext, bool bEnable);
+static void mdi_pwm_emergency_stop(void *pContext);
+static foc_result_t mdi_adc_start_conversion(void *pContext);
+static foc_result_t mdi_adc_get_raw(void *pContext,
+                                    uint32_t *pwRawU,
+                                    uint32_t *pwRawV,
+                                    uint32_t *pwRawW);
+static foc_result_t mdi_adc_offset_calib(void *pContext,
+                                         foc_adc_calib_t *ptCalib);
+static foc_result_t mdi_adc_reconstruct(void *pContext,
+                                        phase_current_handle_t *ptHandle);
+static q_type mdi_adc_normalize(int32_t nDelta, uint32_t wBase);
 
-foc_pwm_ops_t s_tMdiPwmOps = {
-    .fnSetDuty       = mdi_pwm_set_duty,
-    .fnEnable        = mdi_pwm_enable,
-    .fnEmergencyStop = mdi_pwm_emergency_stop,
+static foc_mdi_motor_context_t s_tDefaultContext = {
+    .ptHardware = &HW,
+    .wPwmPeriod = 1000U,
 };
 
-foc_adc_ops_t s_tMdiAdcOps = {
-    .fnStartConversion = mdi_adc_start_conversion,
-    .fnOffsetCalib     = mdi_adc_offset_calib,
-    .fnGetRaw          = mdi_adc_get_raw,
-    .fnReconstruct     = mdi_adc_reconstruct,
-};
-
-void foc_hal_mdi_register(void)
+foc_result_t foc_hal_mdi_Bind(foc_hal_t *ptHal,
+                              foc_mdi_motor_context_t *ptContext)
 {
-    foc_hal_pwm_register(&s_tMdiPwmOps);
-    foc_hal_adc_register(&s_tMdiAdcOps);
+    if (ptHal == NULL || ptContext == NULL ||
+        ptContext->ptHardware == NULL || ptContext->wPwmPeriod == 0U) {
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    ptHal->tPwm.pContext = ptContext;
+    ptHal->tPwm.fnSetDuty = mdi_pwm_set_duty;
+    ptHal->tPwm.fnEnable = mdi_pwm_enable;
+    ptHal->tPwm.fnEmergencyStop = mdi_pwm_emergency_stop;
+    ptHal->tAdc.pContext = ptContext;
+    ptHal->tAdc.fnStartConversion = mdi_adc_start_conversion;
+    ptHal->tAdc.fnOffsetCalib = mdi_adc_offset_calib;
+    ptHal->tAdc.fnGetRaw = mdi_adc_get_raw;
+    ptHal->tAdc.fnReconstruct = mdi_adc_reconstruct;
+    return foc_hal_Validate(ptHal);
 }
 
-static void mdi_pwm_set_duty(q_type duty_u, q_type duty_v, q_type duty_w)
+foc_result_t foc_hal_mdi_BindDefault(foc_hal_t *ptHal)
 {
+    return foc_hal_mdi_Bind(ptHal, &s_tDefaultContext);
+}
+
+static foc_result_t mdi_pwm_set_duty(void *pContext,
+                                     q_type qDutyU,
+                                     q_type qDutyV,
+                                     q_type qDutyW)
+{
+    foc_mdi_motor_context_t *ptContext =
+        (foc_mdi_motor_context_t *)pContext;
+    int32_t nResult;
+
+    if (ptContext == NULL || ptContext->ptHardware->ptMotorU == NULL ||
+        ptContext->ptHardware->ptMotorV == NULL ||
+        ptContext->ptHardware->ptMotorW == NULL) {
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
 #if FOC_USE_FPU_HARDWARE
-    MDI_Write(HW.ptMotorU, (int32_t)(duty_u * 1000.0f));
-    MDI_Write(HW.ptMotorV, (int32_t)(duty_v * 1000.0f));
-    MDI_Write(HW.ptMotorW, (int32_t)(duty_w * 1000.0f));
+    nResult = MDI_Write(ptContext->ptHardware->ptMotorU,
+                        (uint32_t)(qDutyU * ptContext->wPwmPeriod));
+    nResult |= MDI_Write(ptContext->ptHardware->ptMotorV,
+                         (uint32_t)(qDutyV * ptContext->wPwmPeriod));
+    nResult |= MDI_Write(ptContext->ptHardware->ptMotorW,
+                         (uint32_t)(qDutyW * ptContext->wPwmPeriod));
 #else
-    MDI_Write(HW.ptMotorU, (int32_t)((duty_u * 1000) >> Q_SHIFT));
-    MDI_Write(HW.ptMotorV, (int32_t)((duty_v * 1000) >> Q_SHIFT));
-    MDI_Write(HW.ptMotorW, (int32_t)((duty_w * 1000) >> Q_SHIFT));
+    nResult = MDI_Write(
+        ptContext->ptHardware->ptMotorU,
+        (uint32_t)((qDutyU * ptContext->wPwmPeriod) >> Q_SHIFT));
+    nResult |= MDI_Write(
+        ptContext->ptHardware->ptMotorV,
+        (uint32_t)((qDutyV * ptContext->wPwmPeriod) >> Q_SHIFT));
+    nResult |= MDI_Write(
+        ptContext->ptHardware->ptMotorW,
+        (uint32_t)((qDutyW * ptContext->wPwmPeriod) >> Q_SHIFT));
+#endif
+    return nResult == 0 ? FOC_RESULT_OK : FOC_RESULT_INVALID_ARGUMENT;
+}
+
+static foc_result_t mdi_pwm_enable(void *pContext, bool bEnable)
+{
+    foc_mdi_motor_context_t *ptContext =
+        (foc_mdi_motor_context_t *)pContext;
+
+    if (ptContext == NULL || ptContext->ptHardware->ptMotorU == NULL) {
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    return MDI_Enable(ptContext->ptHardware->ptMotorU, bEnable) == 0 ?
+           FOC_RESULT_OK : FOC_RESULT_INVALID_ARGUMENT;
+}
+
+static void mdi_pwm_emergency_stop(void *pContext)
+{
+    foc_mdi_motor_context_t *ptContext =
+        (foc_mdi_motor_context_t *)pContext;
+
+    if (ptContext != NULL && ptContext->ptHardware->ptMotorU != NULL) {
+        (void)MDI_Enable(ptContext->ptHardware->ptMotorU, false);
+    }
+}
+
+static foc_result_t mdi_adc_start_conversion(void *pContext)
+{
+    (void)pContext;
+    return FOC_RESULT_OK;
+}
+
+static foc_result_t mdi_adc_get_raw(void *pContext,
+                                    uint32_t *pwRawU,
+                                    uint32_t *pwRawV,
+                                    uint32_t *pwRawW)
+{
+    (void)pContext;
+    if (pwRawU != NULL) *pwRawU = haladc_GetInjected(HALADC_ADC1, 0U);
+    if (pwRawV != NULL) *pwRawV = haladc_GetInjected(HALADC_ADC2, 1U);
+    if (pwRawW != NULL) *pwRawW = haladc_GetInjected(HALADC_ADC1, 1U);
+    return FOC_RESULT_OK;
+}
+
+static foc_result_t mdi_adc_offset_calib(void *pContext,
+                                         foc_adc_calib_t *ptCalib)
+{
+    uint64_t ullSumU = 0U;
+    uint64_t ullSumV = 0U;
+    uint64_t ullSumW = 0U;
+    uint32_t wRawU = 0U;
+    uint32_t wRawV = 0U;
+    uint32_t wRawW = 0U;
+    uint16_t hwIndex;
+
+    if (ptCalib == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    for (hwIndex = 0U; hwIndex < FOC_OFFSET_CALIB_TIMES; hwIndex++) {
+        (void)mdi_adc_get_raw(pContext, &wRawU, &wRawV, &wRawW);
+        ullSumU += wRawU;
+        ullSumV += wRawV;
+        ullSumW += wRawW;
+    }
+    ptCalib->wOffsetU = (uint32_t)(ullSumU / FOC_OFFSET_CALIB_TIMES);
+    ptCalib->wOffsetV = (uint32_t)(ullSumV / FOC_OFFSET_CALIB_TIMES);
+    ptCalib->wOffsetW = (uint32_t)(ullSumW / FOC_OFFSET_CALIB_TIMES);
+    ptCalib->bIsCalibrated = true;
+    return FOC_RESULT_OK;
+}
+
+static q_type mdi_adc_normalize(int32_t nDelta, uint32_t wBase)
+{
+    if (wBase == 0U) {
+        return FOC_ZERO;
+    }
+#if defined(FOC_NUMERIC_FLOAT)
+    return (q_type)nDelta / (q_type)wBase;
+#else
+    int32_t nBase = (int32_t)wBase;
+    nDelta = nDelta > nBase ? nBase : nDelta;
+    nDelta = nDelta < -nBase ? -nBase : nDelta;
+    return (q_type)((nDelta * FOC_Q_SCALE) / nBase);
 #endif
 }
 
-static void mdi_pwm_enable(bool en)
+static foc_result_t mdi_adc_reconstruct(void *pContext,
+                                        phase_current_handle_t *ptHandle)
 {
-    MDI_Enable(HW.ptMotorU, en);
-}
+    uint32_t wRawU = 0U;
+    uint32_t wRawV = 0U;
+    uint32_t wRawW = 0U;
+    uint32_t wBaseU;
+    uint32_t wBaseV;
+    uint32_t wBaseW;
+    int32_t nDeltaU;
+    int32_t nDeltaV;
+    int32_t nDeltaW;
+    foc_adc_calib_t *ptCalib;
 
-static void mdi_pwm_emergency_stop(void)
-{
-    MDI_Enable(HW.ptMotorU, false);
-}
-
-static void mdi_adc_start_conversion(void)
-{
-    /* Injected ADC triggered by TIM1 CH4 hardware 鈥?no software start needed */
-}
-
-static void mdi_adc_get_raw(uint32_t *raw_u, uint32_t *raw_v, uint32_t *raw_w)
-{
-    if (raw_u) *raw_u = haladc_GetInjected(HALADC_ADC1, 0);
-    if (raw_v) *raw_v = haladc_GetInjected(HALADC_ADC2, 1);
-    if (raw_w) *raw_w = haladc_GetInjected(HALADC_ADC1, 1);
-}
-
-static void mdi_adc_offset_calib(foc_adc_calib_t *ptCalib)
-{
-    uint64_t sumU = 0, sumV = 0, sumW = 0;
-    uint32_t raw_u = 0, raw_v = 0, raw_w = 0;
-
-    for (uint16_t i = 0; i < FOC_OFFSET_CALIB_TIMES; i++) {
-        mdi_adc_get_raw(&raw_u, &raw_v, &raw_w);
-        sumU += raw_u;
-        sumV += raw_v;
-        sumW += raw_w;
+    if (ptHandle == NULL) {
+        return FOC_RESULT_NULL;
     }
-    ptCalib->wOffsetU      = (uint32_t)(sumU / FOC_OFFSET_CALIB_TIMES);
-    ptCalib->wOffsetV      = (uint32_t)(sumV / FOC_OFFSET_CALIB_TIMES);
-    ptCalib->wOffsetW      = (uint32_t)(sumW / FOC_OFFSET_CALIB_TIMES);
-    ptCalib->bIsCalibrated = true;
-}
-
-static void mdi_adc_reconstruct(phase_current_handle_t *ptHandle)
-{
-    uint32_t raw_u = 0, raw_v = 0, raw_w = 0;
-    mdi_adc_get_raw(&raw_u, &raw_v, &raw_w);
-
-    foc_adc_calib_t *ptCalib = &ptHandle->tCalib;
-
-    uint32_t baseU = ptCalib->bIsCalibrated ? ptCalib->wOffsetU : 2048U;
-    uint32_t baseV = ptCalib->bIsCalibrated ? ptCalib->wOffsetV : 2048U;
-    uint32_t baseW = ptCalib->bIsCalibrated ? ptCalib->wOffsetW : 2048U;
-
-    int32_t diu = (int32_t)raw_u - (int32_t)baseU;
-    int32_t div = (int32_t)raw_v - (int32_t)baseV;
-    int32_t diw = (int32_t)raw_w - (int32_t)baseW;
+    (void)mdi_adc_get_raw(pContext, &wRawU, &wRawV, &wRawW);
+    ptCalib = &ptHandle->tCalib;
+    wBaseU = ptCalib->bIsCalibrated ? ptCalib->wOffsetU : 2048U;
+    wBaseV = ptCalib->bIsCalibrated ? ptCalib->wOffsetV : 2048U;
+    wBaseW = ptCalib->bIsCalibrated ? ptCalib->wOffsetW : 2048U;
+    nDeltaU = (int32_t)wRawU - (int32_t)wBaseU;
+    nDeltaV = (int32_t)wRawV - (int32_t)wBaseV;
+    nDeltaW = (int32_t)wRawW - (int32_t)wBaseW;
 
     switch (ptHandle->eTopology) {
         case SENSING_TOPOLOGY_3P:
-            ptHandle->qIu = _Q((float)diu / (float)baseU);
-            ptHandle->qIv = _Q((float)div / (float)baseV);
-            ptHandle->qIw = _Q((float)diw / (float)baseW);
+            ptHandle->qIu = mdi_adc_normalize(nDeltaU, wBaseU);
+            ptHandle->qIv = mdi_adc_normalize(nDeltaV, wBaseV);
+            ptHandle->qIw = mdi_adc_normalize(nDeltaW, wBaseW);
             break;
-
         case SENSING_TOPOLOGY_2P:
-            ptHandle->qIu = _Q((float)diu / (float)baseU);
-            ptHandle->qIv = _Q((float)div / (float)baseV);
-            ptHandle->qIw = -ptHandle->qIu - ptHandle->qIv;
+            ptHandle->qIu = mdi_adc_normalize(nDeltaU, wBaseU);
+            ptHandle->qIv = mdi_adc_normalize(nDeltaV, wBaseV);
+            ptHandle->qIw = foc_sub_sat(
+                FOC_ZERO, foc_add_sat(ptHandle->qIu, ptHandle->qIv));
             break;
-
         case SENSING_TOPOLOGY_1P:
-            ptHandle->qIu = Q_ZERO;
-            ptHandle->qIv = Q_ZERO;
-            ptHandle->qIw = Q_ZERO;
-            break;
-
         default:
+            ptHandle->qIu = FOC_ZERO;
+            ptHandle->qIv = FOC_ZERO;
+            ptHandle->qIw = FOC_ZERO;
             break;
     }
+    return FOC_RESULT_OK;
 }
 
-#endif
+#endif /* FOC_SUPPORT */

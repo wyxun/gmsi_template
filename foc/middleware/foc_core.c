@@ -1,66 +1,62 @@
 /*******************************************************************************
  * @file    foc_core.c
- * @brief   FOC 核心算法 — Clarke / Park / iPark / SVPWM
+ * @brief   Architecture-independent Clarke and Park transforms
  ******************************************************************************/
 
-#include <stddef.h>
 #include "foc_core.h"
-#include "foc_math.h"
 
-void foc_clarke(q_type qIu, q_type qIv, q_type qIw, foc_ab_t *ptAB)
+#include <stddef.h>
+
+foc_result_t foc_clarke(foc_scalar_t qIu,
+                        foc_scalar_t qIv,
+                        foc_scalar_t qIw,
+                        foc_ab_t *ptAB)
 {
-    if (ptAB == NULL) { return; }
-    ptAB->qAlphaOrD = qIu;
-    ptAB->qBetaOrQ  = M_MUL(_Q(0.57735f), qIv - qIw);
+    const foc_scalar_t qInvSqrtThree = FOC_SCALAR(0.5773502692f);
+
+    if (ptAB == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    ptAB->qAlpha = qIu;
+    ptAB->qBeta = foc_sub_sat(foc_mul_pu(qIv, qInvSqrtThree),
+                              foc_mul_pu(qIw, qInvSqrtThree));
+    return FOC_RESULT_OK;
 }
 
-void foc_park(const foc_ab_t *ptAB, q_type qTheta, foc_ab_t *ptDQ)
+foc_result_t foc_park(const foc_ab_t *ptAB,
+                      foc_angle_t tTheta,
+                      foc_dq_t *ptDQ)
 {
-    if (ptAB == NULL || ptDQ == NULL) { return; }
-    q_type s = foc_sin(qTheta);
-    q_type c = foc_cos(qTheta);
-    q_type qAlpha = ptAB->qAlphaOrD;
-    q_type qBeta  = ptAB->qBetaOrQ;
+    foc_scalar_t qSin;
+    foc_scalar_t qCos;
 
-    ptDQ->qAlphaOrD = M_MAD(qAlpha, c, M_MUL(qBeta, s));
-    ptDQ->qBetaOrQ  = M_MSB(qAlpha, s, M_MUL(qBeta, c));
+    if (ptAB == NULL || ptDQ == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    qSin = foc_angle_sin(tTheta);
+    qCos = foc_angle_cos(tTheta);
+    ptDQ->qD = foc_add_sat(foc_mul_pu(ptAB->qAlpha, qCos),
+                            foc_mul_pu(ptAB->qBeta, qSin));
+    ptDQ->qQ = foc_sub_sat(foc_mul_pu(ptAB->qBeta, qCos),
+                            foc_mul_pu(ptAB->qAlpha, qSin));
+    return FOC_RESULT_OK;
 }
 
-void foc_ipark(const foc_ab_t *ptDQ, q_type qTheta, foc_ab_t *ptAB)
+foc_result_t foc_ipark(const foc_dq_t *ptDQ,
+                       foc_angle_t tTheta,
+                       foc_ab_t *ptAB)
 {
-    if (ptDQ == NULL || ptAB == NULL) { return; }
-    q_type s = foc_sin(qTheta);
-    q_type c = foc_cos(qTheta);
-    q_type qD = ptDQ->qAlphaOrD;
-    q_type qQ = ptDQ->qBetaOrQ;
+    foc_scalar_t qSin;
+    foc_scalar_t qCos;
 
-    ptAB->qAlphaOrD = M_MSB(qQ, s, M_MUL(qD, c));
-    ptAB->qBetaOrQ  = M_MAD(qD, s, M_MUL(qQ, c));
-}
-
-void foc_svpwm(const foc_ab_t *ptAB, q_type qVbus,
-               q_type *pqDu, q_type *pqDv, q_type *pqDw)
-{
-    if (ptAB == NULL || pqDu == NULL || pqDv == NULL || pqDw == NULL) { return; }
-
-    q_type qValpha = ptAB->qAlphaOrD;
-    q_type qVbeta  = ptAB->qBetaOrQ;
-
-    q_type qU1 = qVbeta;
-    q_type qU2 = M_MUL(_Q(0.5f), -qVbeta + M_MUL(_Q(1.73205f), qValpha));
-    q_type qU3 = -qU1 - qU2;
-
-    q_type qMax = qU1;
-    q_type qMin = qU1;
-
-    if (qU2 > qMax) { qMax = qU2; }
-    if (qU2 < qMin) { qMin = qU2; }
-    if (qU3 > qMax) { qMax = qU3; }
-    if (qU3 < qMin) { qMin = qU3; }
-
-    q_type qVoffset = M_MUL(_Q(-0.5f), qMax + qMin);
-
-    *pqDu = M_SAT((qU1 + qVoffset) + Q_HALF, 0, Q_ONE);
-    *pqDv = M_SAT((qU2 + qVoffset) + Q_HALF, 0, Q_ONE);
-    *pqDw = M_SAT((qU3 + qVoffset) + Q_HALF, 0, Q_ONE);
+    if (ptDQ == NULL || ptAB == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    qSin = foc_angle_sin(tTheta);
+    qCos = foc_angle_cos(tTheta);
+    ptAB->qAlpha = foc_sub_sat(foc_mul_pu(ptDQ->qD, qCos),
+                               foc_mul_pu(ptDQ->qQ, qSin));
+    ptAB->qBeta = foc_add_sat(foc_mul_pu(ptDQ->qD, qSin),
+                              foc_mul_pu(ptDQ->qQ, qCos));
+    return FOC_RESULT_OK;
 }

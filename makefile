@@ -115,6 +115,22 @@ PERIPHERAL_SOURCES += $(wildcard peripheral/$(TARGET_CHIP)/*.c)
 # FOC framework — defined per-chip in target.mk (not all chips support FOC)
 FOC_SOURCES ?=
 
+# FOC numeric backend is selected explicitly, never inferred from the CPU.
+FOC_NUMERIC ?= float
+ifeq ($(FOC_NUMERIC),float)
+    C_DEFS += -DFOC_NUMERIC_FLOAT=1
+else ifeq ($(FOC_NUMERIC),fixed)
+    C_DEFS += -DFOC_NUMERIC_FIXED=1
+else
+    $(error FOC_NUMERIC must be float or fixed)
+endif
+
+# Motor-energizing experiments are opt-in for product builds.
+FOC_EXPERIMENTAL_NSD ?= 0
+FOC_EXPERIMENTAL_IDENTIFY ?= 0
+C_DEFS += -DFOC_ENABLE_EXPERIMENTAL_NSD=$(FOC_EXPERIMENTAL_NSD)
+C_DEFS += -DFOC_ENABLE_EXPERIMENTAL_IDENTIFY=$(FOC_EXPERIMENTAL_IDENTIFY)
+
 # ------------------------------------------------------------------------------
 # All C sources  (chip-specific vars set by target.mk)
 # ------------------------------------------------------------------------------
@@ -173,6 +189,11 @@ C_INCLUDES = \
     -Ifoc/hal \
     -Ifoc/motor \
     -Ifoc/middleware \
+    -Ifoc/control \
+    -Ifoc/modulation \
+    -Ifoc/observer \
+    -Ifoc/optimization \
+    -Ifoc/experimental \
     -Ifoc/app
 
 # grblHAL includes and defines (only when enabled, after C_INCLUDES is fully built)

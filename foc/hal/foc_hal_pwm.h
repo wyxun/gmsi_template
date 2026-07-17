@@ -11,12 +11,13 @@
 #include "foc_math_types.h"
 
 typedef struct {
-    void (*fnSetDuty)(q_type qDutyU, q_type qDutyV, q_type qDutyW);
-    void (*fnEnable)(bool bEn);
-    void (*fnEmergencyStop)(void);
-} foc_pwm_ops_t;
-
-void foc_hal_pwm_register(foc_pwm_ops_t *ptOps);
-foc_pwm_ops_t *foc_hal_pwm_get(void);
+    void *pContext;
+    foc_result_t (*fnSetDuty)(void *pContext,
+                              q_type qDutyU,
+                              q_type qDutyV,
+                              q_type qDutyW);
+    foc_result_t (*fnEnable)(void *pContext, bool bEnable);
+    void (*fnEmergencyStop)(void *pContext);
+} foc_pwm_if_t;
 
 #endif /* __FOC_HAL_PWM_H__ */

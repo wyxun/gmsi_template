@@ -1,25 +1,33 @@
 /*******************************************************************************
  * @file    foc_core.h
- * @brief   FOC 核心算法接口 — Clarke / Park / iPark / SVPWM
+ * @brief   Architecture-independent Clarke and Park transforms
  ******************************************************************************/
 
-#ifndef __FOC_CORE_H__
-#define __FOC_CORE_H__
+#ifndef FOC_CORE_H
+#define FOC_CORE_H
 
-#include "foc_math_types.h"
-#include "foc_math_port.h"
-
-struct motor_handle_s;
+#include "foc_angle.h"
+#include "foc_numeric.h"
 
 typedef struct {
-    q_type qAlphaOrD;
-    q_type qBetaOrQ;
+    foc_scalar_t qAlpha;
+    foc_scalar_t qBeta;
 } foc_ab_t;
 
-void foc_clarke(q_type qIu, q_type qIv, q_type qIw, foc_ab_t *ptAB);
-void foc_park(const foc_ab_t *ptAB, q_type qTheta, foc_ab_t *ptDQ);
-void foc_ipark(const foc_ab_t *ptDQ, q_type qTheta, foc_ab_t *ptAB);
-void foc_svpwm(const foc_ab_t *ptAB, q_type qVbus,
-               q_type *pqDu, q_type *pqDv, q_type *pqDw);
+typedef struct {
+    foc_scalar_t qD;
+    foc_scalar_t qQ;
+} foc_dq_t;
 
-#endif /* __FOC_CORE_H__ */
+foc_result_t foc_clarke(foc_scalar_t qIu,
+                        foc_scalar_t qIv,
+                        foc_scalar_t qIw,
+                        foc_ab_t *ptAB);
+foc_result_t foc_park(const foc_ab_t *ptAB,
+                      foc_angle_t tTheta,
+                      foc_dq_t *ptDQ);
+foc_result_t foc_ipark(const foc_dq_t *ptDQ,
+                       foc_angle_t tTheta,
+                       foc_ab_t *ptAB);
+
+#endif /* FOC_CORE_H */

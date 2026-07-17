@@ -10,34 +10,32 @@ void phase_testA(void)
 {
     MLOG(I, "\r\n=== FOC Transform Test ===\r\n");
 
-#if FOC_USE_FPU_HARDWARE
-    q_type qTheta = _Q(0.5236f);
-#else
-    q_type qTheta = (q_type)5461;
-#endif
+    foc_angle_t tTheta = foc_angle_from_turns(1.0f / 12.0f);
     q_type qIu = _Q(1.0f);
     q_type qIv = _Q(-0.5f);
     q_type qIw = _Q(-0.5f);
 
-    foc_ab_t tAB, tDQ, tAB2;
+    foc_ab_t tAB, tAB2;
+    foc_dq_t tDQ;
 
     foc_clarke(qIu, qIv, qIw, &tAB);
-    foc_park(&tAB, qTheta, &tDQ);
-    foc_ipark(&tDQ, qTheta, &tAB2);
+    (void)foc_park(&tAB, tTheta, &tDQ);
+    (void)foc_ipark(&tDQ, tTheta, &tAB2);
 
     MLOGF(I, "Clarke: Ia=%.3f Ib=%.3f -> Alpha=%.3f Beta=%.3f\r\n",
-          _D(qIu), _D(qIv), _D(tAB.qAlphaOrD), _D(tAB.qBetaOrQ));
+          _D(qIu), _D(qIv), _D(tAB.qAlpha), _D(tAB.qBeta));
 
     MLOGF(I, "Park:   Alpha=%.3f Beta=%.3f theta=%.3f -> Id=%.3f Iq=%.3f\r\n",
-          _D(tAB.qAlphaOrD), _D(tAB.qBetaOrQ), _D_ANG(qTheta),
-          _D(tDQ.qAlphaOrD), _D(tDQ.qBetaOrQ));
+          _D(tAB.qAlpha), _D(tAB.qBeta),
+          (double)foc_angle_to_turns(tTheta) * 360.0,
+          _D(tDQ.qD), _D(tDQ.qQ));
 
     MLOGF(I, "iPark:  Id=%.3f Iq=%.3f -> Alpha=%.3f Beta=%.3f\r\n",
-          _D(tDQ.qAlphaOrD), _D(tDQ.qBetaOrQ),
-          _D(tAB2.qAlphaOrD), _D(tAB2.qBetaOrQ));
+          _D(tDQ.qD), _D(tDQ.qQ),
+          _D(tAB2.qAlpha), _D(tAB2.qBeta));
 
-    q_type qErrAlpha = tAB2.qAlphaOrD - tAB.qAlphaOrD;
-    q_type qErrBeta  = tAB2.qBetaOrQ  - tAB.qBetaOrQ;
+    q_type qErrAlpha = tAB2.qAlpha - tAB.qAlpha;
+    q_type qErrBeta  = tAB2.qBeta  - tAB.qBeta;
     MLOGF(I, "Round-trip error: dAlpha=%.6f dBeta=%.6f\r\n",
           _D(qErrAlpha), _D(qErrBeta));
 }
@@ -55,30 +53,19 @@ void phase_testB(motor_handle_t *ptMotor)
     q_type dutyV = _Q(0.5f);
     q_type dutyW = _Q(0.9f);
 
-    if (ptMotor->tPwm.fnSetDuty) {
-        ptMotor->tPwm.fnSetDuty(dutyU, dutyV, dutyW);
-    }
-    if (ptMotor->tPwm.fnEnable) {
-        ptMotor->tPwm.fnEnable(true);
-    }
-
-    if (ptMotor->tCurrent.tOps.fnOffsetCalib) {
-        ptMotor->tCurrent.tOps.fnOffsetCalib(&ptMotor->tCurrent.tCalib);
-    }
+    (void)motor_SetDuty(ptMotor, dutyU, dutyV, dutyW);
+    (void)motor_Enable(ptMotor, true);
+    (void)motor_CalibrateCurrent(ptMotor);
 
     MLOGF(I, "[PWM] Set Duty: U=%.1f%%, V=%.1f%%, W=%.1f%%\r\n",
           _D(dutyU)*100.0, _D(dutyV)*100.0, _D(dutyW)*100.0);
 
-    if (ptMotor->tCurrent.tOps.fnReconstruct) {
-        ptMotor->tCurrent.tOps.fnReconstruct(&ptMotor->tCurrent);
-    }
+    (void)motor_SampleCurrent(ptMotor);
 
     MLOGF(I, "[ADC] Reconstructed Current: Iu=%.3f, Iv=%.3f, Iw=%.3f\r\n",
           _D(ptMotor->tCurrent.qIu), _D(ptMotor->tCurrent.qIv), _D(ptMotor->tCurrent.qIw));
 
-    if (ptMotor->tPwm.fnEmergencyStop) {
-        ptMotor->tPwm.fnEmergencyStop();
-    }
+    (void)motor_Enable(ptMotor, false);
     MLOG(I, "[PWM] Emergency Stop triggers successfully.\r\n");
 }
 

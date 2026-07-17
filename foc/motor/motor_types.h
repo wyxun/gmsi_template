@@ -7,8 +7,9 @@
 #define __MOTOR_TYPES_H__
 
 #include "foc_math_types.h"
-#include "foc_hal_types.h"
-#include "foc_hal_pwm.h"
+#include "foc_angle.h"
+#include "foc_hal.h"
+#include "motor_control_types.h"
 #include "observer_lib.h"
 
 typedef enum {
@@ -19,37 +20,46 @@ typedef enum {
     MOTOR_STATE_FAULT,
 } motor_state_enum_t;
 
+typedef enum {
+    MOTOR_FAULT_NONE            = 0U,
+    MOTOR_FAULT_HARDWARE        = 1U << 0,
+    MOTOR_FAULT_CURRENT_SAMPLE  = 1U << 1,
+    MOTOR_FAULT_INVALID_COMMAND = 1U << 2,
+} motor_fault_t;
+
 typedef struct {
-    q_type  qRs;
-    q_type  qLd;
-    q_type  qLq;
-    q_type  qKe;
-    q_type  qJ;
-    q_type  qRatedVoltage;
-    q_type  qRatedCurrent;
+    uint32_t wResistanceMilliOhm;
+    uint32_t wLdMicroHenry;
+    uint32_t wLqMicroHenry;
+    uint32_t wBackEmfMicroVoltPerRadSec;
+    uint32_t wInertiaNanoKgM2;
+    uint32_t wRatedVoltageMilliVolt;
+    uint32_t wRatedCurrentMilliAmp;
     uint8_t chPolePairs;
 } motor_params_t;
 
 typedef struct {
-    q_type              qThetaE;
+    foc_angle_t         tThetaE;
     q_type              qOmegaE;
     q_type              qId;
     q_type              qIq;
     q_type              qVbus;
+    uint32_t            wFaults;
     motor_state_enum_t  eRunState;
 } motor_state_t;
 
 typedef struct {
     motor_params_t          tParams;
-    foc_pwm_ops_t           tPwm;
-    foc_adc_ops_t           tAdc;
+    foc_hal_t               tHal;
+    motor_control_config_t  tControl;
     current_sensing_type_t  eTopology;
 } motor_config_t;
 
 typedef struct motor_handle_s {
     motor_params_t          tParams;
     motor_state_t           tRt;
-    foc_pwm_ops_t           tPwm;
+    foc_hal_t               tHal;
+    motor_control_t         tControl;
     phase_current_handle_t  tCurrent;
     sensor_interface_t     *ptSensor;
     observer_interface_t   *ptObserver;

@@ -6,7 +6,9 @@
  * USART1 / TMR1 / ADC1_2 have real handlers; the rest are stubs.
  */
 
+#ifndef CORE_DEBUG_OVERRIDE_FAULT_HANDLER
 #define CORE_DEBUG_OVERRIDE_FAULT_HANDLER
+#endif
 #include "at32f413.h"
 #include "perf_counter.h"
 #include "mdebug_cm.h"
