@@ -30,11 +30,14 @@
 #define USART_DELAYTIME     5
 
 static uint8_t s_chUsart2TxBuf[USART2_TX_BUFFER_SIZE];
-static uint8_t s_chUsart2RxBuf[USART2_RX_BUFFER_SIZE];
+static uint8_t s_chUsart2DmaRxBuf[USART2_RX_BUFFER_SIZE];
+static uint8_t s_chUsart2RxQueueBuf[USART2_RX_BUFFER_SIZE];
 
 /* DMA TX flat buffer and state */
 static uint8_t s_chUsart2DmaTxBuf[512];
 static volatile bool s_bTxDmaActive = false;
+static volatile bool s_bRxPollActive = false;
+static volatile uint32_t s_wRxOverflow = 0;
 static uint32_t s_wRxReadPtr = 0;
 
 /* ---- GPIO wrappers ---- */
@@ -91,7 +94,7 @@ void at32_usart_dma_init(void)
     dma_default_para_init(&dma_init_struct);
     dma_init_struct.buffer_size = USART2_RX_BUFFER_SIZE;
     dma_init_struct.direction = DMA_DIR_PERIPHERAL_TO_MEMORY;
-    dma_init_struct.memory_base_addr = (uint32_t)s_chUsart2RxBuf;
+    dma_init_struct.memory_base_addr = (uint32_t)s_chUsart2DmaRxBuf;
     dma_init_struct.memory_data_width = DMA_MEMORY_DATA_WIDTH_BYTE;
     dma_init_struct.memory_inc_enable = TRUE;
     dma_init_struct.peripheral_base_addr = (uint32_t)&USART2->dt;
@@ -142,27 +145,54 @@ void at32_usart_dma_init(void)
     dma_channel_enable(DMA1_CHANNEL4, FALSE);
 }
 
+static bool default_enqueue_rt_command(uint8_t c)
+{
+    (void)c;
+    return false;
+}
+static port_mdi_enqueue_rt_ptr s_fnEnqueueRt = default_enqueue_rt_command;
+
+void port_mdi_set_enqueue_rt_handler(port_mdi_enqueue_rt_ptr fn)
+{
+    s_fnEnqueueRt = fn ? fn : default_enqueue_rt_command;
+}
+
 void at32_usart_rx_dma_poll(void)
 {
     if (s_tUsart2Priv.ptUsart == NULL) return;
-    
-    // Disable USART2 IRQ to prevent re-entrancy during extraction
-    nvic_irq_disable(USART2_IRQn);
+
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    if (s_bRxPollActive) {
+        __set_PRIMASK(primask);
+        return;
+    }
+    s_bRxPollActive = true;
+    __set_PRIMASK(primask);
     
     uint16_t hwRemaining = dma_data_number_get(DMA1_CHANNEL3);
     uint32_t wWritePtr = USART2_RX_BUFFER_SIZE - hwRemaining;
     
     while (s_wRxReadPtr != wWritePtr) {
-        uint8_t ch = s_chUsart2RxBuf[s_wRxReadPtr];
+        uint8_t ch = s_chUsart2DmaRxBuf[s_wRxReadPtr];
         s_wRxReadPtr = (s_wRxReadPtr + 1) % USART2_RX_BUFFER_SIZE;
         
-        extern bool protocol_enqueue_realtime_command(uint8_t c);
-        if (!protocol_enqueue_realtime_command(ch)) {
-            mringbuf_Write(&s_tUsart2Priv.tRxQueue, ch);
+        if (!s_fnEnqueueRt(ch)) {
+            if (mringbuf_Write(&s_tUsart2Priv.tRxQueue, ch) == 0) {
+                s_wRxOverflow++;
+            }
         }
     }
-    
-    nvic_irq_enable(USART2_IRQn, 8, 0);
+
+    primask = __get_PRIMASK();
+    __disable_irq();
+    s_bRxPollActive = false;
+    __set_PRIMASK(primask);
+}
+
+uint32_t at32_usart_rx_overflow_count(void)
+{
+    return s_wRxOverflow;
 }
 
 void at32_usart_tx_dma_start(void)
@@ -208,7 +238,7 @@ void at32_usart2_init(void)
     if (s_tUsart2Priv.ptUsart != NULL) return;
     at32_usart_init(&s_tUsart2Priv, USART2,
                     s_chUsart2TxBuf, USART2_TX_BUFFER_SIZE,
-                    s_chUsart2RxBuf, USART2_RX_BUFFER_SIZE);
+                    s_chUsart2RxQueueBuf, USART2_RX_BUFFER_SIZE);
     at32_usart_dma_init();
 }
 

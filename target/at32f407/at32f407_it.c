@@ -25,12 +25,13 @@ extern at32_usart_priv_t s_tUsart2Priv;
 /* --------------------------------------------------------------------------
  *  Cortex-M4 Core Exceptions
  * -------------------------------------------------------------------------- */
-void NMI_Handler(void)              { while(1); }
+extern void grblhal_emergency_stop(void);
+void NMI_Handler(void)              { grblhal_emergency_stop(); while(1); }
 #ifndef MDEBUG_CM_FAULT_HANDLERS_ACTIVE
-void HardFault_Handler(void)        { while(1); }
-void MemManage_Handler(void)        { while(1); }
-void BusFault_Handler(void)         { while(1); }
-void UsageFault_Handler(void)       { while(1); }
+void HardFault_Handler(void)        { grblhal_emergency_stop(); while(1); }
+void MemManage_Handler(void)        { grblhal_emergency_stop(); while(1); }
+void BusFault_Handler(void)         { grblhal_emergency_stop(); while(1); }
+void UsageFault_Handler(void)       { grblhal_emergency_stop(); while(1); }
 #endif
 void SVC_Handler(void)              {}
 void DebugMon_Handler(void)         {}

@@ -52,6 +52,11 @@
 #define PROBE_PORT              GPIOC
 #define PROBE_PIN               GPIO_PINS_5
 
+#define SPINDLE_ENABLE_PORT     GPIOA
+#define SPINDLE_ENABLE_PIN      GPIO_PINS_6
+#define SPINDLE_DIR_PORT        GPIOA
+#define SPINDLE_DIR_PIN         GPIO_PINS_5
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -82,6 +87,11 @@ void  grblhal_set_bits_atomic(volatile uint_fast16_t *value, uint_fast16_t bits)
 uint_fast16_t grblhal_clear_bits_atomic(volatile uint_fast16_t *value, uint_fast16_t bits);
 uint_fast16_t grblhal_set_value_atomic(volatile uint_fast16_t *value, uint_fast16_t bits);
 bool  grblhal_driver_setup(settings_t *settings);
+void  grblhal_motion_setup(void);
+void  grblhal_motion_settings_changed(settings_t *settings,
+                                      settings_changed_flags_t changed);
+bool  grblhal_spindle_init(void);
+void  grblhal_emergency_stop(void);
 
 #ifdef __cplusplus
 }

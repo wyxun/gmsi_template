@@ -10,7 +10,11 @@
 /* =========================================================================
  *  AT32F407 path: stream I/O via USB CDC
  * ========================================================================= */
+#ifdef UNUSED
+#undef UNUSED
+#endif
 #include "usb_conf.h"
+#include "usbd_core.h"
 #include "protocol.h"
 #include <string.h>
 
@@ -18,6 +22,10 @@
 static uint8_t s_usb_rx_buffer[USB_RX_BUF_SIZE];
 static volatile uint16_t s_usb_rx_head = 0;
 static volatile uint16_t s_usb_rx_tail = 0;
+static volatile uint32_t s_usb_rx_overflow = 0;
+static enqueue_realtime_command_ptr s_usb_enqueue_rt =
+    protocol_enqueue_realtime_command;
+static bool usb_is_connected(void);
 
 static void usb_rx_enqueue(uint8_t c)
 {
@@ -59,13 +67,15 @@ static void usb_rx_poll(void)
     uint8_t tmp_buf[64];
     uint16_t len;
     
-    while (usb_rx_free_space() >= 64) {
-        len = usb_vcp_get_rxdata(get_usb_core_dev(), tmp_buf);
-        if (len == 0) {
-            break;
+    len = usb_vcp_get_rxdata(get_usb_core_dev(), tmp_buf);
+    for (uint16_t i = 0; i < len; i++) {
+        if (s_usb_enqueue_rt(tmp_buf[i])) {
+            continue;
         }
-        for (uint16_t i = 0; i < len; i++) {
-            usb_rx_enqueue(tmp_buf[i]);
+        uint16_t free_before = usb_rx_free_space();
+        usb_rx_enqueue(tmp_buf[i]);
+        if (free_before == 0) {
+            s_usb_rx_overflow++;
         }
     }
 }
@@ -76,19 +86,21 @@ static void usb_write_n(const uint8_t *data, uint16_t length)
     extern void *get_usb_core_dev(void);
     
     uint16_t sent = 0;
-    uint32_t timeout;
-    
+    if (!usb_is_connected()) {
+        return;
+    }
     while (sent < length) {
         uint16_t chunk = length - sent;
         if (chunk > 64) {
             chunk = 64;
         }
-        timeout = 50000;
-        while (usb_vcp_send_data(get_usb_core_dev(), (uint8_t *)&data[sent], chunk) == ERROR && timeout > 0) {
-            timeout--;
-        }
-        if (timeout == 0) {
-            break;
+        while (usb_vcp_send_data(get_usb_core_dev(),
+                                 (uint8_t *)&data[sent], chunk) == ERROR) {
+            if (!usb_is_connected() ||
+                hal.stream_blocking_callback == NULL ||
+                !hal.stream_blocking_callback()) {
+                return;
+            }
         }
         sent += chunk;
     }
@@ -97,7 +109,7 @@ static void usb_write_n(const uint8_t *data, uint16_t length)
 static bool usb_write_char(const uint8_t c)
 {
     usb_write_n(&c, 1);
-    return true;
+    return usb_is_connected();
 }
 
 static void usb_write_string(const char *text)
@@ -107,17 +119,16 @@ static void usb_write_string(const char *text)
 
 static bool usb_is_connected(void)
 {
-    return true;
+    extern void *get_usb_core_dev(void);
+    return usbd_connect_state_get((usbd_core_type *)get_usb_core_dev()) ==
+           USB_CONN_STATE_CONFIGURED;
 }
 
 static int32_t usb_read(void)
 {
     usb_rx_poll();
-    int32_t ch = usb_rx_dequeue();
-    if (ch >= 0) {
-        if (protocol_enqueue_realtime_command((uint8_t)ch)) {
-            return -1;
-        }
+    int32_t ch;
+    while ((ch = usb_rx_dequeue()) >= 0) {
         return ch;
     }
     return -1;
@@ -125,25 +136,23 @@ static int32_t usb_read(void)
 
 static void usb_reset_read_buffer(void)
 {
+    extern uint16_t usb_vcp_get_rxdata(void *udev, uint8_t *recv_data);
+    extern void *get_usb_core_dev(void);
+    uint8_t discard[64];
     s_usb_rx_head = 0;
     s_usb_rx_tail = 0;
+    while (usb_vcp_get_rxdata(get_usb_core_dev(), discard) != 0) {}
 }
 
 static void usb_cancel_read_buffer(void)
 {
     usb_reset_read_buffer();
-}
-
-static bool usb_suspend_read(bool suspend)
-{
-    (void)suspend;
-    return true;
+    (void)s_usb_enqueue_rt(ASCII_CAN);
 }
 
 static bool usb_enqueue_rt_command(uint8_t c)
 {
-    (void)c;
-    return false;
+    return s_usb_enqueue_rt(c);
 }
 
 static uint16_t usb_get_rx_buffer_available(void)
@@ -160,8 +169,9 @@ static uint16_t usb_get_rx_buffer_free(void)
 
 static enqueue_realtime_command_ptr usb_set_enqueue_rt_handler(enqueue_realtime_command_ptr handler)
 {
-    (void)handler;
-    return handler;
+    enqueue_realtime_command_ptr prev = s_usb_enqueue_rt;
+    s_usb_enqueue_rt = handler ? handler : protocol_enqueue_realtime_command;
+    return prev;
 }
 
 static io_stream_t s_grblhal_usb = {
@@ -171,7 +181,6 @@ static io_stream_t s_grblhal_usb = {
     .reset_read_buffer     = usb_reset_read_buffer,
     .cancel_read_buffer    = usb_cancel_read_buffer,
     .set_enqueue_rt_handler = usb_set_enqueue_rt_handler,
-    .suspend_read          = usb_suspend_read,
     .enqueue_rt_command    = usb_enqueue_rt_command,
     .get_rx_buffer_free    = usb_get_rx_buffer_free,
     .get_rx_buffer_count   = usb_get_rx_buffer_available,
@@ -199,8 +208,18 @@ void grblhal_stream_init(void)
 
 static void uart_write_n(const uint8_t *data, uint16_t length)
 {
-    if (data != NULL && length > 0) {
-        MDI_Write(HW.ptSerial, data, (uint32_t)length);
+    uint16_t written = 0;
+    while (data != NULL && written < length) {
+        int32_t count = MDI_Write(HW.ptSerial, &data[written],
+                                  (uint32_t)(length - written));
+        if (count > 0) {
+            written += (uint16_t)count;
+        } else {
+            if (hal.stream_blocking_callback == NULL ||
+                !hal.stream_blocking_callback()) {
+                break;
+            }
+        }
     }
 }
 
@@ -219,6 +238,13 @@ static bool uart_is_connected(void)
     return true;
 }
 
+static enqueue_realtime_command_ptr s_uart_enqueue_rt = protocol_enqueue_realtime_command;
+
+static bool uart_enqueue_rt_wrapper(uint8_t c)
+{
+    return s_uart_enqueue_rt(c);
+}
+
 static int32_t uart_read(void)
 {
     uint8_t ch;
@@ -227,7 +253,7 @@ static int32_t uart_read(void)
         extern void at32_usart_rx_dma_poll(void);
         at32_usart_rx_dma_poll();
         while (mringbuf_Read(&ptPriv->tRxQueue, &ch) > 0) {
-            if (protocol_enqueue_realtime_command(ch)) {
+            if (s_uart_enqueue_rt(ch)) {
                 continue;
             }
             return (int32_t)ch;
@@ -247,21 +273,19 @@ static void uart_reset_read_buffer(void)
     }
 }
 
-static bool uart_suspend_read(bool suspend)
-{
-    (void)suspend;
-    return true;
-}
-
 static bool uart_enqueue_rt_command(uint8_t c)
 {
-    (void)c;
-    return false;
+    return s_uart_enqueue_rt(c);
 }
 
 static uint16_t uart_get_rx_buffer_available(void)
 {
-    return 0;
+    if (HW.ptSerial != NULL && HW.ptSerial->pPriv != NULL) {
+        at32_usart_priv_t *ptPriv = (at32_usart_priv_t *)HW.ptSerial->pPriv;
+        at32_usart_rx_dma_poll();
+        return (uint16_t)mringbuf_GetUsed(&ptPriv->tRxQueue);
+    }
+    return 0u;
 }
 
 /* grblHAL 必须：无 NULL 检查直接调用 (report.c:1294) */
@@ -278,15 +302,15 @@ static uint16_t uart_get_rx_buffer_free(void)
 static void uart_cancel_read_buffer(void)
 {
     uart_reset_read_buffer();
-    /* 可选：向协议层插入 CAN (软复位信号)
-       当前阶段不需要，留作展开点 */
+    (void)s_uart_enqueue_rt(ASCII_CAN);
 }
 
 /* 设置实时命令字符处理器（核心会就为我们调用） */
 static enqueue_realtime_command_ptr uart_set_enqueue_rt_handler(enqueue_realtime_command_ptr handler)
 {
-    (void)handler;
-    return handler;
+    enqueue_realtime_command_ptr prev = s_uart_enqueue_rt;
+    s_uart_enqueue_rt = handler ? handler : protocol_enqueue_realtime_command;
+    return prev;
 }
 
 static io_stream_t s_grblhal_uart = {
@@ -296,7 +320,6 @@ static io_stream_t s_grblhal_uart = {
     .reset_read_buffer     = uart_reset_read_buffer,
     .cancel_read_buffer    = uart_cancel_read_buffer,
     .set_enqueue_rt_handler = uart_set_enqueue_rt_handler,
-    .suspend_read          = uart_suspend_read,
     .enqueue_rt_command    = uart_enqueue_rt_command,
     .get_rx_buffer_free    = uart_get_rx_buffer_free,
     .get_rx_buffer_count   = uart_get_rx_buffer_available,
@@ -309,6 +332,7 @@ static io_stream_t s_grblhal_uart = {
 void grblhal_stream_init(void)
 {
     hal.stream = s_grblhal_uart;
+    port_mdi_set_enqueue_rt_handler(uart_enqueue_rt_wrapper);
 }
 
 #else /* !GRBLHAL_STREAM_UART — original STM32G431 RTT path (unchanged) */
