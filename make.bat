@@ -1,5 +1,5 @@
 @echo off
-set MAKE_EXE="D:\software\msys64\mingw64\bin\mingw32-make.exe"
+set MAKE_EXE="D:\0_software\msys64\mingw64\bin\mingw32-make.exe"
 
 if "%1"=="auto" goto auto_flow
 if "%1"=="rttv" goto gui_flow
@@ -40,10 +40,10 @@ ping 127.0.0.1 -n 4 > nul
 
 :: User uses SuperWaveform, so we skip the default RTT Viewer popup
 :: echo [INFO] Launching RTT Viewer...
-:: start powershell -NoProfile -ExecutionPolicy Bypass -File ".\.agent\workflows\rtt_viewer.ps1"
+:: start powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\rtt_viewer.ps1"
 goto :eof
 
 :gui_flow
 echo [INFO] Launching RTT Viewer...
-start powershell -NoProfile -ExecutionPolicy Bypass -File ".\.agent\workflows\rtt_viewer.ps1"
+start powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\rtt_viewer.ps1"
 goto :eof
