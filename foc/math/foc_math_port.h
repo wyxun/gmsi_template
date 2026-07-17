@@ -1,27 +1,18 @@
 /*******************************************************************************
  * @file    foc_math_port.h
- * @brief   平台运算宏 — 硬件加速隔离层
+ * @brief   Compatibility arithmetic wrappers for the numeric backend
  ******************************************************************************/
 
-#ifndef __FOC_MATH_PORT_H__
-#define __FOC_MATH_PORT_H__
+#ifndef FOC_MATH_PORT_H
+#define FOC_MATH_PORT_H
 
-#include "foc_math_types.h"
+#include "foc_numeric.h"
 
-#if FOC_USE_FPU_HARDWARE
+/* New high-frequency code chooses foc_mul_pu() or foc_mul_wide() explicitly. */
+#define M_MUL(a, b) foc_mul_wide((a), (b))
+#define M_MAD(a, b, c) foc_add_sat(foc_mul_wide((a), (b)), (c))
+#define M_MSB(a, b, c) foc_sub_sat((c), foc_mul_wide((a), (b)))
+#define M_SAT(value, minimum, maximum) \
+    foc_sat((value), (minimum), (maximum))
 
-    #define M_MUL(a, b)         ((a) * (b))
-    #define M_MAD(a, b, c)      ((a) * (b) + (c))
-    #define M_MSB(a, b, c)      ((c) - (a) * (b))
-    #define M_SAT(x, lo, hi)    ((x) < (lo) ? (lo) : ((x) > (hi) ? (hi) : (x)))
-
-#else
-
-    #define M_MUL(a, b)         ((q_type)(((int64_t)(a) * (b)) >> Q_SHIFT))
-    #define M_MAD(a, b, c)      ((q_type)((((int64_t)(a) * (b)) >> Q_SHIFT) + (c)))
-    #define M_MSB(a, b, c)      ((q_type)((c) - (((int64_t)(a) * (b)) >> Q_SHIFT)))
-    #define M_SAT(x, lo, hi)    ((x) < (lo) ? (lo) : ((x) > (hi) ? (hi) : (x)))
-
-#endif /* FOC_USE_FPU_HARDWARE */
-
-#endif /* __FOC_MATH_PORT_H__ */
+#endif /* FOC_MATH_PORT_H */

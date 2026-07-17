@@ -7,7 +7,18 @@
 #ifndef __FOC_CONFIG_H__
 #define __FOC_CONFIG_H__
 
+#if defined(FOC_NUMERIC_FLOAT) && defined(FOC_NUMERIC_FIXED)
+#error "Select only one FOC numeric backend"
+#elif !defined(FOC_NUMERIC_FLOAT) && !defined(FOC_NUMERIC_FIXED)
+#error "Select FOC_NUMERIC_FLOAT or FOC_NUMERIC_FIXED"
+#endif
+
+/* Compatibility only. New code selects behavior through foc_numeric.h. */
+#if defined(FOC_NUMERIC_FLOAT)
 #define FOC_USE_FPU_HARDWARE        1
+#else
+#define FOC_USE_FPU_HARDWARE        0
+#endif
 
 #define FOC_OFFSET_CALIB_TIMES      200U
 
@@ -20,5 +31,15 @@
 #define FOC_DEFAULT_POLE_PAIRS      4
 
 #define FOC_DEBUG_ENABLE            1
+
+/* Experimental routines can energize a stopped motor.  Products must opt in
+ * explicitly after providing current, speed, bus-voltage, and timeout limits. */
+#ifndef FOC_ENABLE_EXPERIMENTAL_NSD
+#define FOC_ENABLE_EXPERIMENTAL_NSD       0
+#endif
+
+#ifndef FOC_ENABLE_EXPERIMENTAL_IDENTIFY
+#define FOC_ENABLE_EXPERIMENTAL_IDENTIFY  0
+#endif
 
 #endif /* __FOC_CONFIG_H__ */

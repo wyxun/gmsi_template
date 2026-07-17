@@ -6,18 +6,15 @@
 #ifndef __OBSERVER_LIB_H__
 #define __OBSERVER_LIB_H__
 
-#include "foc_math_types.h"
+#include "foc_observer.h"
 
 typedef struct {
-    q_type (*fnGetAngle)(void);
-    q_type (*fnGetSpeed)(void);
-    void   (*fnUpdate  )(void);
+    void *pContext;
+    foc_angle_t (*fnGetAngle)(void *pContext);
+    foc_scalar_t (*fnGetSpeed)(void *pContext);
+    void (*fnUpdate)(void *pContext);
 } sensor_interface_t;
 
-typedef struct {
-    q_type (*fnGetAngle)(void);
-    q_type (*fnGetSpeed)(void);
-    void   (*fnUpdate  )(q_type qIalpha, q_type qIbeta, q_type qValpha, q_type qVbeta);
-} observer_interface_t;
+typedef foc_observer_if_t observer_interface_t;
 
 #endif /* __OBSERVER_LIB_H__ */

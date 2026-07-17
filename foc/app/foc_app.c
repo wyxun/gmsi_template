@@ -7,18 +7,16 @@
 #include <string.h>
 #include "peripheral.h"
 #include "mdi_hw.h"
-#include "haladc.h"
+#include "foc_hal_mdi_adapter.h"
 #include "foc_app.h"
 #include "foc_core.h"
+#include "foc_modulation.h"
 #include "foc_hal.h"
 #include "motor.h"
 #include "mdebug/mshell.h"
 
 #undef  this
 #define this (*ptThis)
-
-extern foc_pwm_ops_t s_tMdiPwmOps;
-extern foc_adc_ops_t s_tMdiAdcOps;
 
 static int foc_app_Clock(uintptr_t wObjectAddr);
 static int foc_app_Run  (uintptr_t wObjectAddr);
@@ -32,14 +30,14 @@ static modus_base_t     s_tFocAppBase;
 
 static motor_config_t s_tMotorConfig = {
     .tParams = {
-        .qRs            = 0.1f,
-        .qLd            = 0.0001f,
-        .qLq            = 0.0001f,
-        .qKe            = 0.01f,
-        .qJ             = 0.0001f,
-        .qRatedVoltage  = 24.0f,
-        .qRatedCurrent  = 10.0f,
-        .chPolePairs    = 4,
+        .wResistanceMilliOhm          = 100U,
+        .wLdMicroHenry                = 100U,
+        .wLqMicroHenry                = 100U,
+        .wBackEmfMicroVoltPerRadSec   = 10000U,
+        .wInertiaNanoKgM2             = 100000U,
+        .wRatedVoltageMilliVolt       = 24000U,
+        .wRatedCurrentMilliAmp        = 10000U,
+        .chPolePairs                  = 4U,
     },
     .eTopology = SENSING_TOPOLOGY_3P,
 };
@@ -56,8 +54,6 @@ static modus_base_cfg_t s_tFocAppBaseCfg = {
 fsm_rt_t foc_app_RunFSM(foc_app_t *ptThis)
 {
     motor_handle_t *ptMotor = this.ptMotor;
-    static int64_t s_lCounter = 0;
-
 PERFC_PT_BEGIN(this.chState)
 
     PERFC_PT_WAIT_UNTIL(
@@ -65,12 +61,12 @@ PERFC_PT_BEGIN(this.chState)
     )
 
     PERFC_PT_ENTRY(
-        ptMotor->tRt.qThetaE = 0;
+        ptMotor->tRt.tThetaE = foc_angle_from_scalar(FOC_ZERO);
         ptMotor->tRt.qId     = _Q(0.1f);
         ptMotor->tRt.qIq     = 0;
         /* Calibrate current offsets with PWM disabled (zero current flowing) */
-        if (ptMotor->tCurrent.tOps.fnOffsetCalib) {
-            ptMotor->tCurrent.tOps.fnOffsetCalib(&ptMotor->tCurrent.tCalib);
+        if (motor_CalibrateCurrent(ptMotor) != FOC_RESULT_OK) {
+            motor_EmergencyStop(ptMotor, MOTOR_FAULT_CURRENT_SAMPLE);
         }
     )
 
@@ -78,80 +74,69 @@ PERFC_PT_BEGIN(this.chState)
 
     PERFC_PT_ENTRY(
         ptMotor->tRt.eRunState = MOTOR_STATE_OPEN_LOOP;
-        if (ptMotor->tPwm.fnEnable) {
-            ptMotor->tPwm.fnEnable(true);
+        if (motor_Enable(ptMotor, true) != FOC_RESULT_OK) {
+            motor_EmergencyStop(ptMotor, MOTOR_FAULT_HARDWARE);
         }
     )
 
     while (ptMotor->tRt.eRunState == MOTOR_STATE_OPEN_LOOP) {
 
-        if(get_system_ms() - s_lCounter >= 1)
+        if(get_system_ms() - this.lOpenLoopTick >= 1)
         {
-            ptMotor->tRt.qThetaE += _Q(0.01f);
-            if (ptMotor->tRt.qThetaE >= _Q(6.283185f)) {
-                ptMotor->tRt.qThetaE -= _Q(6.283185f);
-            }
-            s_lCounter = get_system_ms();
+            ptMotor->tRt.tThetaE = foc_angle_from_scalar(
+                foc_add_sat(ptMotor->tRt.tThetaE.qTurns,
+                            FOC_SCALAR(0.001f)));
+            this.lOpenLoopTick = get_system_ms();
         }
 
-        foc_ab_t tVdq = { .qAlphaOrD = 0, .qBetaOrQ = _Q(0.05f) };
+        foc_dq_t tVdq = { .qD = FOC_ZERO, .qQ = FOC_SCALAR(0.05f) };
         foc_ab_t tVab;
-        q_type   qDu, qDv, qDw;
+        foc_duty_abc_t tDuty;
 
-        foc_ipark(&tVdq, ptMotor->tRt.qThetaE, &tVab);
-        foc_svpwm(&tVab, ptMotor->tRt.qVbus, &qDu, &qDv, &qDw);
+        (void)foc_ipark(&tVdq, ptMotor->tRt.tThetaE, &tVab);
+        (void)foc_svpwm(&tVab, &tDuty);
 
         /* Store duties for observation */
-        this.qDutyU = qDu;
-        this.qDutyV = qDv;
-        this.qDutyW = qDw;
+        this.qDutyU = tDuty.qU;
+        this.qDutyV = tDuty.qV;
+        this.qDutyW = tDuty.qW;
 
-        if (ptMotor->tPwm.fnSetDuty) {
-            ptMotor->tPwm.fnSetDuty(qDu, qDv, qDw);
+        if (motor_SetDuty(ptMotor, tDuty.qU, tDuty.qV, tDuty.qW) !=
+            FOC_RESULT_OK) {
+            motor_EmergencyStop(ptMotor, MOTOR_FAULT_HARDWARE);
         }
 
         /* Reconstruct three-phase currents */
-        if (ptMotor->tCurrent.tOps.fnReconstruct) {
-            ptMotor->tCurrent.tOps.fnReconstruct(&ptMotor->tCurrent);
-        }
+        (void)motor_SampleCurrent(ptMotor);
 
         {
-            static q_type   s_qPeakDuty = 0;
-            static q_type   s_qMinDuty  = Q_ONE;
-            static uint32_t s_wLastPrintTick = 0;
+            q_type qCurrentMax = tDuty.qU;
+            q_type qCurrentMin = tDuty.qU;
 
-            q_type qCurrentMax = qDu;
-            q_type qCurrentMin = qDu;
+            if (tDuty.qV > qCurrentMax) qCurrentMax = tDuty.qV;
+            if (tDuty.qV < qCurrentMin) qCurrentMin = tDuty.qV;
+            if (tDuty.qW > qCurrentMax) qCurrentMax = tDuty.qW;
+            if (tDuty.qW < qCurrentMin) qCurrentMin = tDuty.qW;
 
-            if (qDv > qCurrentMax) qCurrentMax = qDv;
-            if (qDv < qCurrentMin) qCurrentMin = qDv;
-            if (qDw > qCurrentMax) qCurrentMax = qDw;
-            if (qDw < qCurrentMin) qCurrentMin = qDw;
+            if (qCurrentMax > this.qPeakDuty) this.qPeakDuty = qCurrentMax;
+            if (qCurrentMin < this.qMinDuty) this.qMinDuty = qCurrentMin;
 
-            if (qCurrentMax > s_qPeakDuty) s_qPeakDuty = qCurrentMax;
-            if (qCurrentMin < s_qMinDuty)  s_qMinDuty  = qCurrentMin;
-
-            if (get_system_ms() - s_wLastPrintTick >= 500UL) {
-                s_wLastPrintTick = get_system_ms();
+            if (get_system_ms() - this.wLastPrintTick >= 500UL) {
+                this.wLastPrintTick = get_system_ms();
                 
                 /* Get raw ADC readings for debugging */
                 uint32_t raw_u = 0, raw_v = 0, raw_w = 0;
-                if (ptMotor->tCurrent.tOps.fnGetRaw) {
-                    ptMotor->tCurrent.tOps.fnGetRaw(&raw_u, &raw_v, &raw_w);
-                }
+                (void)motor_GetRawCurrent(ptMotor, &raw_u, &raw_v, &raw_w);
 
-                /* Read potentiometer value as general ADC status check */
-                uint16_t pot = haladc_GetOrdinary(2);
-                MLOGF(T, "[SVPWM] Vq: %.3f | Iu=%.3f, Iv=%.3f, Iw=%.3f | Raw: U=%lu V=%lu W=%lu | Offset: U=%lu V=%lu W=%lu | Pot=%u\r\n",
-                      _D(tVdq.qBetaOrQ),
+                MLOGF(T, "[SVPWM] Vq: %.3f | Iu=%.3f, Iv=%.3f, Iw=%.3f | Raw: U=%lu V=%lu W=%lu | Offset: U=%lu V=%lu W=%lu\r\n",
+                      _D(tVdq.qQ),
                       _D(ptMotor->tCurrent.qIu), _D(ptMotor->tCurrent.qIv), _D(ptMotor->tCurrent.qIw),
                       (unsigned long)raw_u, (unsigned long)raw_v, (unsigned long)raw_w,
                       (unsigned long)ptMotor->tCurrent.tCalib.wOffsetU,
                       (unsigned long)ptMotor->tCurrent.tCalib.wOffsetV,
-                      (unsigned long)ptMotor->tCurrent.tCalib.wOffsetW,
-                      pot);
-                s_qPeakDuty = 0;
-                s_qMinDuty  = Q_ONE;
+                      (unsigned long)ptMotor->tCurrent.tCalib.wOffsetW);
+                this.qPeakDuty = FOC_ZERO;
+                this.qMinDuty = FOC_ONE;
             }
         }
 
@@ -184,14 +169,13 @@ static int foc_app_Run(uintptr_t wObjectAddr)
 
     /* PB2 按键消抖与控制启停 */
     {
-        static bool s_bLastBtnState = false;
-        static uint32_t s_wLastBtnTick = 0;
+        uint32_t s_wLastBtnTick = this.wLastButtonTick;
         bool bCurrBtnState = (MDI_Read(HW.ptButtonStart) == MDI_GPIO_LOW);
 
-        if (bCurrBtnState != s_bLastBtnState) {
+        if (bCurrBtnState != this.bLastButtonState) {
             if (get_system_ms() - s_wLastBtnTick >= 50) { // 50ms 消抖
-                s_bLastBtnState = bCurrBtnState;
-                s_wLastBtnTick = get_system_ms();
+                this.bLastButtonState = bCurrBtnState;
+                this.wLastButtonTick = get_system_ms();
 
                 if (bCurrBtnState) { // 按键被按下
                     if (ptThis->ptMotor->tRt.eRunState == MOTOR_STATE_IDLE) {
@@ -248,13 +232,14 @@ int foc_app_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
     memset(ptThis, 0, sizeof(foc_app_t));
     ptThis->ptMotor = ptCfg->ptMotor;
     ptThis->ptBase = &s_tFocAppBase;
+    ptThis->qMinDuty = FOC_ONE;
     s_tFocAppBaseCfg.wParent = wObjectAddr;
 
-    motor_Init(ptThis->ptMotor, &s_tMotorConfig);
-    foc_hal_mdi_register();
-
-    ptThis->ptMotor->tPwm          = s_tMdiPwmOps;
-    ptThis->ptMotor->tCurrent.tOps = s_tMdiAdcOps;
+    if (foc_hal_mdi_BindDefault(&s_tMotorConfig.tHal) != FOC_RESULT_OK ||
+        motor_Init(ptThis->ptMotor, &s_tMotorConfig) != FOC_RESULT_OK) {
+        MLOG(E, "foc_app_Init: motor hardware binding failed.\r\n");
+        return MODUS_EFAIL;
+    }
 
     phase_test_waveform_init();
     
@@ -284,10 +269,8 @@ void foc_app_Stop(foc_app_t *ptThis)
     if (ptThis == NULL) { return; }
     this.chState = 0;
     if (this.ptMotor != NULL) {
+        (void)motor_Enable(this.ptMotor, false);
         motor_Reset(this.ptMotor);
-        if (this.ptMotor->tPwm.fnEnable) {
-            this.ptMotor->tPwm.fnEnable(false);
-        }
     }
 }
 
@@ -313,7 +296,8 @@ static void cmd_motor(const char *args)
     } else if (strncmp(args, "status", 6) == 0) {
         motor_handle_t *ptMotor = tFocApp.ptMotor;
         MLOGF(I, "Motor state: %d\r\n", (int)ptMotor->tRt.eRunState);
-        MLOGF(I, " - ThetaE: %.3f\r\n", _D(ptMotor->tRt.qThetaE));
+        MLOGF(I, " - ThetaE: %.3f deg\r\n",
+              (double)foc_angle_to_turns(ptMotor->tRt.tThetaE) * 360.0);
         MLOGF(I, " - Duty U=%.1f%%, V=%.1f%%, W=%.1f%%\r\n",
               _D(tFocApp.qDutyU)*100.0, _D(tFocApp.qDutyV)*100.0, _D(tFocApp.qDutyW)*100.0);
         MLOGF(I, " - Current U=%.3f, V=%.3f, W=%.3f\r\n",

@@ -109,6 +109,11 @@ FOC_SOURCES = $(wildcard foc/math/*.c)       \
               $(wildcard foc/hal/*.c)         \
               $(wildcard foc/motor/*.c)       \
               $(wildcard foc/middleware/*.c)  \
+              $(wildcard foc/control/*.c)     \
+              $(wildcard foc/modulation/*.c)  \
+              $(wildcard foc/observer/*.c)    \
+              $(wildcard foc/optimization/*.c) \
+              $(wildcard foc/experimental/*.c) \
               $(wildcard foc/app/*.c)
 
 # OpenOCD (AT32 custom v0.11 — same as at32f421)

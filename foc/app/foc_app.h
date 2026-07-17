@@ -20,10 +20,16 @@ typedef struct foc_app_s {
     modus_base_t    *ptBase;
     uint8_t         chState;
     int64_t         lLastHeartbeat;
+    int64_t         lOpenLoopTick;
+    uint32_t        wLastPrintTick;
+    uint32_t        wLastButtonTick;
     q_type          qSpeedRef;
     q_type          qDutyU;
     q_type          qDutyV;
     q_type          qDutyW;
+    q_type          qPeakDuty;
+    q_type          qMinDuty;
+    bool            bLastButtonState;
     motor_handle_t *ptMotor;
 } foc_app_t;
 

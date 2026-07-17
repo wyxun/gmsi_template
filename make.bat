@@ -40,10 +40,10 @@ ping 127.0.0.1 -n 4 > nul
 
 :: User uses SuperWaveform, so we skip the default RTT Viewer popup
 :: echo [INFO] Launching RTT Viewer...
-:: start powershell -NoProfile -ExecutionPolicy Bypass -File ".\.agent\workflows\rtt_viewer.ps1"
+:: start powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\rtt_viewer.ps1"
 goto :eof
 
 :gui_flow
 echo [INFO] Launching RTT Viewer...
-start powershell -NoProfile -ExecutionPolicy Bypass -File ".\.agent\workflows\rtt_viewer.ps1"
+start powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\rtt_viewer.ps1"
 goto :eof
