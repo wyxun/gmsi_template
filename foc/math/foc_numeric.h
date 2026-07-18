@@ -27,6 +27,7 @@ typedef enum {
     FOC_RESULT_DIVIDE_BY_ZERO,
     FOC_RESULT_DISABLED,
     FOC_RESULT_SAFETY,
+    FOC_RESULT_BUSY,
 } foc_result_t;
 
 typedef struct {

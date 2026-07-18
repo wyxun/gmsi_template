@@ -67,8 +67,8 @@ void foc_nlfo_Reset(foc_nlfo_t *ptNlfo)
 }
 
 foc_result_t foc_nlfo_Step(foc_nlfo_t *ptNlfo,
-                           const foc_observer_input_t *ptInput,
-                           foc_observer_output_t *ptOutput)
+                           const foc_position_input_t *ptInput,
+                           foc_position_output_t *ptOutput)
 {
     foc_ab_t tCurrentFlux;
     foc_ab_t tRotorFlux;
@@ -140,11 +140,14 @@ foc_result_t foc_nlfo_Step(foc_nlfo_t *ptNlfo,
         ptNlfo->tAngle = tNewAngle;
         ptNlfo->bHasAngle = true;
     }
-    *ptOutput = (foc_observer_output_t){
-        .tAngle = ptNlfo->tAngle,
-        .qSpeed = ptNlfo->qSpeed,
+    *ptOutput = (foc_position_output_t){
+        .tElectricalAngle = ptNlfo->tAngle,
+        .qElectricalSpeed = ptNlfo->qSpeed,
         .qConfidence = foc_sat(qFluxRatio, FOC_ZERO, FOC_ONE),
-        .bValid = bValid && ptNlfo->bHasAngle,
+        .eValidFlags = bValid && ptNlfo->bHasAngle
+            ? (FOC_POSITION_VALID_ELECTRICAL_ANGLE |
+               FOC_POSITION_VALID_ELECTRICAL_SPEED)
+            : FOC_POSITION_VALID_NONE,
     };
     return FOC_RESULT_OK;
 }
@@ -156,15 +159,20 @@ static void nlfo_interface_reset(void *pContext)
 
 static foc_result_t nlfo_interface_step(
     void *pContext,
-    const foc_observer_input_t *ptInput,
-    foc_observer_output_t *ptOutput)
+    const foc_position_input_t *ptInput,
+    foc_position_output_t *ptOutput)
 {
-    return foc_nlfo_Step((foc_nlfo_t *)pContext, ptInput, ptOutput);
+    foc_result_t eResult = foc_nlfo_Step((foc_nlfo_t *)pContext, ptInput,
+                                         ptOutput);
+    if (eResult == FOC_RESULT_OK) {
+        ptOutput->wTimestamp = ptInput->wTimestamp;
+    }
+    return eResult;
 }
 
-foc_observer_if_t foc_nlfo_ObserverInterface(foc_nlfo_t *ptNlfo)
+foc_position_source_if_t foc_nlfo_PositionSourceInterface(foc_nlfo_t *ptNlfo)
 {
-    foc_observer_if_t tInterface = {
+    foc_position_source_if_t tInterface = {
         .pContext = ptNlfo,
         .fnReset = nlfo_interface_reset,
         .fnStep = nlfo_interface_step,

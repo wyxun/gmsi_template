@@ -1,0 +1,292 @@
+#include "motor.h"
+#include "motor_private.h"
+
+static foc_result_t validate_run(const motor_run_config_t *run)
+{
+    bool has_source;
+    if (run == NULL) return FOC_RESULT_NULL;
+    if (run->eControlMode < MOTOR_CONTROL_VOLTAGE_OPEN_LOOP ||
+        run->eControlMode > MOTOR_CONTROL_POSITION)
+        return FOC_RESULT_INVALID_ARGUMENT;
+    if ((run->ptInitialPositionSource != NULL &&
+         !foc_position_source_IsValid(run->ptInitialPositionSource)) ||
+        (run->ptTargetPositionSource != NULL &&
+         !foc_position_source_IsValid(run->ptTargetPositionSource)))
+        return FOC_RESULT_INVALID_ARGUMENT;
+    if (run->ptInitialPositionSource != NULL &&
+        run->ptTargetPositionSource != NULL &&
+        run->ptInitialPositionSource != run->ptTargetPositionSource)
+        return FOC_RESULT_INVALID_ARGUMENT;
+    has_source = run->ptInitialPositionSource != NULL ||
+                 run->ptTargetPositionSource != NULL;
+    if (run->eControlMode >= MOTOR_CONTROL_SPEED && !has_source)
+        return FOC_RESULT_INVALID_ARGUMENT;
+    return FOC_RESULT_OK;
+}
+
+static void save_run(motor_impl_t *impl, const motor_run_config_t *run)
+{
+    impl->tControl.eMode = run->eControlMode;
+    impl->tControl.tVoltageReference = run->tVoltageReference;
+    impl->tControl.tCurrentReference = run->tCurrentReference;
+    impl->tControl.qSpeedReference = run->qSpeedReference;
+    impl->tControl.qPositionReference = run->qPositionReference;
+    impl->bInitialPositionSourceBound =
+        run->ptInitialPositionSource != NULL;
+    impl->bTargetPositionSourceBound = run->ptTargetPositionSource != NULL;
+    impl->bOuterLoopActive = impl->bInitialPositionSourceBound;
+    if (impl->bInitialPositionSourceBound)
+        impl->tPositionSource = *run->ptInitialPositionSource;
+    else if (impl->bTargetPositionSourceBound)
+        impl->tPositionSource = *run->ptTargetPositionSource;
+    impl->qInitialAngle = run->qInitialAngle;
+    impl->qOpenLoopSpeed = run->qOpenLoopSpeed;
+    impl->qAcceleration = run->qAcceleration;
+    impl->qOpenLoopCommandSpeed = FOC_ZERO;
+    impl->tRt.tThetaE = foc_angle_from_scalar(run->qInitialAngle);
+}
+
+foc_result_t motor_Start(motor_handle_t *motor,
+                         const motor_run_config_t *run)
+{
+    motor_impl_t *impl;
+    foc_result_t result;
+    uintptr_t sync_state;
+    if (!motor_private_is_initialized(motor))
+        return motor ? FOC_RESULT_INVALID_ARGUMENT : FOC_RESULT_NULL;
+    result = validate_run(run);
+    if (result != FOC_RESULT_OK) return result;
+    impl = motor_private(motor);
+    if (run->eControlMode >= MOTOR_CONTROL_CURRENT &&
+        (!foc_controller_IsValid(&impl->tControl.tConfig.tIdController) ||
+         !foc_controller_IsValid(&impl->tControl.tConfig.tIqController)))
+        return FOC_RESULT_INVALID_ARGUMENT;
+    if (run->eControlMode >= MOTOR_CONTROL_SPEED &&
+        !foc_controller_IsValid(&impl->tControl.tConfig.tSpeedController))
+        return FOC_RESULT_INVALID_ARGUMENT;
+    if (run->eControlMode >= MOTOR_CONTROL_POSITION &&
+        !foc_controller_IsValid(&impl->tControl.tConfig.tPositionController))
+        return FOC_RESULT_INVALID_ARGUMENT;
+    sync_state = motor_private_enter(impl);
+    if (impl->bCommandPending) {
+        motor_private_exit(impl, sync_state);
+        return FOC_RESULT_BUSY;
+    }
+    if (impl->tRt.eRunState != MOTOR_STATE_IDLE) {
+        motor_private_exit(impl, sync_state);
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    save_run(impl, run);
+    impl->ePendingCommand = MOTOR_COMMAND_START;
+    impl->bCommandPending = true;
+    motor_private_exit(impl, sync_state);
+    return FOC_RESULT_OK;
+}
+
+foc_result_t motor_Stop(motor_handle_t *motor)
+{
+    motor_impl_t *impl;
+    uintptr_t sync_state;
+    if (!motor_private_is_initialized(motor))
+        return motor ? FOC_RESULT_INVALID_ARGUMENT : FOC_RESULT_NULL;
+    impl = motor_private(motor);
+    sync_state = motor_private_enter(impl);
+    if (impl->bCommandPending &&
+        impl->ePendingCommand == MOTOR_COMMAND_START) {
+        impl->ePendingCommand = MOTOR_COMMAND_STOP;
+        motor_private_exit(impl, sync_state);
+        return FOC_RESULT_OK;
+    }
+    if (impl->bCommandPending) {
+        motor_private_exit(impl, sync_state);
+        return FOC_RESULT_BUSY;
+    }
+    if (impl->tRt.eRunState != MOTOR_STATE_STARTING &&
+        impl->tRt.eRunState != MOTOR_STATE_RUNNING)
+    {
+        motor_private_exit(impl, sync_state);
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    impl->ePendingCommand = MOTOR_COMMAND_STOP;
+    impl->bCommandPending = true;
+    motor_private_exit(impl, sync_state);
+    return FOC_RESULT_OK;
+}
+
+static fsm_rt_t stop_now(motor_handle_t *motor)
+{
+    motor_impl_t *impl = motor_private(motor);
+    uintptr_t sync_state;
+    foc_result_t result;
+    sync_state = motor_private_enter(impl);
+    /* PWM enable/disable callbacks must be bounded register writes and must
+       not call back into motor APIs; this is the sole HAL-in-sync exception. */
+    result = foc_hal_Enable(&impl->tHal.tPwm, false);
+    if (result == FOC_RESULT_OK) {
+        impl->bPwmEnabled = false;
+        impl->tRt.eRunState = MOTOR_STATE_IDLE;
+        impl->eStartupPhase = MOTOR_STARTUP_IDLE;
+    }
+    motor_private_exit(impl, sync_state);
+    if (result != FOC_RESULT_OK) {
+        motor_EmergencyStop(motor, MOTOR_FAULT_HARDWARE);
+        return fsm_rt_err;
+    }
+    return fsm_rt_cpl;
+}
+
+static fsm_rt_t invalid_fsm(motor_handle_t *motor)
+{
+    motor_EmergencyStop(motor, MOTOR_FAULT_INVALID_COMMAND);
+    return fsm_rt_err;
+}
+
+static fsm_rt_t run_startup(motor_handle_t *motor, motor_impl_t *impl,
+                            motor_startup_phase_e phase)
+{
+    uint32_t now;
+    uintptr_t sync_state;
+    foc_result_t result;
+    switch (phase) {
+        case MOTOR_STARTUP_CALIBRATE:
+            result = motor_private_CalibrateCurrent(motor);
+            sync_state = motor_private_enter(impl);
+            if (impl->tRt.eRunState != MOTOR_STATE_STARTING ||
+                impl->eStartupPhase != MOTOR_STARTUP_CALIBRATE ||
+                impl->bCommandPending) {
+                motor_state_e current_state = impl->tRt.eRunState;
+                motor_private_exit(impl, sync_state);
+                return current_state == MOTOR_STATE_FAULT ?
+                       fsm_rt_err : fsm_rt_on_going;
+            }
+            if (result != FOC_RESULT_OK || impl->bPwmEnabled) {
+                motor_private_exit(impl, sync_state);
+                motor_EmergencyStop(motor, MOTOR_FAULT_HARDWARE);
+                return fsm_rt_err;
+            }
+            impl->eStartupPhase = MOTOR_STARTUP_WAIT_DELAY;
+            motor_private_exit(impl, sync_state);
+            now = impl->tTime.fnGetMilliseconds ?
+                impl->tTime.fnGetMilliseconds(impl->tTime.pContext) : 0U;
+            sync_state = motor_private_enter(impl);
+            if (impl->tRt.eRunState == MOTOR_STATE_STARTING &&
+                impl->eStartupPhase == MOTOR_STARTUP_WAIT_DELAY)
+                impl->wStartupStartMs = now;
+            motor_private_exit(impl, sync_state);
+            return fsm_rt_on_going;
+        case MOTOR_STARTUP_WAIT_DELAY:
+            now = impl->tTime.fnGetMilliseconds ?
+                  impl->tTime.fnGetMilliseconds(impl->tTime.pContext) : 0U;
+            sync_state = motor_private_enter(impl);
+            if (impl->tRt.eRunState == MOTOR_STATE_STARTING &&
+                impl->eStartupPhase == MOTOR_STARTUP_WAIT_DELAY &&
+                !impl->bCommandPending &&
+                (uint32_t)(now - impl->wStartupStartMs) >=
+                    impl->wStartupDelayMs)
+                impl->eStartupPhase = MOTOR_STARTUP_ENABLE;
+            motor_private_exit(impl, sync_state);
+            return fsm_rt_on_going;
+        case MOTOR_STARTUP_ENABLE:
+            sync_state = motor_private_enter(impl);
+            if (impl->tRt.eRunState != MOTOR_STATE_STARTING ||
+                impl->eStartupPhase != MOTOR_STARTUP_ENABLE ||
+                impl->bCommandPending) {
+                motor_private_exit(impl, sync_state);
+                return fsm_rt_on_going;
+            }
+            result = foc_hal_Enable(&impl->tHal.tPwm, true);
+            if (result == FOC_RESULT_OK) {
+                impl->bPwmEnabled = true;
+                impl->tRt.eRunState = MOTOR_STATE_RUNNING;
+                impl->eStartupPhase = MOTOR_STARTUP_IDLE;
+            }
+            motor_private_exit(impl, sync_state);
+            if (result != FOC_RESULT_OK) {
+                motor_EmergencyStop(motor, MOTOR_FAULT_HARDWARE);
+                return fsm_rt_err;
+            }
+            return fsm_rt_cpl;
+        case MOTOR_STARTUP_IDLE:
+        default:
+            return invalid_fsm(motor);
+    }
+}
+
+fsm_rt_t motor_RunFSM(motor_handle_t *motor)
+{
+    motor_impl_t *impl;
+    uintptr_t sync_state;
+    motor_command_e cmd = MOTOR_COMMAND_NONE;
+    motor_state_e state;
+    motor_startup_phase_e phase;
+    if (!motor_private_is_initialized(motor)) return fsm_rt_err;
+    impl = motor_private(motor);
+    sync_state = motor_private_enter(impl);
+    if (impl->bCommandPending) {
+        cmd = impl->ePendingCommand;
+        if (cmd == MOTOR_COMMAND_START) {
+            impl->tRt.eRunState = MOTOR_STATE_STARTING;
+            impl->eStartupPhase = MOTOR_STARTUP_CALIBRATE;
+        } else if (cmd == MOTOR_COMMAND_STOP)
+            impl->tRt.eRunState = MOTOR_STATE_STOPPING;
+        impl->bCommandPending = false;
+        impl->ePendingCommand = MOTOR_COMMAND_NONE;
+    }
+    state = impl->tRt.eRunState;
+    phase = impl->eStartupPhase;
+    motor_private_exit(impl, sync_state);
+    if (cmd == MOTOR_COMMAND_STOP) return stop_now(motor);
+    if (cmd != MOTOR_COMMAND_START && cmd != MOTOR_COMMAND_NONE &&
+        cmd != MOTOR_COMMAND_STOP) return invalid_fsm(motor);
+    switch (state) {
+        case MOTOR_STATE_IDLE: return fsm_rt_cpl;
+        case MOTOR_STATE_STARTING: return run_startup(motor, impl, phase);
+        case MOTOR_STATE_STOPPING: return stop_now(motor);
+        case MOTOR_STATE_RUNNING: return fsm_rt_cpl;
+        case MOTOR_STATE_FAULT: return fsm_rt_err;
+        default: return invalid_fsm(motor);
+    }
+}
+
+foc_result_t motor_ClearFault(motor_handle_t *motor)
+{
+    motor_impl_t *impl;
+    uintptr_t sync_state;
+    if (!motor_private_is_initialized(motor))
+        return motor ? FOC_RESULT_INVALID_ARGUMENT : FOC_RESULT_NULL;
+    impl = motor_private(motor);
+    sync_state = motor_private_enter(impl);
+    if (impl->tRt.eRunState != MOTOR_STATE_FAULT || impl->bPwmEnabled) {
+        motor_private_exit(impl, sync_state);
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    impl->tRt.wFaults = MOTOR_FAULT_NONE;
+    impl->tRt.eRunState = MOTOR_STATE_IDLE;
+    impl->eStartupPhase = MOTOR_STARTUP_IDLE;
+    impl->bCommandPending = false;
+    impl->ePendingCommand = MOTOR_COMMAND_NONE;
+    motor_private_exit(impl, sync_state);
+    return FOC_RESULT_OK;
+}
+
+#if defined(MOTOR_ENABLE_TEST_HOOKS)
+void motor_test_CorruptFSM(motor_handle_t *motor, motor_state_e state,
+                           motor_startup_phase_e phase)
+{
+    if (motor_private_is_initialized(motor)) {
+        motor_private(motor)->tRt.eRunState = state;
+        motor_private(motor)->eStartupPhase = phase;
+    }
+}
+
+bool motor_test_PositionBindingsValid(const motor_handle_t *motor)
+{
+    const motor_impl_t *impl;
+    if (!motor_private_is_initialized(motor)) return false;
+    impl = motor_private_const(motor);
+    return (!impl->bInitialPositionSourceBound ||
+            foc_position_source_IsValid(&impl->tPositionSource)) &&
+           (!impl->bTargetPositionSourceBound ||
+            foc_position_source_IsValid(&impl->tPositionSource));
+}
+#endif

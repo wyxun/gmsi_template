@@ -5,7 +5,7 @@
 #include "foc_smo.h"
 
 typedef struct {
-    foc_observer_output_t tOutput;
+    foc_position_output_t tOutput;
     unsigned int wSteps;
 } fake_observer_t;
 
@@ -16,8 +16,8 @@ static void fake_observer_reset(void *pContext)
 
 static foc_result_t fake_observer_step(
     void *pContext,
-    const foc_observer_input_t *ptInput,
-    foc_observer_output_t *ptOutput)
+    const foc_position_input_t *ptInput,
+    foc_position_output_t *ptOutput)
 {
     fake_observer_t *ptFake = (fake_observer_t *)pContext;
     (void)ptInput;
@@ -32,7 +32,7 @@ static int test_hall(void)
     unsigned int wIndex;
     foc_hall_params_t tParams;
     foc_hall_t tHall;
-    foc_observer_output_t tOutput;
+    foc_position_output_t tOutput;
 
     foc_hall_DefaultParams(&tParams);
     tParams.qSpeedFilterAlpha = FOC_ONE;
@@ -41,13 +41,15 @@ static int test_hall(void)
         TEST_CHECK(foc_hall_Step(&tHall, 5U, &tOutput) == FOC_RESULT_OK);
     }
     TEST_CHECK(foc_hall_Step(&tHall, 4U, &tOutput) == FOC_RESULT_OK);
-    TEST_CHECK(tOutput.bValid);
-    TEST_NEAR(foc_to_float(tOutput.qSpeed), 1.0f / 36.0f, 0.002f);
-    TEST_CHECK(tOutput.tAngle.qTurns >= FOC_ZERO &&
-               tOutput.tAngle.qTurns < FOC_ONE);
+    TEST_CHECK((tOutput.eValidFlags &
+                FOC_POSITION_VALID_ELECTRICAL_ANGLE) != 0U);
+    TEST_NEAR(foc_to_float(tOutput.qElectricalSpeed),
+              1.0f / 36.0f, 0.002f);
+    TEST_CHECK(tOutput.tElectricalAngle.qTurns >= FOC_ZERO &&
+               tOutput.tElectricalAngle.qTurns < FOC_ONE);
     TEST_CHECK(foc_hall_Step(&tHall, 0U, &tOutput) ==
                FOC_RESULT_INVALID_ARGUMENT);
-    TEST_CHECK(!tOutput.bValid);
+    TEST_CHECK(tOutput.eValidFlags == FOC_POSITION_VALID_NONE);
     return nFailures;
 }
 
@@ -72,17 +74,17 @@ static int test_observer_initialization(void)
     };
     foc_smo_t tSmo;
     foc_nlfo_t tNlfo;
-    foc_observer_input_t tInput = {0};
-    foc_observer_output_t tOutput;
+    foc_position_input_t tInput = {0};
+    foc_position_output_t tOutput;
 
     TEST_CHECK(foc_smo_Init(&tSmo, &tSmoParams) == FOC_RESULT_OK);
     TEST_CHECK(foc_smo_Step(&tSmo, &tInput, &tOutput) == FOC_RESULT_OK);
-    TEST_CHECK(!tOutput.bValid);
-    TEST_CHECK(tOutput.tAngle.qTurns >= FOC_ZERO &&
-               tOutput.tAngle.qTurns < FOC_ONE);
+    TEST_CHECK(tOutput.eValidFlags == FOC_POSITION_VALID_NONE);
+    TEST_CHECK(tOutput.tElectricalAngle.qTurns >= FOC_ZERO &&
+               tOutput.tElectricalAngle.qTurns < FOC_ONE);
     TEST_CHECK(foc_nlfo_Init(&tNlfo, &tNlfoParams) == FOC_RESULT_OK);
     TEST_CHECK(foc_nlfo_Step(&tNlfo, &tInput, &tOutput) == FOC_RESULT_OK);
-    TEST_CHECK(!tOutput.bValid);
+    TEST_CHECK(tOutput.eValidFlags == FOC_POSITION_VALID_NONE);
     tNlfoParams.qFlux = FOC_ZERO;
     TEST_CHECK(foc_nlfo_Init(&tNlfo, &tNlfoParams) ==
                FOC_RESULT_INVALID_ARGUMENT);
@@ -95,26 +97,30 @@ static int test_selector(void)
     unsigned int wIndex;
     fake_observer_t tPrimary = {
         .tOutput = {
-            .tAngle = { FOC_SCALAR(0.10f) },
-            .qSpeed = FOC_SCALAR(0.10f),
+            .tElectricalAngle = { FOC_SCALAR(0.10f) },
+            .qElectricalSpeed = FOC_SCALAR(0.10f),
             .qConfidence = FOC_ONE,
-            .bValid = true,
+            .eValidFlags = FOC_POSITION_VALID_ELECTRICAL_ANGLE |
+                           FOC_POSITION_VALID_ELECTRICAL_SPEED,
         },
     };
     fake_observer_t tTarget = {
         .tOutput = {
-            .tAngle = { FOC_SCALAR(0.12f) },
-            .qSpeed = FOC_SCALAR(0.11f),
+            .tElectricalAngle = { FOC_SCALAR(0.12f) },
+            .qElectricalSpeed = FOC_SCALAR(0.11f),
             .qConfidence = FOC_ONE,
-            .bValid = true,
+            .eValidFlags = FOC_POSITION_VALID_ELECTRICAL_ANGLE |
+                           FOC_POSITION_VALID_ELECTRICAL_SPEED |
+                           FOC_POSITION_VALID_MULTI_TURN,
+            .nMultiTurn = 7,
         },
     };
-    foc_observer_if_t tPrimaryIf = {
+    foc_position_source_if_t tPrimaryIf = {
         .pContext = &tPrimary,
         .fnReset = fake_observer_reset,
         .fnStep = fake_observer_step,
     };
-    foc_observer_if_t tTargetIf = {
+    foc_position_source_if_t tTargetIf = {
         .pContext = &tTarget,
         .fnReset = fake_observer_reset,
         .fnStep = fake_observer_step,
@@ -127,8 +133,8 @@ static int test_selector(void)
         .hwBlendSamples = 4U,
     };
     foc_observer_selector_t tSelector;
-    foc_observer_input_t tInput = {0};
-    foc_observer_output_t tOutput;
+    foc_position_input_t tInput = {0};
+    foc_position_output_t tOutput;
 
     TEST_CHECK(foc_observer_selector_Init(&tSelector, &tParams,
                                            &tPrimaryIf) == FOC_RESULT_OK);
@@ -139,7 +145,11 @@ static int test_selector(void)
                                               &tOutput) == FOC_RESULT_OK);
     }
     TEST_CHECK(tSelector.ptActive == &tTargetIf);
-    TEST_NEAR(foc_to_float(tOutput.tAngle.qTurns), 0.12f, 0.003f);
+    TEST_NEAR(foc_to_float(tOutput.tElectricalAngle.qTurns),
+              0.12f, 0.003f);
+    TEST_CHECK((tOutput.eValidFlags & FOC_POSITION_VALID_MULTI_TURN) !=
+               0U);
+    TEST_CHECK(tOutput.nMultiTurn == 7);
     TEST_CHECK(tPrimary.wSteps > 0U && tTarget.wSteps > 0U);
     return nFailures;
 }
