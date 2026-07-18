@@ -459,37 +459,37 @@ Expected: both backends pass and fake PWM remains disabled in invalid states.
 - Modify: `tests/foc/test_motor_position.c`
 - Modify: `tests/foc/test_motor.c`
 
-- [ ] **Step 1: Write failing qualification tests**
+- [x] **Step 1: Write failing qualification tests**
 
 Use a scripted fake source to verify that transition does not begin until valid,
 fresh, confident, minimum-speed, direction-consistent, bounded-angle-error
 samples persist for the configured consecutive count.
 
-- [ ] **Step 2: Write failing wraparound blend tests**
+- [x] **Step 2: Write failing wraparound blend tests**
 
 Test `0.99 -> 0.01` and `0.01 -> 0.99`. Assert movement follows the shortest
 signed circular path and does not rotate almost a full turn.
 
-- [ ] **Step 3: Add bounded transition configuration**
+- [x] **Step 3: Add bounded transition configuration**
 
 Add qualification count, confidence threshold, minimum speed, maximum angle
 error, blend sample count, and timeout to `motor_config_t` defaults. Keep these
 library configuration values out of every `motor_Start()` call.
 
-- [ ] **Step 4: Implement qualification and blend ownership**
+- [x] **Step 4: Implement qualification and blend ownership**
 
 The high-frequency path updates counters and blended angle. The FSM only starts,
 completes, times out, or faults the transition. Source invalidation during blend
 must emergency-stop in the first release; do not implement automatic fallback.
 
-- [ ] **Step 5: Preserve control continuity**
+- [x] **Step 5: Preserve control continuity**
 
 Keep current references unchanged during angle transfer. If startup targets
 speed/position, complete angle takeover first, then initialize the outer-loop
 output to the current Iq before enabling that outer loop. Add a test that bounds
 the one-sample Iq and duty delta.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run `mingw32-make -C tests/foc clean all`.
 
@@ -502,7 +502,9 @@ Expected: all qualification, timeout, wraparound, and continuity tests PASS.
 - Modify: `foc/motor/motor_private.h`
 - Modify: `foc/motor/motor.c`
 - Modify: `foc/motor/motor_fsm.c`
+- Modify: `foc/motor/motor_control.c`
 - Modify: `tests/foc/test_motor.c`
+- Modify: `tests/foc/test_motor_fsm.c`
 
 - [ ] **Step 1: Write failing snapshot/event tests**
 
@@ -510,20 +512,28 @@ Assert that a snapshot exposes lifecycle state, startup phase, control mode,
 active/candidate source validity, open/active/candidate angles, angle error,
 blend factor, D/Q references/feedback, voltage, phase current, duty, calibration,
 and faults. Assert an event is appended for command rejection, state transition,
-source validity change, transition completion/timeout, and emergency stop.
+source validity change, transition start/completion/timeout, and fault stop.
+Freeze each field's unit and source-role meaning before implementation.
 
 - [ ] **Step 2: Add a fixed-size private event ring**
 
-Use a compile-time capacity and overwrite-oldest policy. Store numeric event
-records only: timestamp, from/to state, reason, and faults. Do not format strings
-or call logging from realtime code.
+First compress the private layout and keep the public handle at 512 bytes.
+Use capacity 4 and an overwrite-oldest policy. Each compact private record has
+an independent monotonic sequence, event type, state/command/source metadata,
+and one event-specific numeric payload. Track overwritten records. Do not mix
+milliseconds and high-frequency sample indices in the sequence field. Do not
+format strings or call logging from realtime code.
 
 - [ ] **Step 3: Complete `motor_GetSnapshot()`**
 
-Copy one coherent snapshot through the configured `motor_sync_if_t`. Do not
-return pointers to position outputs, controllers, calibration, HAL, or private
-storage. Return `FOC_RESULT_INVALID_ARGUMENT` when concurrent target use is
-configured but the synchronization interface is incomplete.
+Copy one coherent snapshot through the configured `motor_sync_if_t`. Active
+means the angle currently used by control, candidate means the target source
+during qualification/blend, and open-loop remains the independently tracked
+startup angle. Validity flags determine whether source-specific fields are
+meaningful. Do not return pointers to position outputs, controllers,
+calibration, HAL, or private storage. Initialization continues to accept either
+a complete synchronization pair or no synchronization callbacks for
+single-threaded host use.
 
 - [ ] **Step 4: Add the event-read API**
 
@@ -534,8 +544,9 @@ bool motor_DebugReadEvent(motor_handle_t *ptMotor,
                           motor_event_t *ptEvent);
 ```
 
-Test FIFO order and overwrite-oldest behavior. `foc_app` may drain events for
-logs; normal control must never depend on consuming the ring.
+Test FIFO order, monotonic sequence, and overwrite-oldest accounting.
+`foc_app` may drain events for logs; normal control must never depend on
+consuming the ring.
 
 - [ ] **Step 5: Run tests**
 

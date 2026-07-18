@@ -107,9 +107,11 @@ int test_motor(void)
     motor_handle_t tMotorB;
     motor_snapshot_t tSnapshotA;
     motor_snapshot_t tSnapshotB;
+    motor_event_t tEvent;
     motor_handle_t tUninitialized = {0};
 
     TEST_CHECK(motor_GetSnapshot(NULL, &tSnapshotA) == FOC_RESULT_NULL);
+    TEST_CHECK(!motor_DebugReadEvent(NULL, &tEvent));
     TEST_CHECK(motor_GetRawCurrent(NULL, NULL, NULL, NULL) ==
                FOC_RESULT_NULL);
     TEST_CHECK(motor_Start(NULL, NULL) ==
@@ -147,6 +149,20 @@ int test_motor(void)
     TEST_CHECK(motor_Init(&tMotorB, &tConfigB) == FOC_RESULT_OK);
     TEST_CHECK(motor_GetSnapshot(&tMotorA, &tSnapshotA) == FOC_RESULT_OK);
     TEST_CHECK(tSnapshotA.eRunState == MOTOR_STATE_IDLE);
+    TEST_CHECK(tSnapshotA.eControlMode ==
+               MOTOR_CONTROL_VOLTAGE_OPEN_LOOP);
+    TEST_CHECK(tSnapshotA.eActiveSourceValidFlags ==
+               FOC_POSITION_VALID_NONE);
+    TEST_CHECK(tSnapshotA.eCandidateSourceValidFlags ==
+               FOC_POSITION_VALID_NONE);
+    TEST_CHECK(tSnapshotA.tOpenLoopAngle.qTurns == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tActiveAngle.qTurns == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tCandidateAngle.qTurns == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.qAngleError == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.qBlendFactor == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.wEventOverwriteCount == 0U);
+    TEST_CHECK(tSnapshotA.tCurrentReference.qD == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tCurrentReference.qQ == FOC_ZERO);
     TEST_CHECK(tSnapshotA.wFaults == MOTOR_FAULT_NONE);
     TEST_CHECK(tSnapshotA.tPhaseCurrent.qIu == FOC_ZERO);
     TEST_CHECK(tSnapshotA.tPhaseCurrent.qIv == FOC_ZERO);
@@ -168,6 +184,13 @@ int test_motor(void)
     TEST_CHECK(!tSnapshotA.bPwmEnabled);
 
     motor_EmergencyStop(&tMotorA, MOTOR_FAULT_HARDWARE);
+    TEST_CHECK(motor_DebugReadEvent(&tMotorA, &tEvent));
+    TEST_CHECK(tEvent.eType == MOTOR_EVENT_FAULT);
+    TEST_CHECK(tEvent.wSequence == 1U);
+    TEST_CHECK(tEvent.eFromState == MOTOR_STATE_IDLE);
+    TEST_CHECK(tEvent.eToState == MOTOR_STATE_FAULT);
+    TEST_CHECK((tEvent.wFaults & MOTOR_FAULT_HARDWARE) != 0U);
+    TEST_CHECK(!motor_DebugReadEvent(&tMotorA, &tEvent));
     TEST_CHECK(tHwA.wStopCalls == 1U && tHwB.wStopCalls == 0U);
     TEST_CHECK(motor_GetSnapshot(&tMotorA, &tSnapshotA) == FOC_RESULT_OK);
     TEST_CHECK(motor_GetSnapshot(&tMotorB, &tSnapshotB) == FOC_RESULT_OK);

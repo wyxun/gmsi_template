@@ -24,6 +24,8 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *);
 foc_result_t motor_LowFrequencyStep(motor_handle_t *);
 foc_result_t motor_GetSnapshot(const motor_handle_t *ptMotor,
                                motor_snapshot_t *ptSnapshot);
+bool motor_DebugReadEvent(motor_handle_t *ptMotor,
+                          motor_event_t *ptEvent);
 foc_result_t motor_Start(motor_handle_t *ptMotor,
                          const motor_run_config_t *ptRunConfig);
 foc_result_t motor_Stop(motor_handle_t *ptMotor);
@@ -37,6 +39,7 @@ void motor_test_CorruptFSM(motor_handle_t *ptMotor,
                            motor_state_e eState,
                            motor_startup_phase_e ePhase);
 bool motor_test_PositionBindingsValid(const motor_handle_t *ptMotor);
+bool motor_TestCommitTransitionTimeout(motor_handle_t *ptMotor);
 #endif
 
 #endif /* __MOTOR_H__ */

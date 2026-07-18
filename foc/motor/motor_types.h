@@ -26,16 +26,38 @@ typedef enum {
 
 typedef enum { MOTOR_STARTUP_IDLE = 0, MOTOR_STARTUP_CALIBRATE,
     MOTOR_STARTUP_WAIT_DELAY, MOTOR_STARTUP_ENABLE,
+    MOTOR_STARTUP_QUALIFY_SOURCE, MOTOR_STARTUP_BLEND_ANGLE,
+    MOTOR_STARTUP_COMPLETE,
 } motor_startup_phase_e;
 typedef enum { MOTOR_COMMAND_NONE = 0, MOTOR_COMMAND_START,
     MOTOR_COMMAND_STOP,
 } motor_command_e;
 
 typedef enum {
+    MOTOR_EVENT_COMMAND_ACCEPTED = 0,
+    MOTOR_EVENT_COMMAND_REJECTED,
+    MOTOR_EVENT_STATE_CHANGED,
+    MOTOR_EVENT_SOURCE_VALIDITY_CHANGED,
+    MOTOR_EVENT_TRANSITION_STARTED,
+    MOTOR_EVENT_TRANSITION_COMPLETED,
+    MOTOR_EVENT_TRANSITION_TIMEOUT,
+    MOTOR_EVENT_FAULT,
+} motor_event_type_e;
+
+typedef enum {
+    MOTOR_POSITION_ROLE_NONE = 0,
+    MOTOR_POSITION_ROLE_ACTIVE,
+    MOTOR_POSITION_ROLE_CANDIDATE,
+} motor_position_role_e;
+
+typedef enum {
     MOTOR_FAULT_NONE            = 0U,
     MOTOR_FAULT_HARDWARE        = 1U << 0,
     MOTOR_FAULT_CURRENT_SAMPLE  = 1U << 1,
     MOTOR_FAULT_INVALID_COMMAND = 1U << 2,
+    MOTOR_FAULT_POSITION_SOURCE = 1U << 3,
+    MOTOR_FAULT_TRANSITION_TIMEOUT =
+        1U << 4,
 } motor_fault_e;
 
 typedef struct {
@@ -96,6 +118,12 @@ typedef struct {
     foc_scalar_t            qLowFrequencyPeriod;
     /* Mechanical-to-electrical angle/speed conversion. */
     foc_position_config_t   tPosition;
+    foc_scalar_t            qTransitionMinimumConfidence;
+    foc_scalar_t            qTransitionMinimumSpeed;
+    foc_scalar_t            qTransitionMaximumAngleError;
+    uint32_t                wTransitionTimeoutMs;
+    uint16_t                hwTransitionQualificationSamples;
+    uint16_t                hwTransitionBlendSamples;
     uint32_t                wStartupDelayMs;
 } motor_config_t;
 
@@ -117,16 +145,45 @@ typedef struct {
 } motor_phase_current_t;
 
 typedef struct {
+    uint32_t wSequence;
+    uint32_t wFaults;
+    uint32_t wPreviousValue;
+    uint32_t wCurrentValue;
+    motor_event_type_e eType;
+    motor_state_e eFromState;
+    motor_state_e eToState;
+    motor_command_e eCommand;
+    motor_position_role_e ePositionRole;
+    foc_result_t eResult;
+} motor_event_t;
+
+typedef struct {
     motor_state_e eRunState;
     uint32_t wFaults;
+    uint32_t wEventSequence;
+    uint32_t wEventOverwriteCount;
     motor_phase_current_t tPhaseCurrent;
+    foc_dq_t tCurrentReference;
     foc_dq_t tCurrent;
+    foc_dq_t tVoltageReference;
     foc_dq_t tVoltage;
     foc_duty_abc_t tDuty;
+    foc_scalar_t qSpeedReference;
+    foc_scalar_t qPositionReference;
+    foc_angle_t tOpenLoopAngle;
+    foc_angle_t tActiveAngle;
+    foc_angle_t tCandidateAngle;
+    foc_scalar_t qActiveSpeed;
+    foc_scalar_t qCandidateSpeed;
+    foc_scalar_t qAngleError;
+    foc_scalar_t qBlendFactor;
     foc_angle_t tElectricalAngle;
     foc_scalar_t qElectricalSpeed;
     foc_scalar_t qVbus;
     foc_adc_calib_t tCurrentCalibration;
+    motor_control_mode_e eControlMode;
+    foc_position_valid_flag_e eActiveSourceValidFlags;
+    foc_position_valid_flag_e eCandidateSourceValidFlags;
     bool bPwmEnabled;
     motor_startup_phase_e eStartupPhase;
     motor_command_e ePendingCommand;

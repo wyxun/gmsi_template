@@ -64,6 +64,12 @@ static int test_advanced_controllers(void)
     TEST_CHECK(foc_sta_Init(&tSta, &tStaParams) == FOC_RESULT_OK);
     tController = foc_ladrc_ControllerInterface(&tLadrc);
     TEST_CHECK(foc_controller_IsValid(&tController));
+    TEST_CHECK(foc_controller_CanTrack(&tController));
+    foc_controller_Track(&tController, FOC_SCALAR(2.0f),
+                         FOC_SCALAR(0.4f), FOC_SCALAR(0.1f));
+    TEST_NEAR(foc_to_float(tLadrc.qTrackingPosition), 0.4f, 0.002f);
+    TEST_NEAR(foc_to_float(tLadrc.qObserverPosition), 0.1f, 0.002f);
+    TEST_NEAR(foc_to_float(tLadrc.qOutput), 1.0f, 0.002f);
     for (wIndex = 0U; wIndex < 100U; wIndex++) {
         qOutput = foc_controller_Step(&tController, FOC_HALF, FOC_ZERO);
     }

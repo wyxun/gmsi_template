@@ -36,6 +36,10 @@ typedef struct {
 foc_result_t foc_ladrc_Init(foc_ladrc_t *ptLadrc,
                             const foc_ladrc_params_t *ptParams);
 void foc_ladrc_Reset(foc_ladrc_t *ptLadrc);
+void foc_ladrc_Track(foc_ladrc_t *ptLadrc,
+                     foc_scalar_t qOutput,
+                     foc_scalar_t qReference,
+                     foc_scalar_t qFeedback);
 foc_scalar_t foc_ladrc_Step(foc_ladrc_t *ptLadrc,
                             foc_scalar_t qReference,
                             foc_scalar_t qFeedback);

@@ -31,6 +31,32 @@ void foc_pid_Reset(foc_pid_t *ptPid)
     ptPid->qPreviousError = FOC_ZERO;
 }
 
+void foc_pid_Track(foc_pid_t *ptPid,
+                   foc_scalar_t qOutput,
+                   foc_scalar_t qReference,
+                   foc_scalar_t qFeedback)
+{
+    foc_scalar_t qError;
+    foc_scalar_t qProportional;
+    foc_scalar_t qIntegralIncrement;
+
+    if (ptPid == NULL) {
+        return;
+    }
+    qError = foc_sat(foc_sub_sat(qReference, qFeedback),
+                     FOC_NEG_ONE, FOC_ONE);
+    qProportional = foc_gain_apply(&ptPid->tParams.tKp, qError);
+    qIntegralIncrement = foc_gain_apply(
+        &ptPid->tParams.tKiTs, qError);
+    ptPid->qIntegrator = foc_sat(
+        foc_sub_sat(
+            foc_sub_sat(qOutput, qProportional),
+            qIntegralIncrement),
+        ptPid->tParams.qIntegratorMinimum,
+        ptPid->tParams.qIntegratorMaximum);
+    ptPid->qPreviousError = qError;
+}
+
 foc_scalar_t foc_pid_Step(foc_pid_t *ptPid,
                           foc_scalar_t qReference,
                           foc_scalar_t qFeedback)

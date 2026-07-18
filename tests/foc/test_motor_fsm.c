@@ -127,6 +127,7 @@ int test_motor_fsm(void)
     motor_handle_t motor;
     motor_handle_t invalid = {0};
     motor_snapshot_t snap;
+    motor_event_t event;
     unsigned wInitialEnableCalls;
 
     TEST_CHECK(motor_Start(NULL, &run) == FOC_RESULT_NULL);
@@ -144,6 +145,12 @@ int test_motor_fsm(void)
     wInitialEnableCalls = hw.wEnableCalls;
     run.eControlMode = (motor_control_mode_e)-1;
     TEST_CHECK(motor_Start(&motor, &run) == FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(motor_DebugReadEvent(&motor, &event));
+    TEST_CHECK(event.eType == MOTOR_EVENT_COMMAND_REJECTED);
+    TEST_CHECK(event.eCommand == MOTOR_COMMAND_START);
+    TEST_CHECK(event.eResult == FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(event.eFromState == MOTOR_STATE_IDLE);
+    TEST_CHECK(event.eToState == MOTOR_STATE_IDLE);
     run = open_run();
     TEST_CHECK(motor_Start(&motor, &run) == FOC_RESULT_OK);
     motor_Reset(&motor);
@@ -152,6 +159,14 @@ int test_motor_fsm(void)
     TEST_CHECK(!hw.bEnabled && hw.wCalibrateCalls == 0U);
     TEST_CHECK(motor_Start(&motor, &run) == FOC_RESULT_BUSY);
     TEST_CHECK(motor_RunFSM(&motor) == fsm_rt_on_going);
+    TEST_CHECK(motor_DebugReadEvent(&motor, &event));
+    TEST_CHECK(event.eType == MOTOR_EVENT_COMMAND_ACCEPTED);
+    TEST_CHECK(event.eCommand == MOTOR_COMMAND_START);
+    TEST_CHECK(event.eResult == FOC_RESULT_OK);
+    TEST_CHECK(motor_DebugReadEvent(&motor, &event));
+    TEST_CHECK(event.eType == MOTOR_EVENT_STATE_CHANGED);
+    TEST_CHECK(event.eFromState == MOTOR_STATE_IDLE);
+    TEST_CHECK(event.eToState == MOTOR_STATE_STARTING);
     TEST_CHECK(hw.wCalibrateCalls == 1U && !hw.bEnabled);
     TEST_CHECK(!hw.bCalibrationWhileEnabled);
     TEST_CHECK(motor_GetSnapshot(&motor, &snap) == FOC_RESULT_OK);
@@ -209,6 +224,18 @@ int test_motor_fsm(void)
     TEST_CHECK(motor_GetSnapshot(&motor, &snap) == FOC_RESULT_OK);
     TEST_CHECK(snap.eRunState == MOTOR_STATE_FAULT && !snap.bPwmEnabled);
     hw.bEmergencyDuringCalibration = false;
+    TEST_CHECK(motor_ClearFault(&motor) == FOC_RESULT_OK);
+    motor_test_CorruptFSM(&motor, MOTOR_STATE_STARTING,
+                          MOTOR_STARTUP_COMPLETE);
+    TEST_CHECK(!motor_TestCommitTransitionTimeout(&motor));
+    TEST_CHECK(motor_GetSnapshot(&motor, &snap) == FOC_RESULT_OK);
+    TEST_CHECK(snap.eRunState == MOTOR_STATE_STARTING);
+    motor_test_CorruptFSM(&motor, MOTOR_STATE_STARTING,
+                          MOTOR_STARTUP_QUALIFY_SOURCE);
+    TEST_CHECK(motor_TestCommitTransitionTimeout(&motor));
+    TEST_CHECK(motor_GetSnapshot(&motor, &snap) == FOC_RESULT_OK);
+    TEST_CHECK(snap.eRunState == MOTOR_STATE_FAULT);
+    TEST_CHECK((snap.wFaults & MOTOR_FAULT_TRANSITION_TIMEOUT) != 0U);
     TEST_CHECK(motor_ClearFault(&motor) == FOC_RESULT_OK);
 
     {

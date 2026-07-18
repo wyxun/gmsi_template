@@ -11,6 +11,14 @@
 static foc_result_t motor_control_begin_step(motor_impl_t *, bool);
 static void motor_control_end_step(motor_impl_t *, bool);
 
+typedef struct {
+    motor_startup_phase_e ePhase;
+    foc_angle_t tStartAngle;
+    foc_scalar_t qStartSpeed;
+    uint16_t hwSampleCount;
+    bool bChanged;
+} motor_transition_update_t;
+
 static foc_result_t motor_control_modulate(motor_control_t *ptControl)
 {
     switch (ptControl->tConfig.eModulation) {
@@ -87,7 +95,8 @@ foc_result_t motor_LowFrequencyStep(motor_handle_t *ptMotor)
     foc_result_t begin = motor_control_begin_step(ptImpl, false);
     if (begin != FOC_RESULT_OK) return begin;
     uintptr_t s = motor_private_enter(ptImpl);
-    if (ptImpl->tRt.eRunState != MOTOR_STATE_RUNNING) {
+    if (ptImpl->tRt.eRunState != MOTOR_STATE_RUNNING &&
+        ptImpl->tRt.eRunState != MOTOR_STATE_STARTING) {
         motor_private_exit(ptImpl, s);
         motor_control_end_step(ptImpl, false);
         return FOC_RESULT_INVALID_ARGUMENT;
@@ -112,17 +121,19 @@ foc_result_t motor_LowFrequencyStep(motor_handle_t *ptMotor)
         }
         foc_scalar_t error = foc_angle_diff(
             foc_angle_from_scalar(position_ref), mechanical_angle);
-        speed_ref = foc_controller_Step(
-            &ptControl->tConfig.tPositionController,
-            error, FOC_ZERO);
+        speed_ref =
+            ptControl->tConfig.tPositionController.fnStep(
+                ptControl->tConfig.tPositionController.pContext,
+                error, FOC_ZERO);
     }
     if (mode >= MOTOR_CONTROL_SPEED) {
         if ((mechanical_valid & FOC_POSITION_VALID_MECHANICAL_SPEED) == 0U) {
             goto fail;
         }
-        foc_scalar_t iq_ref = foc_controller_Step(
-            &ptControl->tConfig.tSpeedController,
-            speed_ref, mechanical_speed);
+        foc_scalar_t iq_ref =
+            ptControl->tConfig.tSpeedController.fnStep(
+                ptControl->tConfig.tSpeedController.pContext,
+                speed_ref, mechanical_speed);
         s = motor_private_enter(ptImpl);
         bool stopping = ptImpl->bCommandPending &&
                         ptImpl->ePendingCommand == MOTOR_COMMAND_STOP;
@@ -170,12 +181,18 @@ static void motor_control_end_step(motor_impl_t *impl, bool hf)
 static foc_result_t motor_control_commit_hf(
     motor_impl_t *impl, const motor_control_t *work,
     foc_angle_t angle, foc_scalar_t speed,
-    const foc_position_output_t *output, bool *hardware_failed)
+    foc_angle_t open_angle,
+    const foc_position_output_t *output,
+    const motor_transition_update_t *transition,
+    foc_scalar_t angle_error, foc_scalar_t blend_factor,
+    bool direct_source, bool candidate_source,
+    bool *hardware_failed)
 {
     uintptr_t state = motor_private_enter(impl);
     bool stopping = impl->bCommandPending &&
                     impl->ePendingCommand == MOTOR_COMMAND_STOP;
-    if (impl->tRt.eRunState != MOTOR_STATE_RUNNING ||
+    if ((impl->tRt.eRunState != MOTOR_STATE_RUNNING &&
+         impl->tRt.eRunState != MOTOR_STATE_STARTING) ||
         impl->tRt.wFaults != MOTOR_FAULT_NONE ||
         !impl->bPwmEnabled || stopping) {
         impl->bHighFrequencyStepInProgress = false;
@@ -189,13 +206,63 @@ static foc_result_t motor_control_commit_hf(
         impl->tRt.tThetaE = angle;
         impl->tRt.qOmegaE = speed;
         impl->qOpenLoopCommandSpeed = speed;
+        impl->tOpenLoopAngle = open_angle;
+        impl->tCandidateAngle = output->tElectricalAngle;
+        impl->qCandidateSpeed = output->qElectricalSpeed;
+        impl->qAngleError = angle_error;
+        impl->qBlendFactor = blend_factor;
+        uint8_t active_valid = direct_source ?
+            (uint8_t)output->eValidFlags :
+            (uint8_t)(FOC_POSITION_VALID_ELECTRICAL_ANGLE |
+                      FOC_POSITION_VALID_ELECTRICAL_SPEED);
+        uint8_t candidate_valid = candidate_source ?
+            (uint8_t)output->eValidFlags : 0U;
+        if (active_valid != impl->chActiveValidFlags) {
+            motor_private_AppendEvent(
+                impl, MOTOR_EVENT_SOURCE_VALIDITY_CHANGED,
+                impl->tRt.eRunState, impl->tRt.eRunState,
+                MOTOR_POSITION_ROLE_ACTIVE,
+                (uint32_t)impl->chActiveValidFlags |
+                ((uint32_t)active_valid << 16));
+            impl->chActiveValidFlags = active_valid;
+        }
+        if (candidate_valid != impl->chCandidateValidFlags) {
+            motor_private_AppendEvent(
+                impl, MOTOR_EVENT_SOURCE_VALIDITY_CHANGED,
+                impl->tRt.eRunState, impl->tRt.eRunState,
+                MOTOR_POSITION_ROLE_CANDIDATE,
+                (uint32_t)impl->chCandidateValidFlags |
+                ((uint32_t)candidate_valid << 16));
+            impl->chCandidateValidFlags = candidate_valid;
+        }
         impl->tMechanicalAngle = output->tMechanicalAngle;
         impl->qMechanicalSpeed = output->qMechanicalSpeed;
         impl->eMechanicalValidFlags =
             (foc_position_valid_flag_e)(output->eValidFlags &
              (FOC_POSITION_VALID_MECHANICAL_ANGLE |
               FOC_POSITION_VALID_MECHANICAL_SPEED));
-        impl->tControl.tCurrentAlphaBeta = work->tCurrentAlphaBeta;
+        if (transition->bChanged) {
+            motor_startup_phase_e previous_phase = impl->eStartupPhase;
+            impl->eStartupPhase = transition->ePhase;
+            impl->tTransitionStartAngle = transition->tStartAngle;
+            impl->qTransitionStartSpeed = transition->qStartSpeed;
+            impl->hwTransitionSampleCount = transition->hwSampleCount;
+            if (previous_phase != transition->ePhase &&
+                transition->ePhase == MOTOR_STARTUP_BLEND_ANGLE) {
+                motor_private_AppendEvent(
+                    impl, MOTOR_EVENT_TRANSITION_STARTED,
+                    impl->tRt.eRunState, impl->tRt.eRunState, 0U,
+                    (uint32_t)previous_phase |
+                    ((uint32_t)transition->ePhase << 16));
+            } else if (previous_phase != transition->ePhase &&
+                       transition->ePhase == MOTOR_STARTUP_COMPLETE) {
+                motor_private_AppendEvent(
+                    impl, MOTOR_EVENT_TRANSITION_COMPLETED,
+                    impl->tRt.eRunState, impl->tRt.eRunState, 0U,
+                    (uint32_t)previous_phase |
+                    ((uint32_t)transition->ePhase << 16));
+            }
+        }
         impl->tControl.tCurrent = work->tCurrent;
         impl->tControl.tVoltage = work->tVoltage;
         impl->tControl.tVoltageAlphaBeta = work->tVoltageAlphaBeta;
@@ -206,15 +273,49 @@ static foc_result_t motor_control_commit_hf(
     return result;
 }
 
+static bool motor_control_candidate_qualified(
+    const foc_position_output_t *output,
+    const foc_position_qualification_t *qualification,
+    foc_angle_t reference_angle,
+    foc_scalar_t reference_speed,
+    uint32_t timestamp)
+{
+    foc_position_qualification_t sample = *qualification;
+
+    sample.tReferenceAngle = reference_angle;
+    sample.qReferenceSpeed = reference_speed;
+    sample.wNow = timestamp;
+    return foc_position_IsQualified(output, &sample);
+}
+
+static foc_scalar_t motor_control_blend_progress(uint16_t hwSample,
+                                                 uint16_t hwTotal)
+{
+    return foc_from_float((float)hwSample / (float)hwTotal);
+}
+
 foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
 {
     motor_impl_t *ptImpl;
     motor_control_t *ptControl;
     foc_result_t eResult;
     foc_dq_t voltage_ref, current_ref;
+    foc_ab_t current_alpha_beta;
     motor_control_t work;
     motor_control_mode_e mode;
     uintptr_t s;
+    motor_transition_update_t transition = {0};
+    uint32_t position_timestamp;
+    foc_scalar_t high_frequency_period;
+    foc_scalar_t acceleration;
+    foc_scalar_t open_loop_speed;
+    foc_angle_t open_angle;
+    foc_scalar_t angle_error = FOC_ZERO;
+    foc_scalar_t blend_factor = FOC_ZERO;
+    foc_position_config_t position_config;
+    foc_position_qualification_t qualification;
+    uint16_t qualification_samples;
+    uint16_t blend_samples;
 
     if (!motor_private_is_initialized(ptMotor)) {
         return ptMotor == NULL ? FOC_RESULT_NULL :
@@ -237,45 +338,80 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     current_ref = ptControl->tCurrentReference;
     bool direct_source = ptImpl->bInitialPositionSourceBound;
     bool candidate_source = ptImpl->bTargetPositionSourceBound;
+    bool transition_required = !direct_source && candidate_source;
     foc_position_source_if_t source = ptImpl->tPositionSource;
     foc_angle_t angle = ptImpl->tRt.tThetaE;
+    open_angle = ptImpl->tOpenLoopAngle;
     foc_scalar_t speed = ptImpl->qOpenLoopCommandSpeed;
+    motor_startup_phase_e startup_phase = ptImpl->eStartupPhase;
+    uint16_t transition_samples = ptImpl->hwTransitionSampleCount;
+    foc_angle_t transition_start_angle =
+        ptImpl->tTransitionStartAngle;
+    foc_scalar_t transition_start_speed =
+        ptImpl->qTransitionStartSpeed;
+    high_frequency_period = ptImpl->qHighFrequencyPeriod;
+    acceleration = ptImpl->qAcceleration;
+    open_loop_speed = ptImpl->qOpenLoopSpeed;
+    position_config = ptImpl->tPositionConfig;
+    qualification = (foc_position_qualification_t){
+        .eRequiredValid = FOC_POSITION_VALID_ELECTRICAL_ANGLE |
+                          FOC_POSITION_VALID_ELECTRICAL_SPEED,
+        .qMinimumConfidence = ptImpl->qTransitionMinimumConfidence,
+        .qMinimumSpeed = ptImpl->qTransitionMinimumSpeed,
+        .qMaximumAngleError = ptImpl->qTransitionMaximumAngleError,
+        .wMaximumAge = 0U,
+    };
+    qualification_samples = ptImpl->hwTransitionQualificationSamples;
+    blend_samples = ptImpl->hwTransitionBlendSamples;
+    position_timestamp = ++ptImpl->wPositionSampleTimestamp;
+    if (position_timestamp == 0U) {
+        position_timestamp = ++ptImpl->wPositionSampleTimestamp;
+    }
     motor_private_exit(ptImpl, s);
     eResult = motor_private_SampleCurrent(ptMotor);
     if (eResult != FOC_RESULT_OK) {
         motor_control_end_step(ptImpl, true);
         return eResult;
     }
+    eResult = foc_clarke(ptImpl->tCurrent.qIu,
+                         ptImpl->tCurrent.qIv,
+                         ptImpl->tCurrent.qIw,
+                         &current_alpha_beta);
+    if (eResult != FOC_RESULT_OK) {
+        goto fail;
+    }
     foc_position_output_t output = {0};
     if (direct_source || candidate_source) {
-        /* Timestamp zero means that this scheduler supplied no clock.
-         * Freshness qualification and handover policy belong to Task6. */
-        foc_position_input_t input = {.qSamplePeriod =
-                                      ptImpl->qHighFrequencyPeriod};
+        foc_position_input_t input = {
+            .tCurrent = current_alpha_beta,
+            .tVoltage = work.tVoltageAlphaBeta,
+            .qSamplePeriod = high_frequency_period,
+            .wTimestamp = position_timestamp,
+        };
         eResult = foc_position_source_Step(&source, &input, &output);
-        if (eResult != FOC_RESULT_OK) goto fail;
+        if (eResult != FOC_RESULT_OK) goto position_fail;
         if (output.wFaults != 0U) {
             eResult = FOC_RESULT_INVALID_ARGUMENT;
-            goto fail;
+            goto position_fail;
         }
         eResult = foc_position_ApplyMechanicalConfig(
-            &ptImpl->tPositionConfig, &output);
-        if (eResult != FOC_RESULT_OK) goto fail;
+            &position_config, &output);
+        if (eResult != FOC_RESULT_OK) goto position_fail;
     }
     if (direct_source) {
         if ((output.eValidFlags & FOC_POSITION_VALID_ELECTRICAL_ANGLE) == 0U) {
             eResult = FOC_RESULT_INVALID_ARGUMENT;
-            goto fail;
+            goto position_fail;
         }
         angle = output.tElectricalAngle;
         if ((output.eValidFlags & FOC_POSITION_VALID_ELECTRICAL_SPEED) != 0U)
             speed = output.qElectricalSpeed;
     } else {
         foc_scalar_t delta = foc_mul_wide(
-            ptImpl->qAcceleration < FOC_ZERO ?
-            foc_sub_sat(FOC_ZERO, ptImpl->qAcceleration) :
-            ptImpl->qAcceleration, ptImpl->qHighFrequencyPeriod);
-        foc_scalar_t target = ptImpl->qOpenLoopSpeed;
+            acceleration < FOC_ZERO ?
+            foc_sub_sat(FOC_ZERO, acceleration) :
+            acceleration, high_frequency_period);
+        foc_scalar_t target = open_loop_speed;
         if (speed < target) {
             speed = foc_add_sat(speed, delta);
             if (speed > target) speed = target;
@@ -283,18 +419,93 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
             speed = foc_sub_sat(speed, delta);
             if (speed < target) speed = target;
         }
-        angle = foc_angle_wrap(foc_angle_from_scalar(foc_add_sat(
-            angle.qTurns, foc_mul_wide(speed,
-                                      ptImpl->qHighFrequencyPeriod))));
+        open_angle = foc_angle_wrap(foc_angle_from_scalar(foc_add_sat(
+            open_angle.qTurns, foc_mul_wide(speed,
+                                           high_frequency_period))));
+        angle = open_angle;
     }
-    eResult = foc_clarke(ptImpl->tCurrent.qIu,
-                         ptImpl->tCurrent.qIv,
-                         ptImpl->tCurrent.qIw,
-                            &work.tCurrentAlphaBeta);
-    if (eResult != FOC_RESULT_OK) {
-        goto fail;
+    if (transition_required &&
+        startup_phase == MOTOR_STARTUP_QUALIFY_SOURCE) {
+        if (motor_control_candidate_qualified(
+                &output, &qualification, angle, speed,
+                position_timestamp)) {
+            transition_samples++;
+            if (transition_samples >= qualification_samples) {
+                transition.ePhase = MOTOR_STARTUP_BLEND_ANGLE;
+                transition.tStartAngle = angle;
+                transition.qStartSpeed = speed;
+                transition.hwSampleCount = 0U;
+            } else {
+                transition.ePhase = startup_phase;
+                transition.tStartAngle = transition_start_angle;
+                transition.qStartSpeed = transition_start_speed;
+                transition.hwSampleCount = transition_samples;
+            }
+        } else {
+            transition.ePhase = startup_phase;
+            transition.tStartAngle = transition_start_angle;
+            transition.qStartSpeed = transition_start_speed;
+            transition.hwSampleCount = 0U;
+        }
+        transition.bChanged = true;
+    } else if (transition_required &&
+               startup_phase == MOTOR_STARTUP_BLEND_ANGLE) {
+        foc_position_output_t from = {
+            .tElectricalAngle = transition_start_angle,
+            .qElectricalSpeed = transition_start_speed,
+            .qConfidence = FOC_ONE,
+            .eValidFlags = FOC_POSITION_VALID_ELECTRICAL_ANGLE |
+                           FOC_POSITION_VALID_ELECTRICAL_SPEED,
+            .wTimestamp = position_timestamp,
+        };
+        foc_position_output_t blended;
+
+        if (!motor_control_candidate_qualified(
+                &output, &qualification, transition_start_angle,
+                transition_start_speed, position_timestamp)) {
+            eResult = FOC_RESULT_INVALID_ARGUMENT;
+            goto position_fail;
+        }
+        transition_samples++;
+        angle_error = foc_angle_diff(output.tElectricalAngle,
+                                     transition_start_angle);
+        blend_factor = motor_control_blend_progress(
+            transition_samples, blend_samples);
+        eResult = foc_position_Blend(
+            &from, &output,
+            blend_factor,
+            &blended);
+        if (eResult != FOC_RESULT_OK) {
+            goto fail;
+        }
+        angle = blended.tElectricalAngle;
+        speed = blended.qElectricalSpeed;
+        transition.ePhase =
+            transition_samples >= blend_samples ?
+            MOTOR_STARTUP_COMPLETE : MOTOR_STARTUP_BLEND_ANGLE;
+        transition.tStartAngle = transition_start_angle;
+        transition.qStartSpeed = transition_start_speed;
+        transition.hwSampleCount = transition_samples;
+        transition.bChanged = true;
+        if (transition.ePhase == MOTOR_STARTUP_COMPLETE &&
+            mode >= MOTOR_CONTROL_SPEED) {
+            foc_scalar_t speed_reference =
+                work.qSpeedReference;
+
+            if (mode >= MOTOR_CONTROL_POSITION) {
+                speed_reference = output.qMechanicalSpeed;
+                work.tConfig.tPositionController.fnTrack(
+                    work.tConfig.tPositionController.pContext,
+                    speed_reference, work.qPositionReference,
+                    output.tMechanicalAngle.qTurns);
+            }
+            work.tConfig.tSpeedController.fnTrack(
+                work.tConfig.tSpeedController.pContext,
+                current_ref.qQ, speed_reference,
+                output.qMechanicalSpeed);
+        }
     }
-    eResult = foc_park(&work.tCurrentAlphaBeta,
+    eResult = foc_park(&current_alpha_beta,
                        angle,
                        &work.tCurrent);
     if (eResult != FOC_RESULT_OK) {
@@ -303,14 +514,12 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     if (mode == MOTOR_CONTROL_VOLTAGE_OPEN_LOOP) {
         work.tVoltage = voltage_ref;
     } else {
-        work.tVoltage.qD = foc_controller_Step(
-            &work.tConfig.tIdController,
-            current_ref.qD,
-            work.tCurrent.qD);
-        work.tVoltage.qQ = foc_controller_Step(
-            &work.tConfig.tIqController,
-            current_ref.qQ,
-            work.tCurrent.qQ);
+        work.tVoltage.qD = work.tConfig.tIdController.fnStep(
+            work.tConfig.tIdController.pContext,
+            current_ref.qD, work.tCurrent.qD);
+        work.tVoltage.qQ = work.tConfig.tIqController.fnStep(
+            work.tConfig.tIqController.pContext,
+            current_ref.qQ, work.tCurrent.qQ);
     }
     eResult = foc_ipark(&work.tVoltage,
                         angle,
@@ -323,8 +532,10 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
         goto fail;
     }
     bool hardware_failed = false;
-    eResult = motor_control_commit_hf(ptImpl, &work, angle, speed, &output,
-                                      &hardware_failed);
+    eResult = motor_control_commit_hf(
+        ptImpl, &work, angle, speed, open_angle, &output, &transition,
+        angle_error, blend_factor, direct_source, candidate_source,
+        &hardware_failed);
     if (hardware_failed) goto hardware_fail;
     if (eResult == FOC_RESULT_BUSY ||
         eResult == FOC_RESULT_INVALID_ARGUMENT) return eResult;
@@ -333,6 +544,10 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
 fail:
     motor_control_end_step(ptImpl, true);
     motor_EmergencyStop(ptMotor, MOTOR_FAULT_INVALID_COMMAND);
+    return eResult;
+position_fail:
+    motor_control_end_step(ptImpl, true);
+    motor_EmergencyStop(ptMotor, MOTOR_FAULT_POSITION_SOURCE);
     return eResult;
 hardware_fail:
     motor_EmergencyStop(ptMotor, MOTOR_FAULT_HARDWARE);

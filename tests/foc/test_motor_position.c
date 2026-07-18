@@ -57,6 +57,17 @@ static int test_position_helpers(void)
     TEST_CHECK(tOutput.wTimestamp == 90U);
     TEST_CHECK(tOutput.wFaults == FOC_POSITION_FAULT_INVALID_DATA);
     TEST_CHECK(tOutput.eValidFlags == FOC_POSITION_VALID_NONE);
+    tFrom.tElectricalAngle = foc_angle_from_turns(0.01f);
+    tTo.tElectricalAngle = foc_angle_from_turns(0.99f);
+    tFrom.wFaults = FOC_POSITION_FAULT_NONE;
+    TEST_NEAR(foc_to_float(foc_position_ShortestError(
+                  tTo.tElectricalAngle, tFrom.tElectricalAngle)),
+              -0.02f, 0.002f);
+    TEST_CHECK(foc_position_Blend(&tFrom, &tTo, FOC_HALF, &tOutput) ==
+               FOC_RESULT_OK);
+    TEST_CHECK(foc_angle_to_turns(tOutput.tElectricalAngle) < 0.002f ||
+               foc_angle_to_turns(tOutput.tElectricalAngle) > 0.998f);
+    tFrom.wFaults = FOC_POSITION_FAULT_INVALID_DATA;
     TEST_CHECK(foc_position_IsFresh(
         &tTo, FOC_POSITION_VALID_ELECTRICAL_ANGLE, 105U, 5U));
     TEST_CHECK(!foc_position_IsFresh(

@@ -29,6 +29,11 @@ static int test_pid(void)
 
     TEST_CHECK(foc_pid_Init(&tPidA, &tParams) == FOC_RESULT_OK);
     TEST_CHECK(foc_pid_Init(&tPidB, &tParams) == FOC_RESULT_OK);
+    foc_pid_Track(&tPidA, FOC_SCALAR(0.20f),
+                  FOC_SCALAR(0.50f), FOC_ZERO);
+    qOutput = foc_pid_Step(&tPidA, FOC_SCALAR(0.50f), FOC_ZERO);
+    TEST_NEAR(foc_to_float(qOutput), 0.20f, fTolerance);
+    foc_pid_Reset(&tPidA);
     qOutput = foc_pid_Step(&tPidA, FOC_SCALAR(0.5f), FOC_ZERO);
     TEST_NEAR(foc_to_float(qOutput), 0.30f, fTolerance);
     TEST_NEAR(foc_to_float(tPidA.qIntegrator), 0.05f, fTolerance);

@@ -46,6 +46,25 @@ void foc_ladrc_Reset(foc_ladrc_t *ptLadrc)
     ptLadrc->qOutput = FOC_ZERO;
 }
 
+void foc_ladrc_Track(foc_ladrc_t *ptLadrc,
+                     foc_scalar_t qOutput,
+                     foc_scalar_t qReference,
+                     foc_scalar_t qFeedback)
+{
+    if (ptLadrc == NULL) {
+        return;
+    }
+    ptLadrc->qTrackingPosition = qReference;
+    ptLadrc->qTrackingVelocity = FOC_ZERO;
+    ptLadrc->qObserverPosition = qFeedback;
+    ptLadrc->qObserverVelocity = FOC_ZERO;
+    ptLadrc->qObserverDisturbance = FOC_ZERO;
+    ptLadrc->qOutput = foc_sat(
+        qOutput,
+        ptLadrc->tParams.qOutputMinimum,
+        ptLadrc->tParams.qOutputMaximum);
+}
+
 foc_scalar_t foc_ladrc_Step(foc_ladrc_t *ptLadrc,
                             foc_scalar_t qReference,
                             foc_scalar_t qFeedback)
@@ -121,12 +140,22 @@ static foc_scalar_t ladrc_interface_step(void *pContext,
     return foc_ladrc_Step((foc_ladrc_t *)pContext, qReference, qFeedback);
 }
 
+static void ladrc_interface_track(void *pContext,
+                                  foc_scalar_t qOutput,
+                                  foc_scalar_t qReference,
+                                  foc_scalar_t qFeedback)
+{
+    foc_ladrc_Track((foc_ladrc_t *)pContext, qOutput,
+                    qReference, qFeedback);
+}
+
 foc_controller_if_t foc_ladrc_ControllerInterface(foc_ladrc_t *ptLadrc)
 {
     foc_controller_if_t tInterface = {
         .pContext = ptLadrc,
         .fnReset = ladrc_interface_reset,
         .fnStep = ladrc_interface_step,
+        .fnTrack = ladrc_interface_track,
     };
     return tInterface;
 }

@@ -126,6 +126,36 @@ bool foc_position_IsFresh(const foc_position_output_t *ptOutput,
            (wNow - ptOutput->wTimestamp) <= wMaximumAge;
 }
 
+bool foc_position_IsQualified(
+    const foc_position_output_t *ptOutput,
+    const foc_position_qualification_t *ptQualification)
+{
+    foc_scalar_t qSpeed;
+    foc_scalar_t qAngleError;
+
+    if (ptOutput == NULL || ptQualification == NULL ||
+        !foc_position_IsFresh(
+            ptOutput, ptQualification->eRequiredValid,
+            ptQualification->wNow, ptQualification->wMaximumAge)) {
+        return false;
+    }
+    qSpeed = ptOutput->qElectricalSpeed;
+    qAngleError = foc_position_ShortestError(
+        ptOutput->tElectricalAngle, ptQualification->tReferenceAngle);
+    if (ptOutput->qConfidence < ptQualification->qMinimumConfidence ||
+        foc_abs(qSpeed) < ptQualification->qMinimumSpeed ||
+        foc_abs(qAngleError) > ptQualification->qMaximumAngleError) {
+        return false;
+    }
+    if ((ptQualification->qReferenceSpeed > FOC_ZERO &&
+         qSpeed <= FOC_ZERO) ||
+        (ptQualification->qReferenceSpeed < FOC_ZERO &&
+         qSpeed >= FOC_ZERO)) {
+        return false;
+    }
+    return true;
+}
+
 foc_scalar_t foc_position_ShortestError(foc_angle_t tTarget,
                                         foc_angle_t tActual)
 {

@@ -60,6 +60,17 @@ typedef struct {
     int8_t chDirection;
 } foc_position_config_t;
 
+typedef struct {
+    foc_position_valid_flag_e eRequiredValid;
+    foc_angle_t tReferenceAngle;
+    foc_scalar_t qReferenceSpeed;
+    foc_scalar_t qMinimumConfidence;
+    foc_scalar_t qMinimumSpeed;
+    foc_scalar_t qMaximumAngleError;
+    uint32_t wNow;
+    uint32_t wMaximumAge;
+} foc_position_qualification_t;
+
 bool foc_position_source_IsValid(const foc_position_source_if_t *ptSource);
 void foc_position_source_Reset(const foc_position_source_if_t *ptSource);
 foc_result_t foc_position_source_Step(
@@ -73,6 +84,9 @@ bool foc_position_IsFresh(const foc_position_output_t *ptOutput,
                           foc_position_valid_flag_e eRequiredValid,
                           uint32_t wNow,
                           uint32_t wMaximumAge);
+bool foc_position_IsQualified(
+    const foc_position_output_t *ptOutput,
+    const foc_position_qualification_t *ptQualification);
 foc_scalar_t foc_position_ShortestError(foc_angle_t tTarget,
                                         foc_angle_t tActual);
 foc_result_t foc_position_Blend(const foc_position_output_t *ptFrom,

@@ -9,6 +9,11 @@
 #include <stddef.h>
 #include <string.h>
 
+#define MOTOR_DEFAULT_TRANSITION_QUALIFICATION_SAMPLES 3U
+#define MOTOR_DEFAULT_TRANSITION_BLEND_SAMPLES 8U
+#define MOTOR_DEFAULT_TRANSITION_TIMEOUT_MS 1000U
+#define MOTOR_DEFAULT_TRANSITION_MAXIMUM_ANGLE_ERROR FOC_SCALAR(0.25f)
+
 #if defined(MOTOR_ENABLE_TEST_HOOKS)
 size_t motor_TestGetImplementationSize(void)
 {
@@ -41,7 +46,12 @@ foc_result_t motor_Init(motor_handle_t *ptMotor,
         ptConfig->qLowFrequencyPeriod <= FOC_ZERO ||
         ptConfig->tPosition.chPolePairs == 0U ||
         (ptConfig->tPosition.chDirection != 1 &&
-         ptConfig->tPosition.chDirection != -1)) {
+         ptConfig->tPosition.chDirection != -1) ||
+        ptConfig->qTransitionMinimumConfidence < FOC_ZERO ||
+        ptConfig->qTransitionMinimumConfidence > FOC_ONE ||
+        ptConfig->qTransitionMinimumSpeed < FOC_ZERO ||
+        ptConfig->qTransitionMaximumAngleError < FOC_ZERO ||
+        ptConfig->qTransitionMaximumAngleError > FOC_HALF) {
         return FOC_RESULT_INVALID_ARGUMENT;
     }
     if (ptConfig->wStartupDelayMs != 0U &&
@@ -59,23 +69,95 @@ foc_result_t motor_Init(motor_handle_t *ptMotor,
 
     memset(ptMotor, 0, sizeof(*ptMotor));
     ptImpl = motor_private(ptMotor);
-    ptImpl->tParams = ptConfig->tParams;
     ptImpl->tHal = ptConfig->tHal;
-    ptImpl->tControl.tConfig = ptConfig->tControl;
+    ptImpl->tControl.tConfig.tIdController.pContext =
+        ptConfig->tControl.tIdController.pContext;
+    ptImpl->tControl.tConfig.tIdController.fnStep =
+        ptConfig->tControl.tIdController.fnStep;
+    ptImpl->tControl.tConfig.tIqController.pContext =
+        ptConfig->tControl.tIqController.pContext;
+    ptImpl->tControl.tConfig.tIqController.fnStep =
+        ptConfig->tControl.tIqController.fnStep;
+    ptImpl->tControl.tConfig.tSpeedController.pContext =
+        ptConfig->tControl.tSpeedController.pContext;
+    ptImpl->tControl.tConfig.tSpeedController.fnStep =
+        ptConfig->tControl.tSpeedController.fnStep;
+    ptImpl->tControl.tConfig.tSpeedController.fnTrack =
+        ptConfig->tControl.tSpeedController.fnTrack;
+    ptImpl->tControl.tConfig.tPositionController.pContext =
+        ptConfig->tControl.tPositionController.pContext;
+    ptImpl->tControl.tConfig.tPositionController.fnStep =
+        ptConfig->tControl.tPositionController.fnStep;
+    ptImpl->tControl.tConfig.tPositionController.fnTrack =
+        ptConfig->tControl.tPositionController.fnTrack;
+    ptImpl->tControl.tConfig.eModulation =
+        ptConfig->tControl.eModulation;
     ptImpl->tCurrent.eTopology = ptConfig->eTopology;
     ptImpl->tTime = ptConfig->tTime;
     ptImpl->tSync = ptConfig->tSync;
     ptImpl->qHighFrequencyPeriod = ptConfig->qHighFrequencyPeriod;
-    ptImpl->qLowFrequencyPeriod = ptConfig->qLowFrequencyPeriod;
+    ptImpl->qTransitionMinimumConfidence =
+        ptConfig->qTransitionMinimumConfidence;
+    ptImpl->qTransitionMinimumSpeed =
+        ptConfig->qTransitionMinimumSpeed;
+    ptImpl->qTransitionMaximumAngleError =
+        ptConfig->qTransitionMaximumAngleError != FOC_ZERO ?
+        ptConfig->qTransitionMaximumAngleError :
+        MOTOR_DEFAULT_TRANSITION_MAXIMUM_ANGLE_ERROR;
     ptImpl->tPositionConfig = ptConfig->tPosition;
     ptImpl->wStartupDelayMs = ptConfig->wStartupDelayMs;
+    ptImpl->wTransitionTimeoutMs =
+        ptConfig->wTransitionTimeoutMs != 0U ?
+        ptConfig->wTransitionTimeoutMs :
+        MOTOR_DEFAULT_TRANSITION_TIMEOUT_MS;
+    ptImpl->hwTransitionQualificationSamples =
+        ptConfig->hwTransitionQualificationSamples != 0U ?
+        ptConfig->hwTransitionQualificationSamples :
+        MOTOR_DEFAULT_TRANSITION_QUALIFICATION_SAMPLES;
+    ptImpl->hwTransitionBlendSamples =
+        ptConfig->hwTransitionBlendSamples != 0U ?
+        ptConfig->hwTransitionBlendSamples :
+        MOTOR_DEFAULT_TRANSITION_BLEND_SAMPLES;
     ptImpl->tCurrent.tCalib.wOffsetU = 2048U;
     ptImpl->tCurrent.tCalib.wOffsetV = 2048U;
     ptImpl->tCurrent.tCalib.wOffsetW = 2048U;
     ptImpl->tRt.eRunState = MOTOR_STATE_IDLE;
     ptImpl->eStartupPhase = MOTOR_STARTUP_IDLE;
+    ptImpl->wNextEventSequence = 1U;
     ptImpl->wMagic = MOTOR_IMPL_MAGIC;
     return FOC_RESULT_OK;
+}
+
+void motor_private_AppendEvent(motor_impl_t *ptImpl,
+                               motor_event_type_e eType,
+                               motor_state_e eFrom,
+                               motor_state_e eTo,
+                               uint8_t chDetail,
+                               uint32_t wPayload)
+{
+    uint8_t chIndex;
+    motor_event_record_t *ptRecord;
+
+    if (ptImpl->chEventCount == MOTOR_EVENT_CAPACITY) {
+        ptImpl->chEventHead =
+            (uint8_t)((ptImpl->chEventHead + 1U) % MOTOR_EVENT_CAPACITY);
+        ptImpl->wEventOverwriteCount++;
+    } else {
+        ptImpl->chEventCount++;
+    }
+    chIndex = (uint8_t)((ptImpl->chEventHead +
+                         ptImpl->chEventCount - 1U) %
+                        MOTOR_EVENT_CAPACITY);
+    ptRecord = &ptImpl->atEvents[chIndex];
+    ptRecord->wSequence = ptImpl->wNextEventSequence++;
+    if (ptImpl->wNextEventSequence == 0U) {
+        ptImpl->wNextEventSequence = 1U;
+    }
+    ptRecord->wPayload = wPayload;
+    ptRecord->chType = (uint8_t)eType;
+    ptRecord->chFrom = (uint8_t)eFrom;
+    ptRecord->chTo = (uint8_t)eTo;
+    ptRecord->chDetail = chDetail;
 }
 
 void motor_Reset(motor_handle_t *ptMotor)
@@ -195,16 +277,21 @@ foc_result_t motor_private_SampleCurrent(motor_handle_t *ptMotor)
 void motor_EmergencyStop(motor_handle_t *ptMotor, motor_fault_e eFault)
 {
     uintptr_t wSyncState;
+    motor_state_e eFromState;
     if (!motor_private_is_initialized(ptMotor)) {
         return;
     }
     motor_impl_t *ptImpl = motor_private(ptMotor);
     wSyncState = motor_private_enter(ptImpl);
+    eFromState = ptImpl->tRt.eRunState;
     ptImpl->tRt.wFaults |= (uint32_t)eFault;
     ptImpl->tRt.eRunState = MOTOR_STATE_FAULT;
     ptImpl->bPwmEnabled = false;
     ptImpl->bCommandPending = false;
     ptImpl->ePendingCommand = MOTOR_COMMAND_NONE;
+    motor_private_AppendEvent(ptImpl, MOTOR_EVENT_FAULT,
+                              eFromState, MOTOR_STATE_FAULT, 0U,
+                              ptImpl->tRt.wFaults);
     motor_private_exit(ptImpl, wSyncState);
     foc_hal_EmergencyStop(&ptImpl->tHal.tPwm);
 }
@@ -225,15 +312,33 @@ foc_result_t motor_GetSnapshot(const motor_handle_t *ptMotor,
     *ptSnapshot = (motor_snapshot_t){
         .eRunState = ptImpl->tRt.eRunState,
         .wFaults = ptImpl->tRt.wFaults,
+        .wEventSequence = ptImpl->wNextEventSequence - 1U,
+        .wEventOverwriteCount = ptImpl->wEventOverwriteCount,
         .tPhaseCurrent = {ptImpl->tCurrent.qIu, ptImpl->tCurrent.qIv,
                           ptImpl->tCurrent.qIw},
+        .tCurrentReference = ptImpl->tControl.tCurrentReference,
         .tCurrent = ptImpl->tControl.tCurrent,
+        .tVoltageReference = ptImpl->tControl.tVoltageReference,
         .tVoltage = ptImpl->tControl.tVoltage,
         .tDuty = ptImpl->tControl.tDuty,
+        .qSpeedReference = ptImpl->tControl.qSpeedReference,
+        .qPositionReference = ptImpl->tControl.qPositionReference,
+        .tOpenLoopAngle = ptImpl->tOpenLoopAngle,
+        .tActiveAngle = ptImpl->tRt.tThetaE,
+        .tCandidateAngle = ptImpl->tCandidateAngle,
+        .qActiveSpeed = ptImpl->tRt.qOmegaE,
+        .qCandidateSpeed = ptImpl->qCandidateSpeed,
+        .qAngleError = ptImpl->qAngleError,
+        .qBlendFactor = ptImpl->qBlendFactor,
         .tElectricalAngle = ptImpl->tRt.tThetaE,
         .qElectricalSpeed = ptImpl->tRt.qOmegaE,
         .qVbus = ptImpl->tRt.qVbus,
         .tCurrentCalibration = ptImpl->tCurrent.tCalib,
+        .eControlMode = ptImpl->tControl.eMode,
+        .eActiveSourceValidFlags =
+            (foc_position_valid_flag_e)ptImpl->chActiveValidFlags,
+        .eCandidateSourceValidFlags =
+            (foc_position_valid_flag_e)ptImpl->chCandidateValidFlags,
         .bPwmEnabled = ptImpl->bPwmEnabled,
         .eStartupPhase = ptImpl->eStartupPhase,
         .ePendingCommand = ptImpl->bCommandPending ?
@@ -241,4 +346,55 @@ foc_result_t motor_GetSnapshot(const motor_handle_t *ptMotor,
     };
     motor_private_exit(ptImpl, wSyncState);
     return FOC_RESULT_OK;
+}
+
+bool motor_DebugReadEvent(motor_handle_t *ptMotor,
+                          motor_event_t *ptEvent)
+{
+    motor_impl_t *ptImpl;
+    motor_event_record_t tRecord;
+    uintptr_t wSyncState;
+
+    if (!motor_private_is_initialized(ptMotor) || ptEvent == NULL) {
+        return false;
+    }
+    ptImpl = motor_private(ptMotor);
+    wSyncState = motor_private_enter(ptImpl);
+    if (ptImpl->chEventCount == 0U) {
+        motor_private_exit(ptImpl, wSyncState);
+        return false;
+    }
+    tRecord = ptImpl->atEvents[ptImpl->chEventHead];
+    ptImpl->chEventHead =
+        (uint8_t)((ptImpl->chEventHead + 1U) % MOTOR_EVENT_CAPACITY);
+    ptImpl->chEventCount--;
+    motor_private_exit(ptImpl, wSyncState);
+
+    *ptEvent = (motor_event_t){
+        .wSequence = tRecord.wSequence,
+        .eType = (motor_event_type_e)tRecord.chType,
+        .eFromState = (motor_state_e)tRecord.chFrom,
+        .eToState = (motor_state_e)tRecord.chTo,
+        .eResult = FOC_RESULT_OK,
+    };
+    if (ptEvent->eType == MOTOR_EVENT_FAULT) {
+        ptEvent->wFaults = tRecord.wPayload;
+    } else if (ptEvent->eType == MOTOR_EVENT_COMMAND_ACCEPTED ||
+               ptEvent->eType == MOTOR_EVENT_COMMAND_REJECTED) {
+        ptEvent->eCommand =
+            (motor_command_e)(tRecord.wPayload & 0xFFU);
+        ptEvent->eResult =
+            (foc_result_t)((tRecord.wPayload >> 8) & 0xFFU);
+    } else if (ptEvent->eType ==
+               MOTOR_EVENT_SOURCE_VALIDITY_CHANGED) {
+        ptEvent->ePositionRole =
+            (motor_position_role_e)tRecord.chDetail;
+        ptEvent->wPreviousValue = tRecord.wPayload & 0xFFFFU;
+        ptEvent->wCurrentValue = tRecord.wPayload >> 16;
+    } else if (ptEvent->eType >= MOTOR_EVENT_TRANSITION_STARTED &&
+               ptEvent->eType <= MOTOR_EVENT_TRANSITION_TIMEOUT) {
+        ptEvent->wPreviousValue = tRecord.wPayload & 0xFFFFU;
+        ptEvent->wCurrentValue = tRecord.wPayload >> 16;
+    }
+    return true;
 }

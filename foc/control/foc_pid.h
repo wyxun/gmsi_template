@@ -27,6 +27,10 @@ typedef struct {
 foc_result_t foc_pid_Init(foc_pid_t *ptPid,
                           const foc_pid_params_t *ptParams);
 void foc_pid_Reset(foc_pid_t *ptPid);
+void foc_pid_Track(foc_pid_t *ptPid,
+                   foc_scalar_t qOutput,
+                   foc_scalar_t qReference,
+                   foc_scalar_t qFeedback);
 foc_scalar_t foc_pid_Step(foc_pid_t *ptPid,
                           foc_scalar_t qReference,
                           foc_scalar_t qFeedback);

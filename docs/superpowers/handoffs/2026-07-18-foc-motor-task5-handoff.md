@@ -1,4 +1,4 @@
-# FOC Motor 重构 Task 5 交接
+# FOC Motor 重构 Task 6 交接
 
 日期：2026-07-18
 
@@ -6,7 +6,7 @@
 
 本交接已合并回本地 `master`。后续工作的唯一恢复位置是：
 
-- 仓库：`D:\2_xundoc\project\modus_template`；
+- 仓库：`E:\Project\modus_template`；
 - 分支：`master`；
 - 功能分支基线：`8fea180 update foc`。
 
@@ -27,9 +27,10 @@
 2. Task 2：不透明 `motor_handle_t` 和 snapshot；
 3. Task 3：统一位置源；
 4. Task 4：命令邮箱和生命周期 FSM；
-5. Task 5：开环、高频电流控制与低频级联控制。
+5. Task 5：开环、高频电流控制与低频级联控制；
+6. Task 6：target-only 开环到闭环位置源接管。
 
-尚未开始：Task 6–10。
+尚未开始：Task 7–10。
 
 ## 3. 当前公共 motor 模型
 
@@ -41,9 +42,10 @@
 GCC x64 测试构建下：
 
 - `sizeof(motor_handle_t) == 512`；
-- `sizeof(motor_impl_t) == 480`；
-- 为 Task 6 强制保留 32 字节；
-- production `_Static_assert` 保证实现不超过 `512 - 32`。
+- `sizeof(motor_impl_t) == 512`；
+- production `_Static_assert` 保证实现不超过 512 字节；
+- Task 7 增加诊断字段和事件环前必须先压缩 private layout，不能扩大
+  public handle。
 
 私有类型使用局部 GCC/Clang `may_alias` 属性解决声明字节存储的有效类型
 问题；没有全局关闭 strict aliasing。
@@ -64,7 +66,8 @@ FAULT 的公共操作。
 启动 FSM 当前实现：
 
 ```text
-CALIBRATE → WAIT_DELAY → ENABLE → COMPLETE
+CALIBRATE → WAIT_DELAY → ENABLE
+→ OPEN_LOOP → QUALIFY_SOURCE → BLEND_ANGLE → COMPLETE
 ```
 
 校准在 PWM 关闭时执行；延时使用注入的毫秒时钟并支持 `uint32_t` 回绕；
@@ -81,7 +84,9 @@ PWM enable/disable 与状态镜像在短同步临界区内原子提交。
   回调 motor；这些操作在短临界区中完成，以消除急停竞态；
 - source/controller callback 在锁外执行；返回后重新验证状态和 pending STOP；
 - HF 和 LF 可以并行，但同一 motor 的 HF 不可重入、LF 不可重入；重复调用
-  返回 `FOC_RESULT_BUSY`。
+  返回 `FOC_RESULT_BUSY`；
+- transition timeout 在同一临界区内复核 STARTING、QUALIFY/BLEND 和无 pending
+  command 后提交 fault/state，锁外执行 HAL emergency stop。
 
 ### 3.4 安全 Reset
 
@@ -143,6 +148,10 @@ descriptor；descriptor 对象本身可为临时值，但其 `pContext` 指向�
 - 浮点与定点全范围安全插值；
 - Hall 非法码和非法跳变 fault。
 
+target candidate source 每个高频周期收到当前 Clarke 电流、上一周期
+Alpha/Beta 电压、高频采样周期和内部单调递增 timestamp。position source fault
+或 blend 期间失效会锁存 `MOTOR_FAULT_POSITION_SOURCE` 并急停。
+
 第一版明确拒绝两个不同的非空 initial/target source。支持：
 
 - null/null：纯开环；
@@ -150,7 +159,7 @@ descriptor；descriptor 对象本身可为临时值，但其 `pContext` 指向�
 - null/target：开环拖动后接管；
 - initial==target：直接闭环。
 
-不要在 Task 6 擅自增加多源注册表或后备链。
+Task 6 未增加多源注册表、后备链、fallback 或 flying start。
 
 ## 5. 当前控制路径
 
@@ -208,11 +217,19 @@ HAL duty 失败：
 
 target-only SPEED/POSITION 启动时：
 
-- Start 仍要求目标模式所需 controller 全部绑定；
+- Start 要求目标模式所需 controller 全部绑定，并要求对应外环支持
+  `fnTrack`；
 - `bOuterLoopActive == false`；
 - HF 使用开环角度并运行 Id/Iq inner loop；
 - LF 返回 OK 但不调用 speed/position controller；
-- Task 6 完成角度接管后才允许激活外环。
+- 最终融合样本提交前，POSITION controller 跟踪当前机械速度，SPEED
+  controller 跟踪当前 Iq reference；
+- 角度接管完成后才设置 `bOuterLoopActive = true`。
+
+公共 `motor_control_config_t` 保留完整 controller interface。private runtime
+只为 Id/Iq 保存 `pContext` 和 `fnStep`，Speed/Position 保存含 `fnTrack` 的完整
+interface，以维持 512 字节 ABI。内建 PID tracking 已验证接管后的第一次
+`Step` 输出连续；LADRC tracking 直接覆盖其状态初始化与输出限幅。
 
 ### 5.4 低频级联
 
@@ -246,6 +263,12 @@ target-only SPEED/POSITION 启动时：
 - callback 内 Stop/Emergency；
 - source/controller/HF 重入；
 - direct source 和 target-only；
+- 连续资格、freshness、confidence、速度、方向和角误差；
+- 双向跨零最短路径 blend；
+- 融合期 Id/Iq 保持和外环延迟激活；
+- controller tracking 和首拍 PID 输出连续；
+- position source current/voltage/timestamp 输入；
+- source fault、transition timeout 和 timeout 原子提交；
 - position wrap；
 - 正负/跨零/减速 open ramp；
 - sample/source/missing-angle/duty failure；
@@ -256,13 +279,13 @@ target-only SPEED/POSITION 启动时：
 PowerShell 中必须显式设置 PATH，并为 encapsulation recipe 指定 cmd shell：
 
 ```powershell
-$env:Path = 'D:\0_software\msys64\mingw64\bin;' +
-            'D:\0_software\msys64\usr\bin;' + $env:Path
+$env:Path = 'D:\software\msys64\mingw64\bin;' +
+            'D:\software\msys64\usr\bin;' + $env:Path
 
-& 'D:\0_software\msys64\mingw64\bin\mingw32-make.exe' `
+& 'D:\software\msys64\mingw64\bin\mingw32-make.exe' `
     -C tests/foc SHELL=cmd.exe CC=gcc all
 
-& 'D:\0_software\msys64\mingw64\bin\mingw32-make.exe' `
+& 'D:\software\msys64\mingw64\bin\mingw32-make.exe' `
     -C tests/foc SHELL=cmd.exe CC=gcc `
     STRICT_ALIAS_CFLAGS='-O2 -fstrict-aliasing -Wstrict-aliasing=2' all
 ```
@@ -299,29 +322,16 @@ $env:Path = 'D:\0_software\msys64\mingw64\bin;' +
 
 README 也仍含旧 API 示例，留给 Task 9。
 
-## 10. 下一步：Task 6
+## 10. 下一步：Task 7
 
-Task 6 只实现 initial NULL + target source 的开环到闭环接管：
-
-1. 为 candidate source 输入提供可靠 timestamp。当前 position input timestamp
-   为 0，表示调度器没有提供时钟；Task 6 必须决定使用 time interface 或内部
-   sample counter，不能把 0 当新鲜样本。
-2. 连续资格判定：valid flags、fault-free、freshness、confidence、最低速度、
-   方向一致、最大角度误差、连续样本数。
-3. 高频最短路径角度融合。
-4. 融合中保持 Id/Iq reference 连续。
-5. 失败或超时默认急停，不实现自动退回开环。
-6. 接管完成后设置 `bOuterLoopActive = true`，再启用 SPEED/POSITION 外环。
-7. 需要在 production 32 字节余量内实现；若不足，先压缩/复用 FSM scratch，
-   不扩大 512 字节 public handle。
-8. 不允许两个不同的非空 source，不实现 source registry/fallback/flying start。
-
-Task 6 开始前先重新运行第 7 节两组测试，确认接手环境一致。
+Task 7 增加稳定诊断 snapshot 和固定容量数字事件环。当前
+`motor_impl_t == 512`，没有剩余空间；开始写测试和新增字段前必须先压缩
+private layout，并用 float/fixed objdump 同时确认实现尺寸低于 public handle。
+不要扩大 512 字节 ABI，也不要复用会破坏实时并发语义的 scratch 字段。
 
 ## 11. 后续 Task 7–10
 
-- Task 7：固定容量数字事件记录、稳定诊断快照；容量必须可裁剪，不能破坏
-  32 字节 Task 6 预算。
+- Task 7：先压缩 private layout，再增加固定容量数字事件记录和稳定诊断快照；
 - Task 8：迁移 `foc_app`、Shell、button、ISR 和 phase diagnostic；恢复目标构建。
 - Task 9：重写 README 四种用法与位置源 adapter 文档。
 - Task 10：host matrix、默认目标、AT32F413、STM32G431 全验证。
