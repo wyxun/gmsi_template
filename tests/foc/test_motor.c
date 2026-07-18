@@ -12,6 +12,9 @@ typedef struct {
     unsigned int wSampleCalls;
     unsigned int wStopCalls;
     bool bEnabled;
+    bool bFailEnable;
+    bool bFailDuty;
+    bool bFailSample;
 } fake_motor_hw_t;
 
 static foc_result_t fake_set_duty(void *pContext,
@@ -21,6 +24,7 @@ static foc_result_t fake_set_duty(void *pContext,
 {
     fake_motor_hw_t *ptHw = (fake_motor_hw_t *)pContext;
 
+    if (ptHw->bFailDuty) return FOC_RESULT_INVALID_ARGUMENT;
     ptHw->qDutyU = qDutyU;
     ptHw->qDutyV = qDutyV;
     ptHw->qDutyW = qDutyW;
@@ -31,8 +35,22 @@ static foc_result_t fake_enable(void *pContext, bool bEnable)
 {
     fake_motor_hw_t *ptHw = (fake_motor_hw_t *)pContext;
 
+    if (ptHw->bFailEnable) {
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
     ptHw->bEnabled = bEnable;
     ptHw->wEnableCalls++;
+    return FOC_RESULT_OK;
+}
+
+static foc_result_t fake_calibrate(void *pContext,
+                                   foc_adc_calib_t *ptCalib)
+{
+    (void)pContext;
+    ptCalib->wOffsetU = 101U;
+    ptCalib->wOffsetV = 202U;
+    ptCalib->wOffsetW = 303U;
+    ptCalib->bIsCalibrated = true;
     return FOC_RESULT_OK;
 }
 
@@ -49,6 +67,8 @@ static foc_result_t fake_reconstruct(void *pContext,
 {
     fake_motor_hw_t *ptHw = (fake_motor_hw_t *)pContext;
 
+    if (ptHw->bFailSample) return FOC_RESULT_INVALID_ARGUMENT;
+
     ptCurrent->qIu = ptHw->qCurrent;
     ptCurrent->qIv = foc_sub_sat(FOC_ZERO, ptHw->qCurrent);
     ptCurrent->qIw = FOC_ZERO;
@@ -61,12 +81,17 @@ static motor_config_t fake_config(fake_motor_hw_t *ptHw)
     motor_config_t tConfig = {0};
 
     tConfig.tParams.chPolePairs = 4U;
+    tConfig.qHighFrequencyPeriod = FOC_SCALAR(0.001f);
+    tConfig.qLowFrequencyPeriod = FOC_SCALAR(0.01f);
+    tConfig.tPosition.chPolePairs = 4U;
+    tConfig.tPosition.chDirection = 1;
     tConfig.eTopology = SENSING_TOPOLOGY_3P;
     tConfig.tHal.tPwm.pContext = ptHw;
     tConfig.tHal.tPwm.fnSetDuty = fake_set_duty;
     tConfig.tHal.tPwm.fnEnable = fake_enable;
     tConfig.tHal.tPwm.fnEmergencyStop = fake_stop;
     tConfig.tHal.tAdc.pContext = ptHw;
+    tConfig.tHal.tAdc.fnOffsetCalib = fake_calibrate;
     tConfig.tHal.tAdc.fnReconstruct = fake_reconstruct;
     return tConfig;
 }
@@ -80,39 +105,83 @@ int test_motor(void)
     motor_config_t tConfigB = fake_config(&tHwB);
     motor_handle_t tMotorA;
     motor_handle_t tMotorB;
+    motor_snapshot_t tSnapshotA;
+    motor_snapshot_t tSnapshotB;
+    motor_handle_t tUninitialized = {0};
+
+    TEST_CHECK(motor_GetSnapshot(NULL, &tSnapshotA) == FOC_RESULT_NULL);
+    TEST_CHECK(motor_GetRawCurrent(NULL, NULL, NULL, NULL) ==
+               FOC_RESULT_NULL);
+    TEST_CHECK(motor_Start(NULL, NULL) ==
+               FOC_RESULT_NULL);
+    TEST_CHECK(motor_LowFrequencyStep(NULL) == FOC_RESULT_NULL);
+    TEST_CHECK(motor_HighFrequencyStep(NULL) == FOC_RESULT_NULL);
+    motor_Reset(NULL);
+    motor_EmergencyStop(NULL, MOTOR_FAULT_HARDWARE);
+    TEST_CHECK(motor_Stop(NULL) == FOC_RESULT_NULL);
+    motor_SetVoltageReference(NULL, FOC_ONE, FOC_ONE);
+    motor_SetCurrentReference(NULL, FOC_ONE, FOC_ONE);
+    motor_SetSpeedReference(NULL, FOC_ONE);
+    motor_SetPositionReference(NULL, FOC_ONE);
+    TEST_CHECK(motor_GetSnapshot(&tUninitialized, &tSnapshotA) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(motor_GetRawCurrent(&tUninitialized, NULL, NULL, NULL) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(motor_Start(&tUninitialized, NULL) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(motor_LowFrequencyStep(&tUninitialized) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(motor_HighFrequencyStep(&tUninitialized) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    motor_Reset(&tUninitialized);
+    motor_EmergencyStop(&tUninitialized, MOTOR_FAULT_HARDWARE);
+    TEST_CHECK(motor_Stop(&tUninitialized) == FOC_RESULT_INVALID_ARGUMENT);
+    motor_SetVoltageReference(&tUninitialized, FOC_ONE, FOC_ONE);
+    motor_SetCurrentReference(&tUninitialized, FOC_ONE, FOC_ONE);
+    motor_SetSpeedReference(&tUninitialized, FOC_ONE);
+    motor_SetPositionReference(&tUninitialized, FOC_ONE);
+    TEST_CHECK(motor_GetSnapshot(&tUninitialized, &tSnapshotA) ==
+               FOC_RESULT_INVALID_ARGUMENT);
 
     TEST_CHECK(motor_Init(&tMotorA, &tConfigA) == FOC_RESULT_OK);
     TEST_CHECK(motor_Init(&tMotorB, &tConfigB) == FOC_RESULT_OK);
-    TEST_CHECK(tMotorA.tHal.tPwm.pContext == &tHwA);
-    TEST_CHECK(tMotorB.tHal.tPwm.pContext == &tHwB);
-
-    TEST_CHECK(motor_SetDuty(&tMotorA, FOC_SCALAR(0.1f),
-                             FOC_SCALAR(0.2f), FOC_SCALAR(0.3f)) ==
-               FOC_RESULT_OK);
-    TEST_CHECK(motor_SetDuty(&tMotorB, FOC_SCALAR(0.7f),
-                             FOC_SCALAR(0.8f), FOC_SCALAR(0.9f)) ==
-               FOC_RESULT_OK);
-    TEST_CHECK(tHwA.qDutyU == FOC_SCALAR(0.1f));
-    TEST_CHECK(tHwB.qDutyU == FOC_SCALAR(0.7f));
-
-    TEST_CHECK(motor_Enable(&tMotorA, true) == FOC_RESULT_OK);
-    TEST_CHECK(tHwA.bEnabled && !tHwB.bEnabled);
-    TEST_CHECK(motor_SampleCurrent(&tMotorB) == FOC_RESULT_OK);
-    TEST_CHECK(motor_SampleCurrent(&tMotorA) == FOC_RESULT_OK);
-    TEST_CHECK(tMotorA.tCurrent.qIu == FOC_SCALAR(0.25f));
-    TEST_CHECK(tMotorB.tCurrent.qIu == FOC_SCALAR(-0.50f));
-    TEST_CHECK(tHwA.wSampleCalls == 1U && tHwB.wSampleCalls == 1U);
+    TEST_CHECK(motor_GetSnapshot(&tMotorA, &tSnapshotA) == FOC_RESULT_OK);
+    TEST_CHECK(tSnapshotA.eRunState == MOTOR_STATE_IDLE);
+    TEST_CHECK(tSnapshotA.wFaults == MOTOR_FAULT_NONE);
+    TEST_CHECK(tSnapshotA.tPhaseCurrent.qIu == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tPhaseCurrent.qIv == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tPhaseCurrent.qIw == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tCurrent.qD == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tCurrent.qQ == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tVoltage.qD == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tVoltage.qQ == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tDuty.qU == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tDuty.qV == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tDuty.qW == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tElectricalAngle.qTurns == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.qElectricalSpeed == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.qVbus == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tCurrentCalibration.wOffsetU == 2048U);
+    TEST_CHECK(tSnapshotA.tCurrentCalibration.wOffsetV == 2048U);
+    TEST_CHECK(tSnapshotA.tCurrentCalibration.wOffsetW == 2048U);
+    TEST_CHECK(!tSnapshotA.tCurrentCalibration.bIsCalibrated);
+    TEST_CHECK(!tSnapshotA.bPwmEnabled);
 
     motor_EmergencyStop(&tMotorA, MOTOR_FAULT_HARDWARE);
     TEST_CHECK(tHwA.wStopCalls == 1U && tHwB.wStopCalls == 0U);
-    TEST_CHECK(tMotorA.tRt.eRunState == MOTOR_STATE_FAULT);
-    TEST_CHECK((tMotorA.tRt.wFaults & MOTOR_FAULT_HARDWARE) != 0U);
-    TEST_CHECK(tMotorB.tRt.eRunState == MOTOR_STATE_IDLE);
-    TEST_CHECK(tMotorB.tRt.wFaults == MOTOR_FAULT_NONE);
+    TEST_CHECK(motor_GetSnapshot(&tMotorA, &tSnapshotA) == FOC_RESULT_OK);
+    TEST_CHECK(motor_GetSnapshot(&tMotorB, &tSnapshotB) == FOC_RESULT_OK);
+    TEST_CHECK(tSnapshotA.eRunState == MOTOR_STATE_FAULT);
+    TEST_CHECK((tSnapshotA.wFaults & MOTOR_FAULT_HARDWARE) != 0U);
+    TEST_CHECK(!tSnapshotA.bPwmEnabled);
+    TEST_CHECK(tSnapshotB.eRunState == MOTOR_STATE_IDLE);
+    TEST_CHECK(tSnapshotB.wFaults == MOTOR_FAULT_NONE);
+    TEST_CHECK(tSnapshotB.qVbus == FOC_ZERO);
 
     motor_Reset(&tMotorB);
-    TEST_CHECK(tMotorA.tRt.eRunState == MOTOR_STATE_FAULT);
-    TEST_CHECK(tHwA.wEnableCalls == 1U && tHwB.wEnableCalls == 0U);
+    TEST_CHECK(motor_GetSnapshot(&tMotorA, &tSnapshotA) == FOC_RESULT_OK);
+    TEST_CHECK(tSnapshotA.eRunState == MOTOR_STATE_FAULT);
+    TEST_CHECK(tHwB.wEnableCalls == 0U);
 
     {
         foc_pid_params_t tPidParams;
@@ -144,31 +213,59 @@ int test_motor(void)
         tHwB.qCurrent = FOC_ZERO;
         TEST_CHECK(motor_Init(&tMotorA, &tConfigA) == FOC_RESULT_OK);
         TEST_CHECK(motor_Init(&tMotorB, &tConfigB) == FOC_RESULT_OK);
-        TEST_CHECK(motor_ControlStart(&tMotorA, MOTOR_CONTROL_CURRENT) ==
-                   FOC_RESULT_OK);
-        TEST_CHECK(motor_ControlStart(&tMotorB, MOTOR_CONTROL_CURRENT) ==
-                   FOC_RESULT_OK);
-        motor_ControlSetCurrentReference(&tMotorA, FOC_SCALAR(0.2f),
+        motor_run_config_t tRun = {
+            .eControlMode = MOTOR_CONTROL_CURRENT,
+            .qInitialAngle = FOC_SCALAR(0.1f),
+            .qOpenLoopSpeed = FOC_SCALAR(0.2f),
+            .qAcceleration = FOC_SCALAR(100.0f),
+        };
+        TEST_CHECK(motor_Start(&tMotorA, &tRun) == FOC_RESULT_OK);
+        TEST_CHECK(motor_Start(&tMotorB, &tRun) == FOC_RESULT_OK);
+        TEST_CHECK(motor_RunFSM(&tMotorA) == fsm_rt_on_going);
+        TEST_CHECK(motor_RunFSM(&tMotorB) == fsm_rt_on_going);
+        TEST_CHECK(motor_RunFSM(&tMotorA) == fsm_rt_on_going);
+        TEST_CHECK(motor_RunFSM(&tMotorB) == fsm_rt_on_going);
+        TEST_CHECK(motor_RunFSM(&tMotorA) == fsm_rt_cpl);
+        TEST_CHECK(motor_RunFSM(&tMotorB) == fsm_rt_cpl);
+        motor_SetCurrentReference(&tMotorA, FOC_SCALAR(0.2f),
                                          FOC_SCALAR(0.3f));
-        motor_ControlSetCurrentReference(&tMotorB, FOC_SCALAR(-0.1f),
+        motor_SetCurrentReference(&tMotorB, FOC_SCALAR(-0.1f),
                                          FOC_SCALAR(-0.2f));
-        TEST_CHECK(motor_ControlHighFrequencyStep(&tMotorB) ==
+        TEST_CHECK(motor_HighFrequencyStep(&tMotorB) ==
                    FOC_RESULT_OK);
-        TEST_CHECK(motor_ControlHighFrequencyStep(&tMotorA) ==
+        TEST_CHECK(motor_HighFrequencyStep(&tMotorA) ==
                    FOC_RESULT_OK);
-        TEST_NEAR(foc_to_float(tMotorA.tControl.tVoltage.qD),
+        TEST_CHECK(motor_GetSnapshot(&tMotorA, &tSnapshotA) == FOC_RESULT_OK);
+        TEST_CHECK(motor_GetSnapshot(&tMotorB, &tSnapshotB) == FOC_RESULT_OK);
+        TEST_NEAR(foc_to_float(tSnapshotA.tVoltage.qD),
                   0.2f, 0.003f);
-        TEST_NEAR(foc_to_float(tMotorA.tControl.tVoltage.qQ),
+        TEST_NEAR(foc_to_float(tSnapshotA.tVoltage.qQ),
                   0.3f, 0.003f);
-        TEST_NEAR(foc_to_float(tMotorB.tControl.tVoltage.qD),
+        TEST_NEAR(foc_to_float(tSnapshotB.tVoltage.qD),
                   -0.1f, 0.003f);
-        TEST_NEAR(foc_to_float(tMotorB.tControl.tVoltage.qQ),
+        TEST_NEAR(foc_to_float(tSnapshotB.tVoltage.qQ),
                   -0.2f, 0.003f);
+        TEST_CHECK(tSnapshotA.tCurrent.qD == FOC_ZERO);
+        TEST_CHECK(tSnapshotA.tCurrent.qQ == FOC_ZERO);
+        TEST_CHECK(tSnapshotA.tDuty.qU == tHwA.qDutyU);
+        TEST_CHECK(tSnapshotA.tDuty.qV == tHwA.qDutyV);
+        TEST_CHECK(tSnapshotA.tDuty.qW == tHwA.qDutyW);
+        TEST_CHECK(tSnapshotA.bPwmEnabled);
+        TEST_CHECK(tSnapshotA.tElectricalAngle.qTurns > FOC_SCALAR(0.1f));
         TEST_CHECK(tHwA.qDutyU != tHwB.qDutyU ||
                    tHwA.qDutyV != tHwB.qDutyV ||
                    tHwA.qDutyW != tHwB.qDutyW);
-        motor_ControlStop(&tMotorA);
-        TEST_CHECK(!tHwA.bEnabled && tHwB.bEnabled);
+        tHwB.bFailSample = true;
+        TEST_CHECK(motor_HighFrequencyStep(&tMotorB) != FOC_RESULT_OK);
+        TEST_CHECK(motor_GetSnapshot(&tMotorB, &tSnapshotB) == FOC_RESULT_OK);
+        TEST_CHECK(tSnapshotB.eRunState == MOTOR_STATE_FAULT);
+        TEST_CHECK(!tSnapshotB.bPwmEnabled && tHwB.wStopCalls == 1U);
+        tHwA.bFailDuty = true;
+        TEST_CHECK(motor_HighFrequencyStep(&tMotorA) != FOC_RESULT_OK);
+        TEST_CHECK(motor_GetSnapshot(&tMotorA, &tSnapshotA) == FOC_RESULT_OK);
+        TEST_CHECK(tSnapshotA.eRunState == MOTOR_STATE_FAULT);
+        TEST_CHECK(tSnapshotA.wFaults == MOTOR_FAULT_HARDWARE);
+        TEST_CHECK(!tSnapshotA.bPwmEnabled && tHwA.wStopCalls == 2U);
     }
 
     return nFailures;

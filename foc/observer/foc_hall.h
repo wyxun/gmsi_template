@@ -6,7 +6,7 @@
 #ifndef FOC_HALL_H
 #define FOC_HALL_H
 
-#include "foc_observer.h"
+#include "motor_position.h"
 
 typedef struct {
     uint8_t achSectorByCode[8];
@@ -26,13 +26,26 @@ typedef struct {
     bool bValid;
 } foc_hall_t;
 
+typedef uint8_t (*foc_hall_read_code_fn_t)(void *pHardwareContext);
+
+typedef struct {
+    foc_hall_t *ptHall;
+    void *pHardwareContext;
+    foc_hall_read_code_fn_t fnReadCode;
+} foc_hall_source_adapter_t;
+
 void foc_hall_DefaultParams(foc_hall_params_t *ptParams);
 foc_result_t foc_hall_Init(foc_hall_t *ptHall,
                            const foc_hall_params_t *ptParams);
 void foc_hall_Reset(foc_hall_t *ptHall);
 foc_result_t foc_hall_Step(foc_hall_t *ptHall,
                            uint8_t chHallCode,
-                           foc_observer_output_t *ptOutput);
-foc_observer_if_t foc_hall_ObserverInterface(foc_hall_t *ptHall);
+                           foc_position_output_t *ptOutput);
+foc_result_t foc_hall_source_Init(foc_hall_source_adapter_t *ptAdapter,
+                                  foc_hall_t *ptHall,
+                                  void *pHardwareContext,
+                                  foc_hall_read_code_fn_t fnReadCode);
+foc_position_source_if_t foc_hall_PositionSourceInterface(
+    foc_hall_source_adapter_t *ptAdapter);
 
 #endif /* FOC_HALL_H */

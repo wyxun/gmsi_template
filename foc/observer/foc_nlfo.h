@@ -6,7 +6,7 @@
 #ifndef FOC_NLFO_H
 #define FOC_NLFO_H
 
-#include "foc_observer.h"
+#include "motor_position.h"
 
 typedef struct {
     foc_scalar_t qIntegratorGain;
@@ -31,8 +31,8 @@ foc_result_t foc_nlfo_Init(foc_nlfo_t *ptNlfo,
                            const foc_nlfo_params_t *ptParams);
 void foc_nlfo_Reset(foc_nlfo_t *ptNlfo);
 foc_result_t foc_nlfo_Step(foc_nlfo_t *ptNlfo,
-                           const foc_observer_input_t *ptInput,
-                           foc_observer_output_t *ptOutput);
-foc_observer_if_t foc_nlfo_ObserverInterface(foc_nlfo_t *ptNlfo);
+                           const foc_position_input_t *ptInput,
+                           foc_position_output_t *ptOutput);
+foc_position_source_if_t foc_nlfo_PositionSourceInterface(foc_nlfo_t *ptNlfo);
 
 #endif /* FOC_NLFO_H */

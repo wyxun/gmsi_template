@@ -84,8 +84,8 @@ void foc_smo_Reset(foc_smo_t *ptSmo)
 }
 
 foc_result_t foc_smo_Step(foc_smo_t *ptSmo,
-                          const foc_observer_input_t *ptInput,
-                          foc_observer_output_t *ptOutput)
+                          const foc_position_input_t *ptInput,
+                          foc_position_output_t *ptOutput)
 {
     foc_scalar_t qMagnitude;
     foc_angle_t tNewAngle;
@@ -114,11 +114,14 @@ foc_result_t foc_smo_Step(foc_smo_t *ptSmo,
         ptSmo->tAngle = tNewAngle;
         ptSmo->bHasAngle = true;
     }
-    *ptOutput = (foc_observer_output_t){
-        .tAngle = ptSmo->tAngle,
-        .qSpeed = ptSmo->qSpeed,
+    *ptOutput = (foc_position_output_t){
+        .tElectricalAngle = ptSmo->tAngle,
+        .qElectricalSpeed = ptSmo->qSpeed,
         .qConfidence = foc_sat(qMagnitude, FOC_ZERO, FOC_ONE),
-        .bValid = bValid && ptSmo->bHasAngle,
+        .eValidFlags = bValid && ptSmo->bHasAngle
+            ? (FOC_POSITION_VALID_ELECTRICAL_ANGLE |
+               FOC_POSITION_VALID_ELECTRICAL_SPEED)
+            : FOC_POSITION_VALID_NONE,
     };
     return FOC_RESULT_OK;
 }
@@ -130,15 +133,20 @@ static void smo_interface_reset(void *pContext)
 
 static foc_result_t smo_interface_step(
     void *pContext,
-    const foc_observer_input_t *ptInput,
-    foc_observer_output_t *ptOutput)
+    const foc_position_input_t *ptInput,
+    foc_position_output_t *ptOutput)
 {
-    return foc_smo_Step((foc_smo_t *)pContext, ptInput, ptOutput);
+    foc_result_t eResult = foc_smo_Step((foc_smo_t *)pContext, ptInput,
+                                        ptOutput);
+    if (eResult == FOC_RESULT_OK) {
+        ptOutput->wTimestamp = ptInput->wTimestamp;
+    }
+    return eResult;
 }
 
-foc_observer_if_t foc_smo_ObserverInterface(foc_smo_t *ptSmo)
+foc_position_source_if_t foc_smo_PositionSourceInterface(foc_smo_t *ptSmo)
 {
-    foc_observer_if_t tInterface = {
+    foc_position_source_if_t tInterface = {
         .pContext = ptSmo,
         .fnReset = smo_interface_reset,
         .fnStep = smo_interface_step,

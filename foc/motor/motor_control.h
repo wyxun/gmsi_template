@@ -8,20 +8,20 @@
 
 #include "motor.h"
 
-foc_result_t motor_ControlStart(motor_handle_t *ptMotor,
-                                motor_control_mode_t eMode);
-void motor_ControlStop(motor_handle_t *ptMotor);
-void motor_ControlSetVoltageReference(motor_handle_t *ptMotor,
+/* HF and LF may run concurrently. Each step is non-reentrant per motor;
+ * attempting to enter the same step again returns FOC_RESULT_BUSY. */
+
+void motor_SetVoltageReference(motor_handle_t *ptMotor,
                                       foc_scalar_t qD,
                                       foc_scalar_t qQ);
-void motor_ControlSetCurrentReference(motor_handle_t *ptMotor,
+void motor_SetCurrentReference(motor_handle_t *ptMotor,
                                       foc_scalar_t qD,
                                       foc_scalar_t qQ);
-void motor_ControlSetSpeedReference(motor_handle_t *ptMotor,
+void motor_SetSpeedReference(motor_handle_t *ptMotor,
                                     foc_scalar_t qSpeed);
-void motor_ControlSetPositionReference(motor_handle_t *ptMotor,
+void motor_SetPositionReference(motor_handle_t *ptMotor,
                                        foc_scalar_t qPosition);
-foc_result_t motor_ControlLowFrequencyStep(motor_handle_t *ptMotor);
-foc_result_t motor_ControlHighFrequencyStep(motor_handle_t *ptMotor);
+foc_result_t motor_LowFrequencyStep(motor_handle_t *ptMotor);
+foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor);
 
 #endif /* MOTOR_CONTROL_H */
