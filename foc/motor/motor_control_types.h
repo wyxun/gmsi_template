@@ -14,25 +14,25 @@ typedef enum {
     MOTOR_CONTROL_CURRENT,
     MOTOR_CONTROL_SPEED,
     MOTOR_CONTROL_POSITION,
-} motor_control_mode_t;
+} motor_control_mode_e;
 
 typedef enum {
     MOTOR_MODULATION_SVPWM = 0,
     MOTOR_MODULATION_SPWM,
     MOTOR_MODULATION_THIRD_HARMONIC,
-} motor_modulation_t;
+} motor_modulation_e;
 
 typedef struct {
     foc_controller_if_t tIdController;
     foc_controller_if_t tIqController;
     foc_controller_if_t tSpeedController;
     foc_controller_if_t tPositionController;
-    motor_modulation_t eModulation;
+    motor_modulation_e eModulation;
 } motor_control_config_t;
 
 typedef struct {
     motor_control_config_t tConfig;
-    motor_control_mode_t eMode;
+    motor_control_mode_e eMode;
     foc_dq_t tCurrentReference;
     foc_dq_t tCurrent;
     foc_dq_t tVoltageReference;

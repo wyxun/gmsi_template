@@ -84,7 +84,7 @@ void foc_hall_Reset(foc_hall_t *ptHall)
 
 foc_result_t foc_hall_Step(foc_hall_t *ptHall,
                            uint8_t chHallCode,
-                           foc_observer_output_t *ptOutput)
+                           foc_position_output_t *ptOutput)
 {
     uint8_t chSector;
     int8_t chDelta;
@@ -94,6 +94,7 @@ foc_result_t foc_hall_Step(foc_hall_t *ptHall,
     if (ptHall == NULL || ptOutput == NULL) {
         return FOC_RESULT_NULL;
     }
+    *ptOutput = (foc_position_output_t){0};
     if (chHallCode > 7U ||
         ptHall->tParams.achSectorByCode[chHallCode] > 5U) {
         if (ptHall->hwInvalidSamples < UINT16_MAX) {
@@ -103,12 +104,7 @@ foc_result_t foc_hall_Step(foc_hall_t *ptHall,
             ptHall->tParams.hwInvalidTimeout) {
             ptHall->bValid = false;
         }
-        *ptOutput = (foc_observer_output_t){
-            .tAngle = ptHall->tAngle,
-            .qSpeed = ptHall->qSpeed,
-            .qConfidence = FOC_ZERO,
-            .bValid = false,
-        };
+        ptOutput->wFaults = FOC_POSITION_FAULT_INVALID_DATA;
         return FOC_RESULT_INVALID_ARGUMENT;
     }
     chSector = ptHall->tParams.achSectorByCode[chHallCode];
@@ -132,7 +128,9 @@ foc_result_t foc_hall_Step(foc_hall_t *ptHall,
             } else {
                 ptHall->bValid = false;
                 ptHall->qConfidence = FOC_ZERO;
-                ptOutput->bValid = false;
+                *ptOutput = (foc_position_output_t){
+                    .wFaults = FOC_POSITION_FAULT_ILLEGAL_TRANSITION,
+                };
                 return FOC_RESULT_INVALID_ARGUMENT;
             }
             qRawSpeed = hall_edge_speed(chDelta,
@@ -153,36 +151,68 @@ foc_result_t foc_hall_Step(foc_hall_t *ptHall,
                 foc_add_sat(ptHall->tAngle.qTurns, ptHall->qSpeed));
         }
     }
-    *ptOutput = (foc_observer_output_t){
-        .tAngle = ptHall->tAngle,
-        .qSpeed = ptHall->qSpeed,
+    *ptOutput = (foc_position_output_t){
+        .tElectricalAngle = ptHall->tAngle,
+        .qElectricalSpeed = ptHall->qSpeed,
         .qConfidence = ptHall->qConfidence,
-        .bValid = ptHall->bValid,
+        .eValidFlags = ptHall->bValid
+            ? (FOC_POSITION_VALID_ELECTRICAL_ANGLE |
+               FOC_POSITION_VALID_ELECTRICAL_SPEED)
+            : FOC_POSITION_VALID_NONE,
     };
     return FOC_RESULT_OK;
 }
 
 static void hall_interface_reset(void *pContext)
 {
-    foc_hall_Reset((foc_hall_t *)pContext);
+    foc_hall_source_adapter_t *ptAdapter =
+        (foc_hall_source_adapter_t *)pContext;
+    if (ptAdapter != NULL) {
+        foc_hall_Reset(ptAdapter->ptHall);
+    }
 }
 
 static foc_result_t hall_interface_step(
     void *pContext,
-    const foc_observer_input_t *ptInput,
-    foc_observer_output_t *ptOutput)
+    const foc_position_input_t *ptInput,
+    foc_position_output_t *ptOutput)
 {
-    if (ptInput == NULL) {
+    foc_hall_source_adapter_t *ptAdapter =
+        (foc_hall_source_adapter_t *)pContext;
+    foc_result_t eResult;
+
+    if (ptAdapter == NULL || ptInput == NULL || ptOutput == NULL) {
         return FOC_RESULT_NULL;
     }
-    return foc_hall_Step((foc_hall_t *)pContext,
-                         ptInput->chHallCode, ptOutput);
+    eResult = foc_hall_Step(ptAdapter->ptHall,
+                            ptAdapter->fnReadCode(
+                                ptAdapter->pHardwareContext),
+                            ptOutput);
+    ptOutput->wTimestamp = ptInput->wTimestamp;
+    return eResult;
 }
 
-foc_observer_if_t foc_hall_ObserverInterface(foc_hall_t *ptHall)
+foc_result_t foc_hall_source_Init(foc_hall_source_adapter_t *ptAdapter,
+                                  foc_hall_t *ptHall,
+                                  void *pHardwareContext,
+                                  foc_hall_read_code_fn_t fnReadCode)
 {
-    foc_observer_if_t tInterface = {
-        .pContext = ptHall,
+    if (ptAdapter == NULL || ptHall == NULL || fnReadCode == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    *ptAdapter = (foc_hall_source_adapter_t){
+        .ptHall = ptHall,
+        .pHardwareContext = pHardwareContext,
+        .fnReadCode = fnReadCode,
+    };
+    return FOC_RESULT_OK;
+}
+
+foc_position_source_if_t foc_hall_PositionSourceInterface(
+    foc_hall_source_adapter_t *ptAdapter)
+{
+    foc_position_source_if_t tInterface = {
+        .pContext = ptAdapter,
         .fnReset = hall_interface_reset,
         .fnStep = hall_interface_step,
     };

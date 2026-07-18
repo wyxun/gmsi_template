@@ -34,7 +34,7 @@
 #include "motor/motor_types.h"
 #include "motor/motor.h"
 #include "motor/motor_control.h"
-#include "observer/foc_observer.h"
+#include "motor/motor_position.h"
 #include "observer/foc_hall.h"
 #include "observer/foc_smo.h"
 #include "observer/foc_nlfo.h"
@@ -48,7 +48,6 @@
 #include "experimental/foc_nsd.h"
 #include "experimental/foc_identify.h"
 
-#include "middleware/observer_lib.h"
 #include "middleware/foc_core.h"
 
 #include "app/foc_app.h"

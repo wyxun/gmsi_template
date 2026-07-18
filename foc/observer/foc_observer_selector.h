@@ -6,7 +6,7 @@
 #ifndef FOC_OBSERVER_SELECTOR_H
 #define FOC_OBSERVER_SELECTOR_H
 
-#include "foc_observer.h"
+#include "motor_position.h"
 
 typedef struct {
     foc_scalar_t qMinimumConfidence;
@@ -18,10 +18,10 @@ typedef struct {
 
 typedef struct {
     foc_observer_selector_params_t tParams;
-    const foc_observer_if_t *ptActive;
-    const foc_observer_if_t *ptTarget;
-    foc_observer_output_t tActiveOutput;
-    foc_observer_output_t tTargetOutput;
+    const foc_position_source_if_t *ptActive;
+    const foc_position_source_if_t *ptTarget;
+    foc_position_output_t tActiveOutput;
+    foc_position_output_t tTargetOutput;
     foc_scalar_t qBlendProgress;
     foc_scalar_t qBlendIncrement;
     uint16_t hwStableCount;
@@ -32,14 +32,14 @@ typedef struct {
 foc_result_t foc_observer_selector_Init(
     foc_observer_selector_t *ptSelector,
     const foc_observer_selector_params_t *ptParams,
-    const foc_observer_if_t *ptInitial);
+    const foc_position_source_if_t *ptInitial);
 foc_result_t foc_observer_selector_Request(
     foc_observer_selector_t *ptSelector,
-    const foc_observer_if_t *ptTarget);
+    const foc_position_source_if_t *ptTarget);
 void foc_observer_selector_Cancel(foc_observer_selector_t *ptSelector);
 foc_result_t foc_observer_selector_Step(
     foc_observer_selector_t *ptSelector,
-    const foc_observer_input_t *ptInput,
-    foc_observer_output_t *ptOutput);
+    const foc_position_input_t *ptInput,
+    foc_position_output_t *ptOutput);
 
 #endif /* FOC_OBSERVER_SELECTOR_H */
