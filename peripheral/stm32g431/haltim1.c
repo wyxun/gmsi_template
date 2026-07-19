@@ -9,10 +9,14 @@
  *   PA12 — TIM1_CH2N (AF6) — V low-side
  *   PA10 — TIM1_CH3  (AF6) — W high-side
  *   PB15 — TIM1_CH3N (AF4) — W low-side
- *   CH4 = PWM2 mode → TRGO = OC4REF → ADC injected trigger
+ *   CH4 = PWM2 mode → OC4REF → ADC injected trigger
  *
- * PWM: 20 kHz center-aligned, dead-time, complementary outputs.
- * Break inputs from COMP1/2/4 for overcurrent protection.
+ * PWM: 20 kHz center-aligned (170 MHz timer clock, no prescaler),
+ * complementary outputs with dead-time, TIM1 break from COMP1/2/4.
+ * CH4 compare at ARR/2 offsets ADC trigger slightly before PWM center.
+ *
+ * Initialization sequence and register layout match reference
+ * STOPLL_FOC_2205 (same board, same 2205 gimbal motor).
  */
 
 #include "haltim1.h"
@@ -20,11 +24,15 @@
 #include "stm32g4xx_ll_tim.h"
 #include "stm32g4xx_ll_bus.h"
 
-/* 170 MHz / 170 = 1 MHz timer clock → 1 MHz / 50 = 20 kHz PWM */
-#define TIM1_PRESCALER      169U
-#define TIM1_PERIOD         1000U   /* ARR → 20 kHz center-aligned */
-#define TIM1_DEAD_TIME      50U     /* ~500 ns @ 1 MHz timer clock */
-#define TIM1_CH4_CCR        ((TIM1_PERIOD / 2U) - 10U) /* trigger just before center */
+/* 170 MHz timer clock (APB2) → 20 kHz center-aligned:
+ *   PWM_PERIOD_CYCLES = 170e6 / 20000 = 8500
+ *   ARR = 8500 / 2 = 4250
+ *   Dead-time: ~750 ns @ 85 MHz DTS (170 MHz / DIV2) → 64 ticks */
+#define TIM1_PRESCALER      0U
+#define TIM1_PERIOD         4250U   /* center-aligned 20 kHz @ 170 MHz */
+#define TIM1_DEAD_TIME      64U     /* ~750 ns @ 85 MHz DTS */
+#define TIM1_HTMIN          10U     /* ADC trigger advance before PWM center */
+#define TIM1_CH4_CCR        ((TIM1_PERIOD) - (TIM1_HTMIN))
 
 static uint32_t s_wDutyU, s_wDutyV, s_wDutyW; /* cache for SetDuty */
 
@@ -36,34 +44,17 @@ void haltim1_Init(void)
     LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOB);
     LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOC);
 
-    /* ---- GPIO: PWM outputs ---- */
-    GPIO_InitTypeDef gpio = {0};
-    gpio.Mode      = GPIO_MODE_AF_PP;
-    gpio.Pull      = GPIO_PULLDOWN;
-    gpio.Speed     = GPIO_SPEED_FREQ_HIGH;
-    gpio.Alternate = GPIO_AF6_TIM1;
-
-    /* CH1 (PA8), CH2 (PA9), CH3 (PA10), CH2N (PA12) */
-    gpio.Pin = GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_12;
-    HAL_GPIO_Init(GPIOA, &gpio);
-
-    gpio.Alternate = GPIO_AF4_TIM1;
-    gpio.Pin = GPIO_PIN_13;             /* CH1N (PC13) */
-    HAL_GPIO_Init(GPIOC, &gpio);
-
-    gpio.Alternate = GPIO_AF4_TIM1;
-    gpio.Pin = GPIO_PIN_15;             /* CH3N (PB15) */
-    HAL_GPIO_Init(GPIOB, &gpio);
-
-    /* ---- TIM1 base ---- */
-    LL_TIM_SetPrescaler(TIM1, TIM1_PRESCALER);
-    LL_TIM_SetCounterMode(TIM1, LL_TIM_COUNTERMODE_CENTER_DOWN);
-    LL_TIM_SetAutoReload(TIM1, TIM1_PERIOD);
-    LL_TIM_SetClockDivision(TIM1, LL_TIM_CLOCKDIVISION_DIV2);
-    LL_TIM_SetRepetitionCounter(TIM1, 1);
+    /* ---- TIM1 base (matches STOPLL_FOC_2205 reference) ---- */
+    LL_TIM_InitTypeDef tim_init = {0};
+    tim_init.Prescaler         = TIM1_PRESCALER;
+    tim_init.CounterMode       = LL_TIM_COUNTERMODE_CENTER_DOWN;
+    tim_init.Autoreload        = TIM1_PERIOD;
+    tim_init.ClockDivision     = LL_TIM_CLOCKDIVISION_DIV2;
+    tim_init.RepetitionCounter = 1;
+    LL_TIM_Init(TIM1, &tim_init);
     LL_TIM_DisableARRPreload(TIM1);
 
-    /* ---- CH1, CH2, CH3: PWM1, complementary ---- */
+    /* ---- Output compare: CH1-CH3 PWM1 complementary, CH4 PWM2 for ADC ---- */
     LL_TIM_OC_InitTypeDef oc = {0};
     oc.OCMode       = LL_TIM_OCMODE_PWM1;
     oc.OCState      = LL_TIM_OCSTATE_DISABLE;
@@ -75,19 +66,23 @@ void haltim1_Init(void)
     oc.OCNIdleState = LL_TIM_OCIDLESTATE_LOW;
 
     LL_TIM_OC_Init(TIM1, LL_TIM_CHANNEL_CH1, &oc);
+    LL_TIM_OC_DisableFast(TIM1, LL_TIM_CHANNEL_CH1);
     LL_TIM_OC_Init(TIM1, LL_TIM_CHANNEL_CH2, &oc);
+    LL_TIM_OC_DisableFast(TIM1, LL_TIM_CHANNEL_CH2);
     LL_TIM_OC_Init(TIM1, LL_TIM_CHANNEL_CH3, &oc);
+    LL_TIM_OC_DisableFast(TIM1, LL_TIM_CHANNEL_CH3);
 
-    /* ---- CH4: PWM2 for ADC trigger ---- */
+    /* CH4: PWM2 with compare = PERIOD - HTMIN (trigger before PWM center) */
     oc.OCMode       = LL_TIM_OCMODE_PWM2;
-    oc.OCState      = LL_TIM_OCSTATE_DISABLE;
     oc.CompareValue = TIM1_CH4_CCR;
     LL_TIM_OC_Init(TIM1, LL_TIM_CHANNEL_CH4, &oc);
+    LL_TIM_OC_DisableFast(TIM1, LL_TIM_CHANNEL_CH4);
 
-    /* TRGO2 = OC4REF (ADC injected trigger) */
-    LL_TIM_SetTriggerOutput2(TIM1, LL_TIM_TRGO2_OC4);
+    /* TRGO = OC4REF (ADC injected trigger on both ADC1 and ADC2) */
+    LL_TIM_SetTriggerOutput(TIM1, LL_TIM_TRGO_OC4REF);
+    LL_TIM_SetTriggerOutput2(TIM1, LL_TIM_TRGO2_RESET);
 
-    /* ---- Break inputs from COMP1/2/4 ---- */
+    /* ---- Break inputs from COMP1/2/4 (overcurrent protection) ---- */
     LL_TIM_SetBreakInputSourcePolarity(TIM1, LL_TIM_BREAK_INPUT_BKIN,
         LL_TIM_BKIN_SOURCE_BKCOMP1, LL_TIM_BKIN_POLARITY_HIGH);
     LL_TIM_EnableBreakInputSource(TIM1, LL_TIM_BREAK_INPUT_BKIN,
@@ -101,10 +96,50 @@ void haltim1_Init(void)
     LL_TIM_EnableBreakInputSource(TIM1, LL_TIM_BREAK_INPUT_BKIN,
         LL_TIM_BKIN_SOURCE_BKCOMP4);
 
-    /* ---- BDTR ---- */
-    LL_TIM_OC_SetDeadTime(TIM1, TIM1_DEAD_TIME);
-    LL_TIM_ConfigBRK(TIM1, LL_TIM_BREAK_POLARITY_HIGH, LL_TIM_BREAK_FILTER_FDIV1_N8, LL_TIM_BREAK_AFMODE_INPUT);
-    LL_TIM_EnableMasterSlaveMode(TIM1);
+    /* ---- BDTR: dead-time, OSSR/OSSI, break ---- */
+    LL_TIM_BDTR_InitTypeDef bdtr = {0};
+    bdtr.OSSRState       = LL_TIM_OSSR_ENABLE;
+    bdtr.OSSIState       = LL_TIM_OSSI_ENABLE;
+    bdtr.LockLevel       = LL_TIM_LOCKLEVEL_OFF;
+    bdtr.DeadTime        = TIM1_DEAD_TIME;
+    bdtr.BreakState      = LL_TIM_BREAK_ENABLE;
+    bdtr.BreakPolarity   = LL_TIM_BREAK_POLARITY_HIGH;
+    bdtr.BreakFilter     = LL_TIM_BREAK_FILTER_FDIV1_N8;
+    bdtr.BreakAFMode     = LL_TIM_BREAK_AFMODE_INPUT;
+    bdtr.Break2State     = LL_TIM_BREAK2_DISABLE;
+    bdtr.Break2Polarity  = LL_TIM_BREAK2_POLARITY_HIGH;
+    bdtr.Break2Filter    = LL_TIM_BREAK2_FILTER_FDIV1_N8;
+    bdtr.Break2AFMode    = LL_TIM_BREAK_AFMODE_INPUT;
+    bdtr.AutomaticOutput = LL_TIM_AUTOMATICOUTPUT_DISABLE;
+    LL_TIM_BDTR_Init(TIM1, &bdtr);
+
+    /* ---- GPIO: PWM outputs ---- */
+    GPIO_InitTypeDef gpio = {0};
+    gpio.Mode      = GPIO_MODE_AF_PP;
+    gpio.Pull      = GPIO_PULLDOWN;
+    gpio.Speed     = GPIO_SPEED_FREQ_HIGH;
+
+    gpio.Alternate = GPIO_AF4_TIM1;
+    gpio.Pin = GPIO_PIN_13;             /* CH1N (PC13) */
+    HAL_GPIO_Init(GPIOC, &gpio);
+
+    gpio.Alternate = GPIO_AF4_TIM1;
+    gpio.Pin = GPIO_PIN_15;             /* CH3N (PB15) */
+    HAL_GPIO_Init(GPIOB, &gpio);
+
+    gpio.Alternate = GPIO_AF6_TIM1;
+    gpio.Pin = GPIO_PIN_8;              /* CH1 (PA8) */
+    HAL_GPIO_Init(GPIOA, &gpio);
+
+    gpio.Pin = GPIO_PIN_9;              /* CH2 (PA9) */
+    HAL_GPIO_Init(GPIOA, &gpio);
+
+    gpio.Pin = GPIO_PIN_10;             /* CH3 (PA10) */
+    HAL_GPIO_Init(GPIOA, &gpio);
+
+    gpio.Alternate = GPIO_AF6_TIM1;
+    gpio.Pin = GPIO_PIN_12;             /* CH2N (PA12) */
+    HAL_GPIO_Init(GPIOA, &gpio);
 
     /* Start counter (outputs disabled until haltim1_Start) */
     LL_TIM_GenerateEvent_UPDATE(TIM1);

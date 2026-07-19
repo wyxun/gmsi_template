@@ -66,21 +66,32 @@ static foc_result_t mdi_pwm_set_duty(void *pContext,
 {
     foc_mdi_motor_context_t *ptContext =
         (foc_mdi_motor_context_t *)pContext;
+    int32_t nResult;
 
-    if (ptContext == NULL) {
-        return FOC_RESULT_NULL;
+    if (ptContext == NULL || ptContext->ptHardware->ptMotorU == NULL ||
+        ptContext->ptHardware->ptMotorV == NULL ||
+        ptContext->ptHardware->ptMotorW == NULL) {
+        return FOC_RESULT_INVALID_ARGUMENT;
     }
 #if FOC_USE_FPU_HARDWARE
-    halpwm_SetDuty((uint32_t)(qDutyU * (float)ptContext->wPwmPeriod),
-                   (uint32_t)(qDutyV * (float)ptContext->wPwmPeriod),
-                   (uint32_t)(qDutyW * (float)ptContext->wPwmPeriod));
+    nResult = MDI_Write(ptContext->ptHardware->ptMotorU,
+                        (uint32_t)(qDutyU * ptContext->wPwmPeriod));
+    nResult |= MDI_Write(ptContext->ptHardware->ptMotorV,
+                         (uint32_t)(qDutyV * ptContext->wPwmPeriod));
+    nResult |= MDI_Write(ptContext->ptHardware->ptMotorW,
+                         (uint32_t)(qDutyW * ptContext->wPwmPeriod));
 #else
-    halpwm_SetDuty(
-        (uint32_t)((qDutyU * ptContext->wPwmPeriod) >> Q_SHIFT),
-        (uint32_t)((qDutyV * ptContext->wPwmPeriod) >> Q_SHIFT),
+    nResult = MDI_Write(
+        ptContext->ptHardware->ptMotorU,
+        (uint32_t)((qDutyU * ptContext->wPwmPeriod) >> Q_SHIFT));
+    nResult |= MDI_Write(
+        ptContext->ptHardware->ptMotorV,
+        (uint32_t)((qDutyV * ptContext->wPwmPeriod) >> Q_SHIFT));
+    nResult |= MDI_Write(
+        ptContext->ptHardware->ptMotorW,
         (uint32_t)((qDutyW * ptContext->wPwmPeriod) >> Q_SHIFT));
 #endif
-    return FOC_RESULT_OK;
+    return nResult == 0 ? FOC_RESULT_OK : FOC_RESULT_INVALID_ARGUMENT;
 }
 
 static foc_result_t mdi_pwm_enable(void *pContext, bool bEnable)

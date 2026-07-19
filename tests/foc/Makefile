@@ -56,7 +56,11 @@ fixed:
 	./foc_test_fixed
 
 encapsulation:
-	@call check_motor_encapsulation.bat "$(CC)" "$(CFLAGS) -DFOC_NUMERIC_FLOAT=1"
+	@echo "=== checking motor_handle_t encapsulation ==="
+	@$(CC) $(CFLAGS) -DFOC_NUMERIC_FLOAT=1 -c compile_pass_motor_type.c -o compile_pass_motor_type.o || { echo "ERROR: positive motor type probe failed"; exit 2; }
+	@rm -f compile_pass_motor_type.o
+	@$(CC) $(CFLAGS) -DFOC_NUMERIC_FLOAT=1 -c compile_fail_motor_member_access.c -o compile_fail_motor_member_access.o 2>compile_fail_motor_member_access.log && { echo "FAIL: motor_handle_t members remain publicly accessible"; rm -f compile_fail_motor_member_access.o compile_fail_motor_member_access.log; exit 1; } || true
+	@if grep -qE "has no member named.*tRt|no member named.*tRt" compile_fail_motor_member_access.log; then echo "PASS: motor_handle_t rejects direct member access"; rm -f compile_fail_motor_member_access.o compile_fail_motor_member_access.log; else echo "ERROR: fixture failed for an unexpected reason"; cat compile_fail_motor_member_access.log; exit 2; fi
 
 clean:
 	$(RM) foc_test_float foc_test_fixed compile_pass_motor_type.o \

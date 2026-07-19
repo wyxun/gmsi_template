@@ -35,7 +35,7 @@ static q_type mdi_adc_normalize(int32_t nDelta, uint32_t wBase);
 
 static foc_mdi_motor_context_t s_tDefaultContext = {
     .ptHardware = &HW,
-    .wPwmPeriod = 1000U,
+    .wPwmPeriod = 4250U,
 };
 
 foc_result_t foc_hal_mdi_Bind(foc_hal_t *ptHal,

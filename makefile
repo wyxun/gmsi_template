@@ -3,7 +3,7 @@
 # Toolchain : LLVM Embedded Toolchain for Arm (Windows)
 # Usage     : make [BUILD=debug|release] [TARGET_CHIP=stm32g431] ...
 # ==============================================================================
-SW_ROOT ?= D:/0_software
+SW_ROOT ?= D:/software
 MSYS2_BIN = $(SW_ROOT)/msys64/mingw64/bin
 MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 
@@ -17,7 +17,7 @@ ifdef target
     TARGET_CHIP = $(target)
 endif
 
-TARGET_CHIP ?= at32f413
+TARGET_CHIP ?= stm32g431
 CLASS_SOURCES = class/template_class.c
 
 include target/$(TARGET_CHIP)/target.mk

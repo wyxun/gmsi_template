@@ -1,8 +1,6 @@
 /*******************************************************************************
  * @file    foc_app.c
  * @brief   FOC 应用层 — MODUS 挂载实现
- *
- * 应用编排原则（重构后）：
  *  - foc_app_RunFSM() 只做产品事件处理并驱动 motor_RunFSM()；
  *  - 高频算法由 ADC 抢占转换完成中断（TMR1 CH4 触发，20 kHz）通过
  *    foc_app_HighFrequencyISR() 调 motor_HighFrequencyStep()；
@@ -32,10 +30,11 @@
 #define FOC_APP_HF_PERIOD_S     0.00005f
 #define FOC_APP_LF_PERIOD_S     0.001f
 
-/* 开环产品默认值：1 电角 turn/s，5 turn/s^2 加速，Vq 0.05 pu */
+/* 开环产品默认值（2205 云台电机，参考 STOPLL_FOC_2205）：
+ * 1 电角 turn/s，5 turn/s^2 加速，Vq 0.03 pu（12V 母线下约 0.36V） */
 #define FOC_APP_OPEN_LOOP_SPEED 1.0f
 #define FOC_APP_OPEN_LOOP_ACCEL 5.0f
-#define FOC_APP_VOLTAGE_REF_Q   0.05f
+#define FOC_APP_VOLTAGE_REF_Q   0.03f
 
 static uint32_t  foc_app_GetMilliseconds(void *pContext);
 static uintptr_t foc_app_EnterCritical(void *pContext);
@@ -61,14 +60,14 @@ static int foc_app_Run  (uintptr_t wObjectAddr);
 
 static motor_config_t s_tMotorConfig = {
     .tParams = {
-        .wResistanceMilliOhm          = 100U,
-        .wLdMicroHenry                = 100U,
-        .wLqMicroHenry                = 100U,
-        .wBackEmfMicroVoltPerRadSec   = 10000U,
+        .wResistanceMilliOhm          = 2500U,
+        .wLdMicroHenry                = 500U,
+        .wLqMicroHenry                = 500U,
+        .wBackEmfMicroVoltPerRadSec   = 23000U,
         .wInertiaNanoKgM2             = 100000U,
-        .wRatedVoltageMilliVolt       = 24000U,
-        .wRatedCurrentMilliAmp        = 10000U,
-        .chPolePairs                  = 4U,
+        .wRatedVoltageMilliVolt       = 12000U,
+        .wRatedCurrentMilliAmp        = 800U,
+        .chPolePairs                  = 7U,
     },
     .eTopology = SENSING_TOPOLOGY_3P,
     .tTime = {
@@ -83,7 +82,7 @@ static motor_config_t s_tMotorConfig = {
     .qHighFrequencyPeriod = FOC_SCALAR(FOC_APP_HF_PERIOD_S),
     .qLowFrequencyPeriod  = FOC_SCALAR(FOC_APP_LF_PERIOD_S),
     .tPosition = {
-        .chPolePairs = 4U,
+        .chPolePairs = 7U,
         .chDirection = 1,
     },
     .qTransitionMinimumConfidence = FOC_SCALAR(0.8f),
@@ -172,6 +171,7 @@ static void foc_app_DrainEvents(foc_app_t *ptThis)
               (unsigned long)tEvent.wFaults);
     }
 }
+
 
 /* ---------------------------------------------------------------------------
  * 应用 FSM：纯编排，只提交产品命令并驱动 motor_RunFSM()。

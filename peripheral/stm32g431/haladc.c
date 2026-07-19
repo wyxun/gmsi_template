@@ -9,6 +9,7 @@
  */
 
 #include "haladc.h"
+#include "stm32g4xx_hal.h"
 #include "stm32g4xx_ll_adc.h"
 #include "stm32g4xx_ll_rcc.h"
 #include "stm32g4xx_ll_bus.h"
@@ -69,7 +70,7 @@ static void MX_ADC1_Init(void)
 
     /* ---- Core config ---- */
     ADC_Init.Resolution    = LL_ADC_RESOLUTION_12B;
-    ADC_Init.DataAlignment  = LL_ADC_DATA_ALIGN_RIGHT;
+    ADC_Init.DataAlignment  = LL_ADC_DATA_ALIGN_LEFT;
     ADC_Init.LowPowerMode   = LL_ADC_LP_MODE_NONE;
     LL_ADC_Init(ADC1, &ADC_Init);
 
@@ -156,7 +157,7 @@ static void MX_ADC2_Init(void)
 
     /* ---- Core config ---- */
     ADC_Init.Resolution    = LL_ADC_RESOLUTION_12B;
-    ADC_Init.DataAlignment  = LL_ADC_DATA_ALIGN_RIGHT;
+    ADC_Init.DataAlignment  = LL_ADC_DATA_ALIGN_LEFT;
     ADC_Init.LowPowerMode   = LL_ADC_LP_MODE_NONE;
     LL_ADC_Init(ADC2, &ADC_Init);
 
@@ -223,6 +224,12 @@ void haladc_Init(void)
 {
     MX_ADC1_Init();
     MX_ADC2_Init();
+
+    /* 注入序列完成中断：双 ADC 同沿触发、等长等速序列，
+     * 只需 ADC1 的 JEOS 作为高频环时基（同 MCSDK 做法）。 */
+    LL_ADC_EnableIT_JEOS(ADC1);
+    HAL_NVIC_SetPriority(ADC1_2_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(ADC1_2_IRQn);
 }
 
 void haladc_StartRegular(void)

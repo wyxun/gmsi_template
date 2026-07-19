@@ -2,8 +2,9 @@
  * @file   stm32g4xx_it.c
  * @brief  Interrupt handlers (STM32G431)
  *
- * SysTick_Handler �?perf_counter + modus + peripheral 1ms clock.
- * USART / FDCAN / TIM1 / ADC1_2 have real handlers; the rest are stubs.
+ * SysTick_Handler → perf_counter + modus + peripheral 1ms clock.
+ * ADC1_2 → foc_app_HighFrequencyISR (FOC 20 kHz control step, TIM1 CH4 trigger).
+ * USART / FDCAN / TIM1 break handlers active; other peripherals are stubs.
  */
 
 #include "stm32g4xx_hal.h"
@@ -11,6 +12,7 @@
 #include "halusart.h"
 #include "halfdcan.h"
 #include "mdebug_cm.h"
+#include "foc_app.h"
 
 #ifdef GRBLHAL_ENABLE
 #include "hal.h"
@@ -65,17 +67,22 @@ void TIM1_BRK_TIM15_IRQHandler(void)
 void TIM1_UP_TIM16_IRQHandler(void)
 {
     TIM1->SR &= ~TIM_SR_UIF;
-    /* TODO: FOC control loop entry */
 }
 
 void TIM1_TRG_COM_TIM17_IRQHandler(void)    {}
 void TIM1_CC_IRQHandler(void)               {}
 
-/* ---- ADC (current sensing) ---- */
+/* ---- ADC1_2 (current sensing end-of-conversion) ---- */
 void ADC1_2_IRQHandler(void)
 {
-    ADC1->ISR = ADC_ISR_JEOS;
-    ADC2->ISR = ADC_ISR_JEOS;
+    if ((ADC1->ISR & ADC_ISR_JEOS) != 0U) {
+        ADC1->ISR = ADC_ISR_JEOS;
+        ADC2->ISR = ADC_ISR_JEOS;
+        /* FOC 高频控制步：TIM1 CH4 触发的注入转换完成，
+         * 每个 20 kHz PWM 载波一次。这是 motor_HighFrequencyStep()
+         * 的唯一调用点（经 app 层）。 */
+        foc_app_HighFrequencyISR();
+    }
 }
 #endif
 

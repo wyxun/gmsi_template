@@ -9,8 +9,8 @@
 #include "halusart.h"
 #include "haltim1.h"
 #include "haladc.h"
-#include "halcomp.h"
 #include "halledgpio.h"
+#include "stm32g4xx_ll_tim.h"
 #include "mdi/mdi.h"
 
 /* --------------------------------------------------------------------------
@@ -104,10 +104,11 @@ static mdi_adc_t s_tAdcPot  = { .pPriv = (void *)HALADC_REG_POTENTIOMETER, .fnRe
 
 static int32_t pwm_setduty(void *pPriv, uint32_t wDuty)
 {
-    (void)pPriv;
-    (void)wDuty;
-    /* Single-phase set not used; use haltim1_SetDuty for 3-phase */
-    return (int32_t)wDuty;
+    uint32_t wChannel = (uint32_t)(uintptr_t)pPriv;
+    if (wChannel == 1U)      LL_TIM_OC_SetCompareCH1(TIM1, wDuty);
+    else if (wChannel == 2U) LL_TIM_OC_SetCompareCH2(TIM1, wDuty);
+    else if (wChannel == 3U) LL_TIM_OC_SetCompareCH3(TIM1, wDuty);
+    return 0;
 }
 
 static int32_t pwm_enable(void *pPriv, bool bEn)
@@ -118,9 +119,9 @@ static int32_t pwm_enable(void *pPriv, bool bEn)
     return 0;
 }
 
-static mdi_pwm_t s_tPwmU = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
-static mdi_pwm_t s_tPwmV = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
-static mdi_pwm_t s_tPwmW = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
+static mdi_pwm_t s_tPwmU = { .pPriv = (void *)1U, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
+static mdi_pwm_t s_tPwmV = { .pPriv = (void *)2U, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
+static mdi_pwm_t s_tPwmW = { .pPriv = (void *)3U, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
 
 /* --------------------------------------------------------------------------
  *  MDI Stream 閳?USART2 debug serial

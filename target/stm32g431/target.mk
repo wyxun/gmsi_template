@@ -4,8 +4,9 @@
 # =============================================================================
 
 # FOC motor control target (grblHAL is not built on this chip).
-# Note: the FOC high-frequency ISR is intentionally NOT wired in
-# target/stm32g431/stm32g4xx_it.c yet — build/link only for now.
+# FOC high-frequency ISR is connected via ADC1 JEOS interrupt →
+# foc_app_HighFrequencyISR() → motor_HighFrequencyStep() (see
+# stm32g4xx_it.c ADC1_2_IRQHandler and haladc.c JEOS/NVIC enable).
 
 # CPU architecture (FPU enabled)
 CPU_FLAGS = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16

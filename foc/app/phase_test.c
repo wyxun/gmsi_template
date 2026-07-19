@@ -114,6 +114,7 @@ void phase_test_waveform_step(void)
     extern foc_app_t tFocApp;
     motor_snapshot_t tSnapshot;
 
+#if 1
     if (tFocApp.ptMotor == NULL ||
         motor_GetSnapshot(tFocApp.ptMotor, &tSnapshot) != FOC_RESULT_OK) {
         return;
@@ -128,7 +129,21 @@ void phase_test_waveform_step(void)
     mwaveform.Push(s_chIu, _D(tSnapshot.tPhaseCurrent.qIu));
     mwaveform.Push(s_chIv, _D(tSnapshot.tPhaseCurrent.qIv));
     mwaveform.Push(s_chIw, _D(tSnapshot.tPhaseCurrent.qIw));
-
+#else
+    /* TEMP DEBUG: fixed test pattern to verify the waveform data path.
+     * DutyU/V/W = 0.1/0.2/0.3 (constant), Iu = ramping counter. */
+    static float s_fRamp = -1.0f;
+    s_fRamp += 0.001f;
+    if (s_fRamp > 1.0f) {
+        s_fRamp = -1.0f;
+    }
+    mwaveform.Push(s_chDutyU, 0.1f);
+    mwaveform.Push(s_chDutyV, 0.2f);
+    mwaveform.Push(s_chDutyW, 0.3f);
+    mwaveform.Push(s_chIu, s_fRamp);
+    mwaveform.Push(s_chIv, -s_fRamp);
+    mwaveform.Push(s_chIw, 0.5f);
+#endif
     /* mwaveform.Step() is called automatically via modus_Clock() */
 }
 

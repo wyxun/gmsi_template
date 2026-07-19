@@ -99,12 +99,14 @@ static mdi_gpio_t s_tCompBrk = {
     .pPriv = s_apvCompBrkPriv, .fnSet = NULL, .fnGet = at32_gpio_Get,
 };
 
-/* ---- PWM instances (duty set via halpwm, enable/disable via TMR1) ---- */
+/* ---- PWM instances (duty via TMR1 CH1-3, enable/disable via halpwm) ---- */
 
 static int32_t pwm_setduty(void *pPriv, uint32_t wDuty)
 {
-    (void)pPriv;
-    (void)wDuty;
+    uint32_t wChannel = (uint32_t)(uintptr_t)pPriv;
+    if (wChannel == 1U)      tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_1, wDuty);
+    else if (wChannel == 2U) tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_2, wDuty);
+    else if (wChannel == 3U) tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_3, wDuty);
     return 0;
 }
 
@@ -116,9 +118,9 @@ static int32_t pwm_enable(void *pPriv, bool bEn)
     return 0;
 }
 
-static mdi_pwm_t s_tPwmU = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
-static mdi_pwm_t s_tPwmV = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
-static mdi_pwm_t s_tPwmW = { .pPriv = NULL, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
+static mdi_pwm_t s_tPwmU = { .pPriv = (void *)1U, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
+static mdi_pwm_t s_tPwmV = { .pPriv = (void *)2U, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
+static mdi_pwm_t s_tPwmW = { .pPriv = (void *)3U, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
 
 /* ---- ADC instances (read via haladc) ---- */
 
