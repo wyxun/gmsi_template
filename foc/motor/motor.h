@@ -42,4 +42,18 @@ bool motor_test_PositionBindingsValid(const motor_handle_t *ptMotor);
 bool motor_TestCommitTransitionTimeout(motor_handle_t *ptMotor);
 #endif
 
+/*
+ * Hardware bring-up diagnostic output. Excluded from production builds
+ * (FOC_ENABLE_DIAGNOSTIC=0). The implementation enforces IDLE, no-fault,
+ * per-phase duty-limit and maximum-duration checks; callers outside the
+ * motor implementation never touch motor private members.
+ */
+#if defined(FOC_ENABLE_DIAGNOSTIC) && FOC_ENABLE_DIAGNOSTIC
+foc_result_t motor_DiagnosticSetOutput(motor_handle_t *ptMotor,
+                                       foc_scalar_t qDutyU,
+                                       foc_scalar_t qDutyV,
+                                       foc_scalar_t qDutyW);
+foc_result_t motor_DiagnosticStopOutput(motor_handle_t *ptMotor);
+#endif
+
 #endif /* __MOTOR_H__ */

@@ -35,9 +35,16 @@ int main(void)
     modus_Init(&s_tModus);
 #endif
 
+#if defined(GRBLHAL_ENABLE)
     /* Direct grblHAL handover (contains its own infinite blocking loop) */
     extern int grbl_enter(void);
     grbl_enter();
+#elif MODUS_ENABLE
+    /* MODUS cooperative scheduler main loop */
+    while (1) {
+        modus_Run();
+    }
+#endif
 
     return 0;
 }

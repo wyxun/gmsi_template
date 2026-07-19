@@ -152,6 +152,14 @@ FOC_EXPERIMENTAL_IDENTIFY ?= 0
 C_DEFS += -DFOC_ENABLE_EXPERIMENTAL_NSD=$(FOC_EXPERIMENTAL_NSD)
 C_DEFS += -DFOC_ENABLE_EXPERIMENTAL_IDENTIFY=$(FOC_EXPERIMENTAL_IDENTIFY)
 
+# Hardware bring-up diagnostics (fixed-duty direct tests) are opt-in and
+# excluded from production builds. Enable with FOC_DIAGNOSTIC=1.
+FOC_DIAGNOSTIC ?= 0
+C_DEFS += -DFOC_ENABLE_DIAGNOSTIC=$(FOC_DIAGNOSTIC)
+ifeq ($(FOC_DIAGNOSTIC),1)
+FOC_SOURCES += $(wildcard foc/diagnostic/*.c)
+endif
+
 # ------------------------------------------------------------------------------
 # All C sources  (chip-specific vars set by target.mk)
 # ------------------------------------------------------------------------------

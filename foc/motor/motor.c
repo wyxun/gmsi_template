@@ -122,7 +122,7 @@ foc_result_t motor_Init(motor_handle_t *ptMotor,
     ptImpl->tCurrent.tCalib.wOffsetV = 2048U;
     ptImpl->tCurrent.tCalib.wOffsetW = 2048U;
     ptImpl->tRt.eRunState = MOTOR_STATE_IDLE;
-    ptImpl->eStartupPhase = MOTOR_STARTUP_IDLE;
+    ptImpl->chStartupPhase = MOTOR_STARTUP_IDLE;
     ptImpl->wNextEventSequence = 1U;
     ptImpl->wMagic = MOTOR_IMPL_MAGIC;
     return FOC_RESULT_OK;
@@ -133,7 +133,7 @@ void motor_private_AppendEvent(motor_impl_t *ptImpl,
                                motor_state_e eFrom,
                                motor_state_e eTo,
                                uint8_t chDetail,
-                               uint32_t wPayload)
+                               uint16_t hwPayload)
 {
     uint8_t chIndex;
     motor_event_record_t *ptRecord;
@@ -153,11 +153,9 @@ void motor_private_AppendEvent(motor_impl_t *ptImpl,
     if (ptImpl->wNextEventSequence == 0U) {
         ptImpl->wNextEventSequence = 1U;
     }
-    ptRecord->wPayload = wPayload;
+    ptRecord->hwPayload = hwPayload;
     ptRecord->chType = (uint8_t)eType;
-    ptRecord->chFrom = (uint8_t)eFrom;
-    ptRecord->chTo = (uint8_t)eTo;
-    ptRecord->chDetail = chDetail;
+    ptRecord->chMeta = MOTOR_EVENT_META(eFrom, eTo, chDetail);
 }
 
 void motor_Reset(motor_handle_t *ptMotor)
@@ -175,8 +173,8 @@ void motor_Reset(motor_handle_t *ptMotor)
     }
     memset(&ptImpl->tRt, 0, sizeof(ptImpl->tRt));
     ptImpl->tRt.eRunState = MOTOR_STATE_IDLE;
-    ptImpl->eStartupPhase = MOTOR_STARTUP_IDLE;
-    ptImpl->ePendingCommand = MOTOR_COMMAND_NONE;
+    ptImpl->chStartupPhase = MOTOR_STARTUP_IDLE;
+    ptImpl->chPendingCommand = MOTOR_COMMAND_NONE;
     motor_private_exit(ptImpl, wSyncState);
 }
 
@@ -288,10 +286,11 @@ void motor_EmergencyStop(motor_handle_t *ptMotor, motor_fault_e eFault)
     ptImpl->tRt.eRunState = MOTOR_STATE_FAULT;
     ptImpl->bPwmEnabled = false;
     ptImpl->bCommandPending = false;
-    ptImpl->ePendingCommand = MOTOR_COMMAND_NONE;
+    ptImpl->chPendingCommand = MOTOR_COMMAND_NONE;
+    ptImpl->bDiagnosticActive = false;
     motor_private_AppendEvent(ptImpl, MOTOR_EVENT_FAULT,
                               eFromState, MOTOR_STATE_FAULT, 0U,
-                              ptImpl->tRt.wFaults);
+                              (uint16_t)ptImpl->tRt.wFaults);
     motor_private_exit(ptImpl, wSyncState);
     foc_hal_EmergencyStop(&ptImpl->tHal.tPwm);
 }
@@ -340,9 +339,10 @@ foc_result_t motor_GetSnapshot(const motor_handle_t *ptMotor,
         .eCandidateSourceValidFlags =
             (foc_position_valid_flag_e)ptImpl->chCandidateValidFlags,
         .bPwmEnabled = ptImpl->bPwmEnabled,
-        .eStartupPhase = ptImpl->eStartupPhase,
+        .eStartupPhase = (motor_startup_phase_e)ptImpl->chStartupPhase,
         .ePendingCommand = ptImpl->bCommandPending ?
-                           ptImpl->ePendingCommand : MOTOR_COMMAND_NONE,
+                           (motor_command_e)ptImpl->chPendingCommand :
+                           MOTOR_COMMAND_NONE,
     };
     motor_private_exit(ptImpl, wSyncState);
     return FOC_RESULT_OK;
@@ -373,28 +373,131 @@ bool motor_DebugReadEvent(motor_handle_t *ptMotor,
     *ptEvent = (motor_event_t){
         .wSequence = tRecord.wSequence,
         .eType = (motor_event_type_e)tRecord.chType,
-        .eFromState = (motor_state_e)tRecord.chFrom,
-        .eToState = (motor_state_e)tRecord.chTo,
+        .eFromState = (motor_state_e)MOTOR_EVENT_META_FROM(tRecord.chMeta),
+        .eToState = (motor_state_e)MOTOR_EVENT_META_TO(tRecord.chMeta),
         .eResult = FOC_RESULT_OK,
     };
     if (ptEvent->eType == MOTOR_EVENT_FAULT) {
-        ptEvent->wFaults = tRecord.wPayload;
+        ptEvent->wFaults = tRecord.hwPayload;
     } else if (ptEvent->eType == MOTOR_EVENT_COMMAND_ACCEPTED ||
                ptEvent->eType == MOTOR_EVENT_COMMAND_REJECTED) {
         ptEvent->eCommand =
-            (motor_command_e)(tRecord.wPayload & 0xFFU);
+            (motor_command_e)(tRecord.hwPayload & 0xFFU);
         ptEvent->eResult =
-            (foc_result_t)((tRecord.wPayload >> 8) & 0xFFU);
+            (foc_result_t)((tRecord.hwPayload >> 8) & 0xFFU);
     } else if (ptEvent->eType ==
                MOTOR_EVENT_SOURCE_VALIDITY_CHANGED) {
         ptEvent->ePositionRole =
-            (motor_position_role_e)tRecord.chDetail;
-        ptEvent->wPreviousValue = tRecord.wPayload & 0xFFFFU;
-        ptEvent->wCurrentValue = tRecord.wPayload >> 16;
+            (motor_position_role_e)MOTOR_EVENT_META_DETAIL(tRecord.chMeta);
+        ptEvent->wPreviousValue = tRecord.hwPayload & 0xFFU;
+        ptEvent->wCurrentValue = tRecord.hwPayload >> 8;
     } else if (ptEvent->eType >= MOTOR_EVENT_TRANSITION_STARTED &&
                ptEvent->eType <= MOTOR_EVENT_TRANSITION_TIMEOUT) {
-        ptEvent->wPreviousValue = tRecord.wPayload & 0xFFFFU;
-        ptEvent->wCurrentValue = tRecord.wPayload >> 16;
+        ptEvent->wPreviousValue = tRecord.hwPayload & 0xFFU;
+        ptEvent->wCurrentValue = tRecord.hwPayload >> 8;
     }
     return true;
 }
+
+#if defined(FOC_ENABLE_DIAGNOSTIC) && FOC_ENABLE_DIAGNOSTIC
+/*
+ * Hardware bring-up diagnostic output. Not part of production builds.
+ * A fixed duty is applied directly through the HAL while the lifecycle
+ * FSM stays in IDLE; every call re-validates no-fault/IDLE/duty-limit
+ * and the cumulative output duration never exceeds
+ * MOTOR_DIAGNOSTIC_TIMEOUT_MS.
+ */
+#define MOTOR_DIAGNOSTIC_DUTY_LIMIT  FOC_SCALAR(0.1f)
+#define MOTOR_DIAGNOSTIC_TIMEOUT_MS  2000U
+
+foc_result_t motor_DiagnosticSetOutput(motor_handle_t *ptMotor,
+                                       foc_scalar_t qDutyU,
+                                       foc_scalar_t qDutyV,
+                                       foc_scalar_t qDutyW)
+{
+    motor_impl_t *ptImpl;
+    uintptr_t wSyncState;
+    foc_result_t eResult;
+    uint32_t wNow = 0U;
+    bool bFirstActivation;
+
+    if (!motor_private_is_initialized(ptMotor)) {
+        return ptMotor == NULL ? FOC_RESULT_NULL :
+                                 FOC_RESULT_INVALID_ARGUMENT;
+    }
+    if (foc_abs(qDutyU) > MOTOR_DIAGNOSTIC_DUTY_LIMIT ||
+        foc_abs(qDutyV) > MOTOR_DIAGNOSTIC_DUTY_LIMIT ||
+        foc_abs(qDutyW) > MOTOR_DIAGNOSTIC_DUTY_LIMIT) {
+        return FOC_RESULT_SAFETY;
+    }
+    ptImpl = motor_private(ptMotor);
+    if (ptImpl->tTime.fnGetMilliseconds != NULL) {
+        wNow = ptImpl->tTime.fnGetMilliseconds(ptImpl->tTime.pContext);
+    }
+    wSyncState = motor_private_enter(ptImpl);
+    if (ptImpl->tRt.wFaults != MOTOR_FAULT_NONE ||
+        ptImpl->tRt.eRunState != MOTOR_STATE_IDLE ||
+        ptImpl->bCommandPending) {
+        motor_private_exit(ptImpl, wSyncState);
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    bFirstActivation = !ptImpl->bDiagnosticActive;
+    if (bFirstActivation) {
+        ptImpl->wDiagnosticStartMs = wNow;
+    } else if (ptImpl->tTime.fnGetMilliseconds != NULL &&
+               (uint32_t)(wNow - ptImpl->wDiagnosticStartMs) >
+                   MOTOR_DIAGNOSTIC_TIMEOUT_MS) {
+        ptImpl->bDiagnosticActive = false;
+        ptImpl->bPwmEnabled = false;
+        motor_private_exit(ptImpl, wSyncState);
+        (void)foc_hal_Enable(&ptImpl->tHal.tPwm, false);
+        return FOC_RESULT_SAFETY;
+    }
+    ptImpl->bDiagnosticActive = true;
+    motor_private_exit(ptImpl, wSyncState);
+    if (bFirstActivation) {
+        eResult = foc_hal_Enable(&ptImpl->tHal.tPwm, true);
+        wSyncState = motor_private_enter(ptImpl);
+        if (eResult != FOC_RESULT_OK) {
+            ptImpl->bDiagnosticActive = false;
+            motor_private_exit(ptImpl, wSyncState);
+            motor_EmergencyStop(ptMotor, MOTOR_FAULT_HARDWARE);
+            return eResult;
+        }
+        ptImpl->bPwmEnabled = true;
+        motor_private_exit(ptImpl, wSyncState);
+    }
+    eResult = foc_hal_SetDuty(&ptImpl->tHal.tPwm,
+                              qDutyU, qDutyV, qDutyW);
+    if (eResult != FOC_RESULT_OK) {
+        motor_EmergencyStop(ptMotor, MOTOR_FAULT_HARDWARE);
+    }
+    return eResult;
+}
+
+foc_result_t motor_DiagnosticStopOutput(motor_handle_t *ptMotor)
+{
+    motor_impl_t *ptImpl;
+    uintptr_t wSyncState;
+    foc_result_t eResult;
+
+    if (!motor_private_is_initialized(ptMotor)) {
+        return ptMotor == NULL ? FOC_RESULT_NULL :
+                                 FOC_RESULT_INVALID_ARGUMENT;
+    }
+    ptImpl = motor_private(ptMotor);
+    wSyncState = motor_private_enter(ptImpl);
+    if (!ptImpl->bDiagnosticActive) {
+        motor_private_exit(ptImpl, wSyncState);
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    ptImpl->bDiagnosticActive = false;
+    ptImpl->bPwmEnabled = false;
+    motor_private_exit(ptImpl, wSyncState);
+    eResult = foc_hal_Enable(&ptImpl->tHal.tPwm, false);
+    if (eResult != FOC_RESULT_OK) {
+        motor_EmergencyStop(ptMotor, MOTOR_FAULT_HARDWARE);
+    }
+    return eResult;
+}
+#endif /* FOC_ENABLE_DIAGNOSTIC */

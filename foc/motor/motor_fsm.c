@@ -1,11 +1,11 @@
 #include "motor.h"
 #include "motor_private.h"
 
-static uint32_t command_payload(motor_command_e command,
+static uint16_t command_payload(motor_command_e command,
                                 foc_result_t result)
 {
-    return (uint32_t)(uint8_t)command |
-           ((uint32_t)(uint8_t)result << 8);
+    return (uint16_t)((uint16_t)(uint8_t)command |
+                      ((uint16_t)(uint8_t)result << 8));
 }
 
 static foc_result_t record_command_result(motor_impl_t *impl,
@@ -145,7 +145,7 @@ foc_result_t motor_Start(motor_handle_t *motor,
         return FOC_RESULT_INVALID_ARGUMENT;
     }
     save_run(impl, run);
-    impl->ePendingCommand = MOTOR_COMMAND_START;
+    impl->chPendingCommand = MOTOR_COMMAND_START;
     impl->bCommandPending = true;
     motor_private_AppendEvent(impl, MOTOR_EVENT_COMMAND_ACCEPTED,
         impl->tRt.eRunState, impl->tRt.eRunState, 0U,
@@ -163,8 +163,8 @@ foc_result_t motor_Stop(motor_handle_t *motor)
     impl = motor_private(motor);
     sync_state = motor_private_enter(impl);
     if (impl->bCommandPending &&
-        impl->ePendingCommand == MOTOR_COMMAND_START) {
-        impl->ePendingCommand = MOTOR_COMMAND_STOP;
+        impl->chPendingCommand == MOTOR_COMMAND_START) {
+        impl->chPendingCommand = MOTOR_COMMAND_STOP;
         motor_private_exit(impl, sync_state);
         return FOC_RESULT_OK;
     }
@@ -185,7 +185,7 @@ foc_result_t motor_Stop(motor_handle_t *motor)
         motor_private_exit(impl, sync_state);
         return FOC_RESULT_INVALID_ARGUMENT;
     }
-    impl->ePendingCommand = MOTOR_COMMAND_STOP;
+    impl->chPendingCommand = MOTOR_COMMAND_STOP;
     impl->bCommandPending = true;
     motor_private_AppendEvent(impl, MOTOR_EVENT_COMMAND_ACCEPTED,
         impl->tRt.eRunState, impl->tRt.eRunState, 0U,
@@ -206,7 +206,7 @@ static fsm_rt_t stop_now(motor_handle_t *motor)
     if (result == FOC_RESULT_OK) {
         impl->bPwmEnabled = false;
         impl->tRt.eRunState = MOTOR_STATE_IDLE;
-        impl->eStartupPhase = MOTOR_STARTUP_IDLE;
+        impl->chStartupPhase = MOTOR_STARTUP_IDLE;
     }
     motor_private_exit(impl, sync_state);
     if (result != FOC_RESULT_OK) {
@@ -227,20 +227,20 @@ static bool commit_transition_timeout(motor_impl_t *impl)
     uintptr_t sync_state = motor_private_enter(impl);
     bool active =
         impl->tRt.eRunState == MOTOR_STATE_STARTING &&
-        (impl->eStartupPhase == MOTOR_STARTUP_QUALIFY_SOURCE ||
-         impl->eStartupPhase == MOTOR_STARTUP_BLEND_ANGLE) &&
+        (impl->chStartupPhase == MOTOR_STARTUP_QUALIFY_SOURCE ||
+         impl->chStartupPhase == MOTOR_STARTUP_BLEND_ANGLE) &&
         !impl->bCommandPending;
 
     if (active) {
         motor_private_AppendEvent(impl, MOTOR_EVENT_TRANSITION_TIMEOUT,
             impl->tRt.eRunState, MOTOR_STATE_FAULT, 0U,
-            (uint32_t)impl->eStartupPhase |
-            ((uint32_t)MOTOR_STARTUP_IDLE << 16));
+            (uint16_t)((uint16_t)impl->chStartupPhase |
+                       ((uint16_t)MOTOR_STARTUP_IDLE << 8)));
         impl->tRt.wFaults |= MOTOR_FAULT_TRANSITION_TIMEOUT;
         impl->tRt.eRunState = MOTOR_STATE_FAULT;
         impl->bPwmEnabled = false;
         impl->bCommandPending = false;
-        impl->ePendingCommand = MOTOR_COMMAND_NONE;
+        impl->chPendingCommand = MOTOR_COMMAND_NONE;
     }
     motor_private_exit(impl, sync_state);
     if (active) {
@@ -270,7 +270,7 @@ static fsm_rt_t run_startup(motor_handle_t *motor, motor_impl_t *impl,
             result = motor_private_CalibrateCurrent(motor);
             sync_state = motor_private_enter(impl);
             if (impl->tRt.eRunState != MOTOR_STATE_STARTING ||
-                impl->eStartupPhase != MOTOR_STARTUP_CALIBRATE ||
+                impl->chStartupPhase != MOTOR_STARTUP_CALIBRATE ||
                 impl->bCommandPending) {
                 motor_state_e current_state = impl->tRt.eRunState;
                 motor_private_exit(impl, sync_state);
@@ -282,13 +282,13 @@ static fsm_rt_t run_startup(motor_handle_t *motor, motor_impl_t *impl,
                 motor_EmergencyStop(motor, MOTOR_FAULT_HARDWARE);
                 return fsm_rt_err;
             }
-            impl->eStartupPhase = MOTOR_STARTUP_WAIT_DELAY;
+            impl->chStartupPhase = MOTOR_STARTUP_WAIT_DELAY;
             motor_private_exit(impl, sync_state);
             now = impl->tTime.fnGetMilliseconds ?
                 impl->tTime.fnGetMilliseconds(impl->tTime.pContext) : 0U;
             sync_state = motor_private_enter(impl);
             if (impl->tRt.eRunState == MOTOR_STATE_STARTING &&
-                impl->eStartupPhase == MOTOR_STARTUP_WAIT_DELAY)
+                impl->chStartupPhase == MOTOR_STARTUP_WAIT_DELAY)
                 impl->wStartupStartMs = now;
             motor_private_exit(impl, sync_state);
             return fsm_rt_on_going;
@@ -297,11 +297,11 @@ static fsm_rt_t run_startup(motor_handle_t *motor, motor_impl_t *impl,
                   impl->tTime.fnGetMilliseconds(impl->tTime.pContext) : 0U;
             sync_state = motor_private_enter(impl);
             if (impl->tRt.eRunState == MOTOR_STATE_STARTING &&
-                impl->eStartupPhase == MOTOR_STARTUP_WAIT_DELAY &&
+                impl->chStartupPhase == MOTOR_STARTUP_WAIT_DELAY &&
                 !impl->bCommandPending &&
                 (uint32_t)(now - impl->wStartupStartMs) >=
                     impl->wStartupDelayMs)
-                impl->eStartupPhase = MOTOR_STARTUP_ENABLE;
+                impl->chStartupPhase = MOTOR_STARTUP_ENABLE;
             motor_private_exit(impl, sync_state);
             return fsm_rt_on_going;
         case MOTOR_STARTUP_ENABLE:
@@ -311,7 +311,7 @@ static fsm_rt_t run_startup(motor_handle_t *motor, motor_impl_t *impl,
 
             sync_state = motor_private_enter(impl);
             if (impl->tRt.eRunState != MOTOR_STATE_STARTING ||
-                impl->eStartupPhase != MOTOR_STARTUP_ENABLE ||
+                impl->chStartupPhase != MOTOR_STARTUP_ENABLE ||
                 impl->bCommandPending) {
                 motor_private_exit(impl, sync_state);
                 return fsm_rt_on_going;
@@ -325,7 +325,7 @@ static fsm_rt_t run_startup(motor_handle_t *motor, motor_impl_t *impl,
                   time.fnGetMilliseconds(time.pContext) : 0U;
             sync_state = motor_private_enter(impl);
             if (impl->tRt.eRunState != MOTOR_STATE_STARTING ||
-                impl->eStartupPhase != MOTOR_STARTUP_ENABLE ||
+                impl->chStartupPhase != MOTOR_STARTUP_ENABLE ||
                 impl->bCommandPending) {
                 motor_private_exit(impl, sync_state);
                 return fsm_rt_on_going;
@@ -335,11 +335,11 @@ static fsm_rt_t run_startup(motor_handle_t *motor, motor_impl_t *impl,
                 impl->bPwmEnabled = true;
                 if (transition_required) {
                     impl->wStartupStartMs = now;
-                    impl->eStartupPhase =
+                    impl->chStartupPhase =
                         MOTOR_STARTUP_QUALIFY_SOURCE;
                 } else {
                     impl->tRt.eRunState = MOTOR_STATE_RUNNING;
-                    impl->eStartupPhase = MOTOR_STARTUP_IDLE;
+                    impl->chStartupPhase = MOTOR_STARTUP_IDLE;
                 }
             }
             motor_private_exit(impl, sync_state);
@@ -359,8 +359,8 @@ static fsm_rt_t run_startup(motor_handle_t *motor, motor_impl_t *impl,
 
             sync_state = motor_private_enter(impl);
             if (impl->tRt.eRunState != MOTOR_STATE_STARTING ||
-                (impl->eStartupPhase != MOTOR_STARTUP_QUALIFY_SOURCE &&
-                 impl->eStartupPhase != MOTOR_STARTUP_BLEND_ANGLE) ||
+                (impl->chStartupPhase != MOTOR_STARTUP_QUALIFY_SOURCE &&
+                 impl->chStartupPhase != MOTOR_STARTUP_BLEND_ANGLE) ||
                 impl->bCommandPending) {
                 motor_state_e current_state = impl->tRt.eRunState;
                 motor_private_exit(impl, sync_state);
@@ -376,8 +376,8 @@ static fsm_rt_t run_startup(motor_handle_t *motor, motor_impl_t *impl,
                 (uint32_t)(now - transition_start) >= transition_timeout;
             sync_state = motor_private_enter(impl);
             if (impl->tRt.eRunState != MOTOR_STATE_STARTING ||
-                (impl->eStartupPhase != MOTOR_STARTUP_QUALIFY_SOURCE &&
-                 impl->eStartupPhase != MOTOR_STARTUP_BLEND_ANGLE) ||
+                (impl->chStartupPhase != MOTOR_STARTUP_QUALIFY_SOURCE &&
+                 impl->chStartupPhase != MOTOR_STARTUP_BLEND_ANGLE) ||
                 impl->bCommandPending) {
                 motor_state_e current_state = impl->tRt.eRunState;
                 motor_private_exit(impl, sync_state);
@@ -394,14 +394,14 @@ static fsm_rt_t run_startup(motor_handle_t *motor, motor_impl_t *impl,
         case MOTOR_STARTUP_COMPLETE:
             sync_state = motor_private_enter(impl);
             if (impl->tRt.eRunState != MOTOR_STATE_STARTING ||
-                impl->eStartupPhase != MOTOR_STARTUP_COMPLETE ||
+                impl->chStartupPhase != MOTOR_STARTUP_COMPLETE ||
                 impl->bCommandPending) {
                 motor_private_exit(impl, sync_state);
                 return fsm_rt_on_going;
             }
             impl->bOuterLoopActive = true;
             impl->tRt.eRunState = MOTOR_STATE_RUNNING;
-            impl->eStartupPhase = MOTOR_STARTUP_IDLE;
+            impl->chStartupPhase = MOTOR_STARTUP_IDLE;
             motor_private_exit(impl, sync_state);
             return fsm_rt_cpl;
         case MOTOR_STARTUP_IDLE:
@@ -422,21 +422,21 @@ fsm_rt_t motor_RunFSM(motor_handle_t *motor)
     sync_state = motor_private_enter(impl);
     if (impl->bCommandPending) {
         motor_state_e previous_state = impl->tRt.eRunState;
-        cmd = impl->ePendingCommand;
+        cmd = impl->chPendingCommand;
         if (cmd == MOTOR_COMMAND_START) {
             impl->tRt.eRunState = MOTOR_STATE_STARTING;
-            impl->eStartupPhase = MOTOR_STARTUP_CALIBRATE;
+            impl->chStartupPhase = MOTOR_STARTUP_CALIBRATE;
         } else if (cmd == MOTOR_COMMAND_STOP)
             impl->tRt.eRunState = MOTOR_STATE_STOPPING;
         impl->bCommandPending = false;
-        impl->ePendingCommand = MOTOR_COMMAND_NONE;
+        impl->chPendingCommand = MOTOR_COMMAND_NONE;
         if (previous_state != impl->tRt.eRunState) {
             motor_private_AppendEvent(impl, MOTOR_EVENT_STATE_CHANGED,
                 previous_state, impl->tRt.eRunState, 0U, 0U);
         }
     }
     state = impl->tRt.eRunState;
-    phase = impl->eStartupPhase;
+    phase = impl->chStartupPhase;
     motor_private_exit(impl, sync_state);
     if (cmd == MOTOR_COMMAND_STOP) return stop_now(motor);
     if (cmd != MOTOR_COMMAND_START && cmd != MOTOR_COMMAND_NONE &&
@@ -465,9 +465,9 @@ foc_result_t motor_ClearFault(motor_handle_t *motor)
     }
     impl->tRt.wFaults = MOTOR_FAULT_NONE;
     impl->tRt.eRunState = MOTOR_STATE_IDLE;
-    impl->eStartupPhase = MOTOR_STARTUP_IDLE;
+    impl->chStartupPhase = MOTOR_STARTUP_IDLE;
     impl->bCommandPending = false;
-    impl->ePendingCommand = MOTOR_COMMAND_NONE;
+    impl->chPendingCommand = MOTOR_COMMAND_NONE;
     motor_private_exit(impl, sync_state);
     return FOC_RESULT_OK;
 }
@@ -478,7 +478,7 @@ void motor_test_CorruptFSM(motor_handle_t *motor, motor_state_e state,
 {
     if (motor_private_is_initialized(motor)) {
         motor_private(motor)->tRt.eRunState = state;
-        motor_private(motor)->eStartupPhase = phase;
+        motor_private(motor)->chStartupPhase = phase;
     }
 }
 

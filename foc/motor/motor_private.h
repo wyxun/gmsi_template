@@ -11,14 +11,28 @@
 #define MOTOR_IMPL_MAGIC 0x4D4F544FU
 #define MOTOR_EVENT_CAPACITY 4U
 
+/*
+ * Compact 8-byte event record. wSequence is an independent monotonic
+ * event counter (never milliseconds or high-frequency sample indices).
+ * chMeta packs from-state (3 bits), to-state (3 bits), and detail (2
+ * bits, e.g. motor_position_role_e). hwPayload is one event-specific
+ * 16-bit numeric value: fault bits for FAULT, command | result << 8
+ * for command events, old | new << 8 flags or phases for validity and
+ * transition events. Realtime code never formats strings for events.
+ */
 typedef struct {
     uint32_t wSequence;
-    uint32_t wPayload;
+    uint16_t hwPayload;
     uint8_t chType;
-    uint8_t chFrom;
-    uint8_t chTo;
-    uint8_t chDetail;
+    uint8_t chMeta;
 } motor_event_record_t;
+
+#define MOTOR_EVENT_META(eFrom, eTo, chDetail) \
+    ((uint8_t)((uint8_t)(eFrom) | ((uint8_t)(eTo) << 3) | \
+               ((uint8_t)(chDetail) << 6)))
+#define MOTOR_EVENT_META_FROM(chMeta) ((uint8_t)((chMeta) & 0x7U))
+#define MOTOR_EVENT_META_TO(chMeta)   ((uint8_t)(((chMeta) >> 3) & 0x7U))
+#define MOTOR_EVENT_META_DETAIL(chMeta) ((uint8_t)((chMeta) >> 6))
 
 #if defined(__GNUC__) || defined(__clang__)
 /*
@@ -31,25 +45,33 @@ typedef struct {
 #error "Opaque motor storage requires compiler may_alias support"
 #endif
 
+/*
+ * Layout is ordered by alignment so the private implementation stays
+ * inside the fixed public handle storage on both 32-bit targets and
+ * 64-bit hosts: pointer-bearing blocks first, then 4-byte, 2-byte, and
+ * 1-byte members. Enum state is stored narrowed to uint8_t; flags that
+ * are never address-taken are bit-packed. Do not grow fields without
+ * checking the static assert below.
+ */
 typedef struct MOTOR_PRIVATE_MAY_ALIAS {
-    motor_state_t           tRt;
+    /* 8-byte aligned interface and control blocks. */
     foc_hal_t               tHal;
     motor_control_t         tControl;
-    phase_current_handle_t  tCurrent;
     /* One copy backs both bindings because different sources are rejected. */
     foc_position_source_if_t tPositionSource;
+    motor_time_if_t         tTime;
+    motor_sync_if_t         tSync;
+    /* 4-byte block. */
+    motor_state_t           tRt;
+    phase_current_handle_t  tCurrent;
+    foc_position_config_t   tPositionConfig;
     foc_angle_t             tMechanicalAngle;
     foc_scalar_t            qMechanicalSpeed;
-    foc_position_valid_flag_e eMechanicalValidFlags;
     foc_angle_t             tOpenLoopAngle;
     foc_angle_t             tCandidateAngle;
     foc_scalar_t            qCandidateSpeed;
     foc_scalar_t            qAngleError;
     foc_scalar_t            qBlendFactor;
-    uint8_t                 chActiveValidFlags;
-    uint8_t                 chCandidateValidFlags;
-    motor_time_if_t         tTime;
-    motor_sync_if_t         tSync;
     foc_scalar_t            qOpenLoopSpeed;
     foc_scalar_t            qAcceleration;
     foc_scalar_t            qOpenLoopCommandSpeed;
@@ -59,32 +81,42 @@ typedef struct MOTOR_PRIVATE_MAY_ALIAS {
     foc_scalar_t            qTransitionMaximumAngleError;
     foc_angle_t             tTransitionStartAngle;
     foc_scalar_t            qTransitionStartSpeed;
-    foc_position_config_t   tPositionConfig;
     uint32_t                wStartupDelayMs;
     uint32_t                wStartupStartMs;
+    /* Diagnostic bring-up timestamp; only used under FOC_ENABLE_DIAGNOSTIC. */
+    uint32_t                wDiagnosticStartMs;
     uint32_t                wTransitionTimeoutMs;
     uint32_t                wPositionSampleTimestamp;
+    uint32_t                wNextEventSequence;
+    uint32_t                wEventOverwriteCount;
+    uint32_t                wMagic;
+    motor_event_record_t    atEvents[MOTOR_EVENT_CAPACITY];
+    /* 2-byte block. */
     uint16_t                hwTransitionQualificationSamples;
     uint16_t                hwTransitionBlendSamples;
     uint16_t                hwTransitionSampleCount;
-    motor_event_record_t    atEvents[MOTOR_EVENT_CAPACITY];
-    uint32_t                wNextEventSequence;
-    uint32_t                wEventOverwriteCount;
-    motor_startup_phase_e   eStartupPhase;
-    motor_command_e         ePendingCommand;
-    uint32_t                wMagic;
+    /* 1-byte block: flag bytes and narrowed enum state. */
+    uint8_t                 chActiveValidFlags;
+    uint8_t                 chCandidateValidFlags;
+    uint8_t                 chMechanicalValidFlags;
+    uint8_t                 chStartupPhase;
+    uint8_t                 chPendingCommand;
     uint8_t                 chEventHead;
     uint8_t                 chEventCount;
-    bool                    bCommandPending;
-    bool                    bPwmEnabled;
-    bool                    bInitialPositionSourceBound;
-    bool                    bTargetPositionSourceBound;
-    bool                    bOuterLoopActive;
+    /* Address-taken re-entrancy flags stay plain bool. */
     bool                    bHighFrequencyStepInProgress;
     bool                    bLowFrequencyStepInProgress;
+    /* Bit-packed flags (never address-taken). */
+    uint8_t                 bCommandPending : 1;
+    uint8_t                 bPwmEnabled : 1;
+    uint8_t                 bInitialPositionSourceBound : 1;
+    uint8_t                 bTargetPositionSourceBound : 1;
+    uint8_t                 bOuterLoopActive : 1;
+    /* Fixed-duty diagnostic output active (FOC_ENABLE_DIAGNOSTIC only). */
+    uint8_t                 bDiagnosticActive : 1;
 } motor_impl_t;
 
-_Static_assert(sizeof(motor_impl_t) <= 1024U,
+_Static_assert(sizeof(motor_impl_t) <= MOTOR_HANDLE_STORAGE_SIZE,
                "motor implementation exceeds public handle storage");
 _Static_assert(_Alignof(motor_handle_t) >= _Alignof(motor_impl_t),
                "motor_handle_t private storage is insufficiently aligned");
@@ -127,6 +159,5 @@ foc_result_t motor_private_CalibrateCurrent(motor_handle_t *);
 foc_result_t motor_private_SampleCurrent(motor_handle_t *);
 void motor_private_AppendEvent(motor_impl_t *, motor_event_type_e,
                                motor_state_e, motor_state_e,
-                               uint8_t, uint32_t);
-
+                               uint8_t, uint16_t);
 #endif /* MOTOR_PRIVATE_H */

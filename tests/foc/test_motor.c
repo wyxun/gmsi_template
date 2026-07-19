@@ -291,5 +291,49 @@ int test_motor(void)
         TEST_CHECK(!tSnapshotA.bPwmEnabled && tHwA.wStopCalls == 2U);
     }
 
+    /*
+     * Event ring: fixed capacity 4 with overwrite-oldest policy. Six
+     * fault stops produce independent monotonic sequences 1..6; the two
+     * oldest records are dropped and counted, remaining events drain in
+     * FIFO order. Fault payloads accumulate: 1, 3, 7, 15, 31, 31.
+     */
+    TEST_CHECK(motor_Init(&tMotorA, &tConfigA) == FOC_RESULT_OK);
+    motor_EmergencyStop(&tMotorA, MOTOR_FAULT_HARDWARE);
+    motor_EmergencyStop(&tMotorA, MOTOR_FAULT_CURRENT_SAMPLE);
+    motor_EmergencyStop(&tMotorA, MOTOR_FAULT_INVALID_COMMAND);
+    motor_EmergencyStop(&tMotorA, MOTOR_FAULT_POSITION_SOURCE);
+    motor_EmergencyStop(&tMotorA, MOTOR_FAULT_TRANSITION_TIMEOUT);
+    motor_EmergencyStop(&tMotorA, MOTOR_FAULT_HARDWARE);
+    TEST_CHECK(motor_GetSnapshot(&tMotorA, &tSnapshotA) == FOC_RESULT_OK);
+    TEST_CHECK(tSnapshotA.wEventSequence == 6U);
+    TEST_CHECK(tSnapshotA.wEventOverwriteCount == 2U);
+    {
+        static const uint32_t awExpectedFaults[4] = {
+            MOTOR_FAULT_HARDWARE | MOTOR_FAULT_CURRENT_SAMPLE |
+                MOTOR_FAULT_INVALID_COMMAND,
+            MOTOR_FAULT_HARDWARE | MOTOR_FAULT_CURRENT_SAMPLE |
+                MOTOR_FAULT_INVALID_COMMAND | MOTOR_FAULT_POSITION_SOURCE,
+            MOTOR_FAULT_HARDWARE | MOTOR_FAULT_CURRENT_SAMPLE |
+                MOTOR_FAULT_INVALID_COMMAND | MOTOR_FAULT_POSITION_SOURCE |
+                MOTOR_FAULT_TRANSITION_TIMEOUT,
+            MOTOR_FAULT_HARDWARE | MOTOR_FAULT_CURRENT_SAMPLE |
+                MOTOR_FAULT_INVALID_COMMAND | MOTOR_FAULT_POSITION_SOURCE |
+                MOTOR_FAULT_TRANSITION_TIMEOUT,
+        };
+        uint32_t wPreviousSequence = 0U;
+
+        for (uint32_t wIndex = 0U; wIndex < 4U; wIndex++) {
+            TEST_CHECK(motor_DebugReadEvent(&tMotorA, &tEvent));
+            TEST_CHECK(tEvent.eType == MOTOR_EVENT_FAULT);
+            TEST_CHECK(tEvent.wSequence == 3U + wIndex);
+            TEST_CHECK(tEvent.wSequence > wPreviousSequence);
+            wPreviousSequence = tEvent.wSequence;
+            TEST_CHECK(tEvent.eFromState == MOTOR_STATE_FAULT);
+            TEST_CHECK(tEvent.eToState == MOTOR_STATE_FAULT);
+            TEST_CHECK(tEvent.wFaults == awExpectedFaults[wIndex]);
+        }
+        TEST_CHECK(!motor_DebugReadEvent(&tMotorA, &tEvent));
+    }
+
     return nFailures;
 }

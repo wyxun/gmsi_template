@@ -157,6 +157,17 @@ typedef struct {
     foc_result_t eResult;
 } motor_event_t;
 
+/*
+ * Coherent diagnostic snapshot copied under motor_sync_if_t. Frozen
+ * field semantics: angles are foc_angle_t wrapped electrical turns;
+ * foc_scalar_t speeds are electrical turns/s (mechanical only where
+ * named); references and feedback use per-unit q_type. Source roles:
+ * active is the angle/speed currently used by control, candidate is
+ * the target source during qualification/blend, open-loop is the
+ * independently tracked startup angle. Source-specific fields are
+ * meaningful only when the matching validity flag is set. No pointers
+ * into private storage, controllers, calibration, or HAL are exposed.
+ */
 typedef struct {
     motor_state_e eRunState;
     uint32_t wFaults;

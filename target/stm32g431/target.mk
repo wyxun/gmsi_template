@@ -3,8 +3,9 @@
 # STM32G431xx — Cortex-M4F, single-precision FPU
 # =============================================================================
 
-# grblHAL CNC controller (Phase 1 — algorithm verification)
-GRBLHAL_ENABLE = 1
+# FOC motor control target (grblHAL is not built on this chip).
+# Note: the FOC high-frequency ISR is intentionally NOT wired in
+# target/stm32g431/stm32g4xx_it.c yet — build/link only for now.
 
 # CPU architecture (FPU enabled)
 CPU_FLAGS = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
@@ -12,11 +13,7 @@ CPU_FLAGS = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
 # Chip preprocessor defines
 C_DEFS += -DSTM32G431xx -DUSE_HAL_DRIVER -DUSE_FULL_LL_DRIVER
 
-ifndef GRBLHAL_ENABLE
 C_DEFS += -DFOC_SUPPORT=1
-else
-C_DEFS += -DFOC_SUPPORT=0
-endif
 
 # CMSIS paths
 CMSIS_CORE = vendor/cortex-m/cmsis_core
@@ -80,20 +77,17 @@ LL_SOURCES = \
 
 CHIP_SOURCES = $(HAL_SOURCES) $(LL_SOURCES)
 
-# FOC framework — STM32G431 supports FOC
-ifndef GRBLHAL_ENABLE
+# FOC framework — STM32G431 supports FOC (same module set as at32f413)
 FOC_SOURCES = $(wildcard foc/math/*.c)       \
               $(wildcard foc/hal/*.c)         \
               $(wildcard foc/motor/*.c)       \
               $(wildcard foc/middleware/*.c)  \
+              $(wildcard foc/control/*.c)     \
+              $(wildcard foc/modulation/*.c)  \
+              $(wildcard foc/observer/*.c)    \
+              $(wildcard foc/optimization/*.c) \
+              $(wildcard foc/experimental/*.c) \
               $(wildcard foc/app/*.c)
-endif
 
 # 启用 MODUS 默认内置的 perf_counter 移植
 MODUS_USE_DEFAULT_PERFC_PORT = 1
-
-# grblHAL class source
-CLASS_SOURCES += class/grblhal.c
-
-# Compile settings.c with __SETTINGS_C__ defined
-build/settings.o: CFLAGS += -D__SETTINGS_C__

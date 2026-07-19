@@ -1,25 +1,45 @@
 /*******************************************************************************
  * @file    foc_app.c
  * @brief   FOC 应用层 — MODUS 挂载实现
+ *
+ * 应用编排原则（重构后）：
+ *  - foc_app_RunFSM() 只做产品事件处理并驱动 motor_RunFSM()；
+ *  - 高频算法由 ADC 抢占转换完成中断（TMR1 CH4 触发，20 kHz）通过
+ *    foc_app_HighFrequencyISR() 调 motor_HighFrequencyStep()；
+ *  - 低频级联由 MODUS 1 ms 系统时钟（foc_app_Clock，SysTick 调度）调
+ *    motor_LowFrequencyStep()；
+ *  - 按钮与 Shell 只使用 motor_Start()/motor_Stop()/引用 setter 发命令，
+ *    决策与打印只使用 motor_GetSnapshot()；事件环仅用于日志。
  ******************************************************************************/
 
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include "peripheral.h"
 #include "mdi_hw.h"
 #include "foc_hal_mdi_adapter.h"
 #include "foc_app.h"
-#include "foc_core.h"
-#include "foc_modulation.h"
-#include "foc_hal.h"
 #include "motor.h"
+#include "foc_pid.h"
+#include "foc_controller.h"
 #include "mdebug/mshell.h"
+#include "perfc_port.h"
 
-#undef  this
-#define this (*ptThis)
+/* 控制周期（归一化秒）：
+ * 高频 — TMR1 CH4 在中心对齐 TWO_WAY_1 模式下仅向下计数时产生一次比较
+ *        事件，ADC 抢占转换完成中断每 20 kHz PWM 载波触发一次（50 us）；
+ * 低频 — MODUS 1 ms 系统时钟（1 kHz）。 */
+#define FOC_APP_HF_PERIOD_S     0.00005f
+#define FOC_APP_LF_PERIOD_S     0.001f
 
-static int foc_app_Clock(uintptr_t wObjectAddr);
-static int foc_app_Run  (uintptr_t wObjectAddr);
+/* 开环产品默认值：1 电角 turn/s，5 turn/s^2 加速，Vq 0.05 pu */
+#define FOC_APP_OPEN_LOOP_SPEED 1.0f
+#define FOC_APP_OPEN_LOOP_ACCEL 5.0f
+#define FOC_APP_VOLTAGE_REF_Q   0.05f
+
+static uint32_t  foc_app_GetMilliseconds(void *pContext);
+static uintptr_t foc_app_EnterCritical(void *pContext);
+static void      foc_app_ExitCritical(void *pContext, uintptr_t wState);
 
 mcoroutine_handle_t tMcoroutineFocAppHandle = {
     .bIsRunning = false,
@@ -27,6 +47,17 @@ mcoroutine_handle_t tMcoroutineFocAppHandle = {
 };
 
 static modus_base_t     s_tFocAppBase;
+static motor_handle_t  *s_ptMotorISR;   /* 高频 ISR 绑定的实例 */
+
+/* Id/Iq/速度/位置四个控制器实例，电压开环模式不使用，为后续闭环模式
+ * 预先绑定（motor_Start 对闭环模式强制校验控制器存在）。 */
+static foc_pid_t s_tPidId;
+static foc_pid_t s_tPidIq;
+static foc_pid_t s_tPidSpeed;
+static foc_pid_t s_tPidPosition;
+
+static int foc_app_Clock(uintptr_t wObjectAddr);
+static int foc_app_Run  (uintptr_t wObjectAddr);
 
 static motor_config_t s_tMotorConfig = {
     .tParams = {
@@ -40,6 +71,42 @@ static motor_config_t s_tMotorConfig = {
         .chPolePairs                  = 4U,
     },
     .eTopology = SENSING_TOPOLOGY_3P,
+    .tTime = {
+        .pContext = NULL,
+        .fnGetMilliseconds = foc_app_GetMilliseconds,
+    },
+    .tSync = {
+        .pContext = NULL,
+        .fnEnter = foc_app_EnterCritical,
+        .fnExit  = foc_app_ExitCritical,
+    },
+    .qHighFrequencyPeriod = FOC_SCALAR(FOC_APP_HF_PERIOD_S),
+    .qLowFrequencyPeriod  = FOC_SCALAR(FOC_APP_LF_PERIOD_S),
+    .tPosition = {
+        .chPolePairs = 4U,
+        .chDirection = 1,
+    },
+    .qTransitionMinimumConfidence = FOC_SCALAR(0.8f),
+    .qTransitionMinimumSpeed      = FOC_SCALAR(0.05f),
+    .qTransitionMaximumAngleError = FOC_SCALAR(0.25f),
+    .wTransitionTimeoutMs         = 1000U,
+    .hwTransitionQualificationSamples = 3U,
+    .hwTransitionBlendSamples         = 8U,
+    .wStartupDelayMs = 200U,
+};
+
+/* 产品持有的唯一 run config：D/Q 电压开环（内部开环角度发生器）。 */
+static motor_run_config_t s_tMotorRunConfig = {
+    .eControlMode = MOTOR_CONTROL_VOLTAGE_OPEN_LOOP,
+    .ptInitialPositionSource = NULL,
+    .ptTargetPositionSource  = NULL,
+    .qInitialAngle  = FOC_ZERO,
+    .qOpenLoopSpeed = FOC_SCALAR(FOC_APP_OPEN_LOOP_SPEED),
+    .qAcceleration  = FOC_SCALAR(FOC_APP_OPEN_LOOP_ACCEL),
+    .tVoltageReference = {
+        .qD = FOC_ZERO,
+        .qQ = FOC_SCALAR(FOC_APP_VOLTAGE_REF_Q),
+    },
 };
 
 static modus_base_cfg_t s_tFocAppBaseCfg = {
@@ -51,172 +118,243 @@ static modus_base_cfg_t s_tFocAppBaseCfg = {
     },
 };
 
+/* ---------------------------------------------------------------------------
+ * motor_time_if_t / motor_sync_if_t 目标侧绑定
+ * 临界区走 perf_counter 多架构全局中断守卫（Cortex-M 用 PRIMASK、RISC-V 用
+ * mstatus.MIE，中断安全，允许嵌套）；毫秒时钟取 perf_counter。
+ * ------------------------------------------------------------------------- */
+static uint32_t foc_app_GetMilliseconds(void *pContext)
+{
+    (void)pContext;
+    return (uint32_t)get_system_ms();
+}
+
+static uintptr_t foc_app_EnterCritical(void *pContext)
+{
+    (void)pContext;
+    return (uintptr_t)perfc_port_disable_global_interrupt();
+}
+
+static void foc_app_ExitCritical(void *pContext, uintptr_t wState)
+{
+    (void)pContext;
+    perfc_port_resume_global_interrupt((uint32_t)wState);
+}
+
+static const char *foc_app_StateName(motor_state_e eState)
+{
+    switch (eState) {
+        case MOTOR_STATE_IDLE:     return "IDLE";
+        case MOTOR_STATE_STARTING: return "STARTING";
+        case MOTOR_STATE_STOPPING: return "STOPPING";
+        case MOTOR_STATE_RUNNING:  return "RUNNING";
+        case MOTOR_STATE_FAULT:    return "FAULT";
+        default:                   return "?";
+    }
+}
+
+/* 事件环只做日志；正常控制路径不依赖事件消费。 */
+static void foc_app_DrainEvents(foc_app_t *ptThis)
+{
+    static const char * const s_apcEventNames[] = {
+        "CMD_ACCEPT", "CMD_REJECT", "STATE", "SRC_VALID",
+        "TRANS_START", "TRANS_DONE", "TRANS_TIMEOUT", "FAULT",
+    };
+    motor_event_t tEvent;
+
+    while (motor_DebugReadEvent(ptThis->ptMotor, &tEvent)) {
+        MLOGF(D, "[FOC][Evt#%lu] %s %d->%d cmd=%d res=%d flt=0x%lX\r\n",
+              (unsigned long)tEvent.wSequence,
+              (unsigned int)tEvent.eType < 8U ?
+                  s_apcEventNames[tEvent.eType] : "?",
+              (int)tEvent.eFromState, (int)tEvent.eToState,
+              (int)tEvent.eCommand, (int)tEvent.eResult,
+              (unsigned long)tEvent.wFaults);
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * 应用 FSM：纯编排，只提交产品命令并驱动 motor_RunFSM()。
+ * ------------------------------------------------------------------------- */
 fsm_rt_t foc_app_RunFSM(foc_app_t *ptThis)
 {
-    motor_handle_t *ptMotor = this.ptMotor;
-PERFC_PT_BEGIN(this.chState)
-
-    PERFC_PT_WAIT_UNTIL(
-        ptMotor != NULL && ptMotor->tRt.eRunState == MOTOR_STATE_START
-    )
-
-    PERFC_PT_ENTRY(
-        ptMotor->tRt.tThetaE = foc_angle_from_scalar(FOC_ZERO);
-        ptMotor->tRt.qId     = _Q(0.1f);
-        ptMotor->tRt.qIq     = 0;
-        /* Calibrate current offsets with PWM disabled (zero current flowing) */
-        if (motor_CalibrateCurrent(ptMotor) != FOC_RESULT_OK) {
-            motor_EmergencyStop(ptMotor, MOTOR_FAULT_CURRENT_SAMPLE);
-        }
-    )
-
-    PERFC_PT_DELAY_MS(200)
-
-    PERFC_PT_ENTRY(
-        ptMotor->tRt.eRunState = MOTOR_STATE_OPEN_LOOP;
-        if (motor_Enable(ptMotor, true) != FOC_RESULT_OK) {
-            motor_EmergencyStop(ptMotor, MOTOR_FAULT_HARDWARE);
-        }
-    )
-
-    while (ptMotor->tRt.eRunState == MOTOR_STATE_OPEN_LOOP) {
-
-        if(get_system_ms() - this.lOpenLoopTick >= 1)
-        {
-            ptMotor->tRt.tThetaE = foc_angle_from_scalar(
-                foc_add_sat(ptMotor->tRt.tThetaE.qTurns,
-                            FOC_SCALAR(0.001f)));
-            this.lOpenLoopTick = get_system_ms();
-        }
-
-        foc_dq_t tVdq = { .qD = FOC_ZERO, .qQ = FOC_SCALAR(0.05f) };
-        foc_ab_t tVab;
-        foc_duty_abc_t tDuty;
-
-        (void)foc_ipark(&tVdq, ptMotor->tRt.tThetaE, &tVab);
-        (void)foc_svpwm(&tVab, &tDuty);
-
-        /* Store duties for observation */
-        this.qDutyU = tDuty.qU;
-        this.qDutyV = tDuty.qV;
-        this.qDutyW = tDuty.qW;
-
-        if (motor_SetDuty(ptMotor, tDuty.qU, tDuty.qV, tDuty.qW) !=
-            FOC_RESULT_OK) {
-            motor_EmergencyStop(ptMotor, MOTOR_FAULT_HARDWARE);
-        }
-
-        /* Reconstruct three-phase currents */
-        (void)motor_SampleCurrent(ptMotor);
-
-        {
-            q_type qCurrentMax = tDuty.qU;
-            q_type qCurrentMin = tDuty.qU;
-
-            if (tDuty.qV > qCurrentMax) qCurrentMax = tDuty.qV;
-            if (tDuty.qV < qCurrentMin) qCurrentMin = tDuty.qV;
-            if (tDuty.qW > qCurrentMax) qCurrentMax = tDuty.qW;
-            if (tDuty.qW < qCurrentMin) qCurrentMin = tDuty.qW;
-
-            if (qCurrentMax > this.qPeakDuty) this.qPeakDuty = qCurrentMax;
-            if (qCurrentMin < this.qMinDuty) this.qMinDuty = qCurrentMin;
-
-            if (get_system_ms() - this.wLastPrintTick >= 500UL) {
-                this.wLastPrintTick = get_system_ms();
-                
-                /* Get raw ADC readings for debugging */
-                uint32_t raw_u = 0, raw_v = 0, raw_w = 0;
-                (void)motor_GetRawCurrent(ptMotor, &raw_u, &raw_v, &raw_w);
-
-                MLOGF(T, "[SVPWM] Vq: %.3f | Iu=%.3f, Iv=%.3f, Iw=%.3f | Raw: U=%lu V=%lu W=%lu | Offset: U=%lu V=%lu W=%lu\r\n",
-                      _D(tVdq.qQ),
-                      _D(ptMotor->tCurrent.qIu), _D(ptMotor->tCurrent.qIv), _D(ptMotor->tCurrent.qIw),
-                      (unsigned long)raw_u, (unsigned long)raw_v, (unsigned long)raw_w,
-                      (unsigned long)ptMotor->tCurrent.tCalib.wOffsetU,
-                      (unsigned long)ptMotor->tCurrent.tCalib.wOffsetV,
-                      (unsigned long)ptMotor->tCurrent.tCalib.wOffsetW);
-                this.qPeakDuty = FOC_ZERO;
-                this.qMinDuty = FOC_ONE;
-            }
-        }
-
-        PERFC_PT_YIELD(fsm_rt_on_going);
+    if (ptThis == NULL || ptThis->ptMotor == NULL) {
+        return fsm_rt_err;
     }
+    return motor_RunFSM(ptThis->ptMotor);
+}
 
-    do {
-    PERFC_PT_ENTRY(
-        if (ptMotor->tRt.eRunState == MOTOR_STATE_FAULT) {
-            PERFC_PT_RETURN(fsm_rt_cpl);
+void foc_app_Start(foc_app_t *ptThis)
+{
+    motor_snapshot_t tSnapshot;
+    foc_result_t eResult;
+
+    if (ptThis == NULL || ptThis->ptMotor == NULL) { return; }
+    if (motor_GetSnapshot(ptThis->ptMotor, &tSnapshot) == FOC_RESULT_OK &&
+        tSnapshot.wFaults != MOTOR_FAULT_NONE) {
+        MLOGF(W, "[FOC] Motor faults active: 0x%lX, clear first\r\n",
+              (unsigned long)tSnapshot.wFaults);
+        return;
+    }
+    eResult = motor_Start(ptThis->ptMotor, &s_tMotorRunConfig);
+    if (eResult == FOC_RESULT_OK) {
+        MLOG(I, "[FOC] Start command accepted\r\n");
+    } else {
+        MLOGF(W, "[FOC] Start command rejected: %d\r\n", (int)eResult);
+    }
+}
+
+void foc_app_Stop(foc_app_t *ptThis)
+{
+    foc_result_t eResult;
+
+    if (ptThis == NULL || ptThis->ptMotor == NULL) { return; }
+    eResult = motor_Stop(ptThis->ptMotor);
+    if (eResult == FOC_RESULT_OK) {
+        MLOG(I, "[FOC] Stop command accepted\r\n");
+    } else {
+        MLOGF(W, "[FOC] Stop command rejected: %d\r\n", (int)eResult);
+    }
+}
+
+/* 高频控制入口：仅在 ADC 抢占转换完成中断上下文中调用。 */
+void foc_app_HighFrequencyISR(void)
+{
+    if (s_ptMotorISR != NULL) {
+        (void)motor_HighFrequencyStep(s_ptMotorISR);
+    }
+}
+
+static void foc_app_HandleButton(foc_app_t *ptThis)
+{
+#if defined(MDI_HW_HAS_BUTTON_START)
+    uint32_t wNow = (uint32_t)get_system_ms();
+    bool bCurrBtnState = (MDI_Read(HW.ptButtonStart) == MDI_GPIO_LOW);
+    motor_snapshot_t tSnapshot;
+
+    if (bCurrBtnState == ptThis->bLastButtonState) { return; }
+    if ((uint32_t)(wNow - ptThis->wLastButtonTick) < 50U) { return; }
+    ptThis->bLastButtonState = bCurrBtnState;
+    ptThis->wLastButtonTick = wNow;
+    if (!bCurrBtnState) { return; }     /* 只在按下沿动作 */
+
+    if (motor_GetSnapshot(ptThis->ptMotor, &tSnapshot) != FOC_RESULT_OK) {
+        return;
+    }
+    if (tSnapshot.wFaults != MOTOR_FAULT_NONE) {
+        MLOGF(I, "[Button] Faults 0x%lX, clearing...\r\n",
+              (unsigned long)tSnapshot.wFaults);
+        if (motor_ClearFault(ptThis->ptMotor) != FOC_RESULT_OK) {
+            MLOG(W, "[Button] ClearFault rejected (PWM on?)\r\n");
         }
-    )
-        PERFC_PT_YIELD(fsm_rt_on_going);
-    } while (ptMotor->tRt.eRunState == MOTOR_STATE_CLOSE_LOOP);
-
-PERFC_PT_END()
-
-    return fsm_rt_cpl;
+    } else if (tSnapshot.eRunState == MOTOR_STATE_IDLE) {
+        MLOG(I, "[Button] Press: Starting Motor...\r\n");
+        foc_app_Start(ptThis);
+    } else {
+        MLOG(I, "[Button] Press: Stopping Motor...\r\n");
+        foc_app_Stop(ptThis);
+    }
+#else
+    (void)ptThis;   /* no start/stop button in this chip's MDI hardware pool */
+#endif
 }
 
 static int foc_app_Run(uintptr_t wObjectAddr)
 {
     foc_app_t *ptThis = (foc_app_t *)wObjectAddr;
     uint32_t   wEvent;
+    uint32_t   wNow;
+    motor_snapshot_t tSnapshot;
 
     if (ptThis == NULL) { return MODUS_EFAIL; }
 
     wEvent = mbase_EventPend(ptThis->ptBase);
     (void)wEvent;
 
-    /* PB2 按键消抖与控制启停 */
+    foc_app_HandleButton(ptThis);
+
+    /* 物理串口接收等待：当有串口输入数据时，跨模块 Post 转发给
+       TEMPLATE_CLASS 的 RingBuffer，达到 Echo 效果 */
     {
-        uint32_t s_wLastBtnTick = this.wLastButtonTick;
-        bool bCurrBtnState = (MDI_Read(HW.ptButtonStart) == MDI_GPIO_LOW);
-
-        if (bCurrBtnState != this.bLastButtonState) {
-            if (get_system_ms() - s_wLastBtnTick >= 50) { // 50ms 消抖
-                this.bLastButtonState = bCurrBtnState;
-                this.wLastButtonTick = get_system_ms();
-
-                if (bCurrBtnState) { // 按键被按下
-                    if (ptThis->ptMotor->tRt.eRunState == MOTOR_STATE_IDLE) {
-                        MLOG(I, "[Button] Press: Starting Motor...\r\n");
-                        foc_app_Start(ptThis);
-                    } else {
-                        MLOG(I, "[Button] Press: Stopping Motor...\r\n");
-                        foc_app_Stop(ptThis);
-                    }
-                }
-            }
+        uint8_t chBuf[64];
+        int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
+        if (nReadBytes > 0) {
+            mbase_MessagePostToRing(TEMPLATE_CLASS, chBuf, nReadBytes);
         }
     }
 
-    /* 物理串口接收等待：当有串口输入数据时，跨模块 Post 转发给 TEMPLATE_CLASS 的 RingBuffer，达到 Echo 效果 */
-    uint8_t chBuf[64];
-    int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
-    if (nReadBytes > 0) {
-        mbase_MessagePostToRing(TEMPLATE_CLASS, chBuf, nReadBytes);
-    }
+    (void)foc_app_RunFSM(ptThis);
+    foc_app_DrainEvents(ptThis);
 
-    foc_app_RunFSM(ptThis);
-
-    if (get_system_ms() - this.lLastHeartbeat >= 1000) {
-        this.lLastHeartbeat = get_system_ms();
-        extern uint8_t g_chGLogMask;
-        MLOGF(T, "[Heartbeat] foc_app is alive, motor_state: %d, Mask: 0x%02X\r\n",
-              (int)ptThis->ptMotor->tRt.eRunState, (unsigned int)g_chGLogMask);
+    wNow = (uint32_t)get_system_ms();
+    if ((uint32_t)(wNow - ptThis->wLastHeartbeatTick) >= 1000U) {
+        ptThis->wLastHeartbeatTick = wNow;
+        if (motor_GetSnapshot(ptThis->ptMotor, &tSnapshot) ==
+            FOC_RESULT_OK) {
+            MLOGF(T, "[Heartbeat] foc_app alive, motor: %s, flt: 0x%lX,"
+                  " Vq_ref: %.3f, Iu: %.3f\r\n",
+                  foc_app_StateName(tSnapshot.eRunState),
+                  (unsigned long)tSnapshot.wFaults,
+                  _D(tSnapshot.tVoltageReference.qQ),
+                  _D(tSnapshot.tPhaseCurrent.qIu));
+        }
     }
 
     return MODUS_SUCCESS;
 }
 
+/* 低频调度：MODUS 1 ms 系统时钟（SysTick → modus_Clock → foc_app_Clock）。
+ * 这是 motor_LowFrequencyStep() 唯一的低频调度点。 */
 static int foc_app_Clock(uintptr_t wObjectAddr)
 {
     foc_app_t *ptThis = (foc_app_t *)wObjectAddr;
     if (ptThis == NULL) { return MODUS_EFAIL; }
 
+    if (ptThis->ptMotor != NULL) {
+        (void)motor_LowFrequencyStep(ptThis->ptMotor);
+    }
     phase_test_waveform_step();
 
     return MODUS_SUCCESS;
+}
+
+static foc_result_t foc_app_InitControllers(void)
+{
+    const foc_pid_params_t tCurrentParams = {
+        .tKp = {0, FOC_SCALAR(0.5f)},
+        .tKiTs = {0, FOC_SCALAR(0.01f)},
+        .tKdOverTs = {0, FOC_ZERO},
+        .qOutputMinimum = FOC_SCALAR(-0.5f),
+        .qOutputMaximum = FOC_SCALAR(0.5f),
+        .qIntegratorMinimum = FOC_SCALAR(-0.3f),
+        .qIntegratorMaximum = FOC_SCALAR(0.3f),
+    };
+    const foc_pid_params_t tOuterParams = {
+        .tKp = {0, FOC_SCALAR(0.2f)},
+        .tKiTs = {0, FOC_SCALAR(0.005f)},
+        .tKdOverTs = {0, FOC_ZERO},
+        .qOutputMinimum = FOC_SCALAR(-0.5f),
+        .qOutputMaximum = FOC_SCALAR(0.5f),
+        .qIntegratorMinimum = FOC_SCALAR(-0.3f),
+        .qIntegratorMaximum = FOC_SCALAR(0.3f),
+    };
+
+    if (foc_pid_Init(&s_tPidId, &tCurrentParams) != FOC_RESULT_OK ||
+        foc_pid_Init(&s_tPidIq, &tCurrentParams) != FOC_RESULT_OK ||
+        foc_pid_Init(&s_tPidSpeed, &tOuterParams) != FOC_RESULT_OK ||
+        foc_pid_Init(&s_tPidPosition, &tOuterParams) != FOC_RESULT_OK) {
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    s_tMotorConfig.tControl.tIdController =
+        foc_controller_FromPid(&s_tPidId);
+    s_tMotorConfig.tControl.tIqController =
+        foc_controller_FromPid(&s_tPidIq);
+    s_tMotorConfig.tControl.tSpeedController =
+        foc_controller_FromPid(&s_tPidSpeed);
+    s_tMotorConfig.tControl.tPositionController =
+        foc_controller_FromPid(&s_tPidPosition);
+    s_tMotorConfig.tControl.eModulation = MOTOR_MODULATION_SVPWM;
+    return FOC_RESULT_OK;
 }
 
 int foc_app_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
@@ -232,46 +370,23 @@ int foc_app_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
     memset(ptThis, 0, sizeof(foc_app_t));
     ptThis->ptMotor = ptCfg->ptMotor;
     ptThis->ptBase = &s_tFocAppBase;
-    ptThis->qMinDuty = FOC_ONE;
     s_tFocAppBaseCfg.wParent = wObjectAddr;
 
-    if (foc_hal_mdi_BindDefault(&s_tMotorConfig.tHal) != FOC_RESULT_OK ||
+    if (foc_app_InitControllers() != FOC_RESULT_OK ||
+        foc_hal_mdi_BindDefault(&s_tMotorConfig.tHal) != FOC_RESULT_OK ||
         motor_Init(ptThis->ptMotor, &s_tMotorConfig) != FOC_RESULT_OK) {
-        MLOG(E, "foc_app_Init: motor hardware binding failed.\r\n");
+        MLOG(E, "foc_app_Init: motor init or binding failed.\r\n");
         return MODUS_EFAIL;
     }
+    s_ptMotorISR = ptThis->ptMotor;
 
     phase_test_waveform_init();
-    
+
     phase_testA();
     phase_testB(ptThis->ptMotor);
     phase_testC(ptThis);
 
     return mbase_Init(ptThis->ptBase, &s_tFocAppBaseCfg);
-}
-
-void foc_app_SetSpeedRef(foc_app_t *ptThis, q_type qRef)
-{
-    if (ptThis == NULL) { return; }
-    this.qSpeedRef = qRef;
-}
-
-void foc_app_Start(foc_app_t *ptThis)
-{
-    if (ptThis == NULL || this.ptMotor == NULL) { return; }
-    if (this.ptMotor->tRt.eRunState == MOTOR_STATE_IDLE) {
-        this.ptMotor->tRt.eRunState = MOTOR_STATE_START;
-    }
-}
-
-void foc_app_Stop(foc_app_t *ptThis)
-{
-    if (ptThis == NULL) { return; }
-    this.chState = 0;
-    if (this.ptMotor != NULL) {
-        (void)motor_Enable(this.ptMotor, false);
-        motor_Reset(this.ptMotor);
-    }
 }
 
 #if FOC_SUPPORT
@@ -289,26 +404,57 @@ static void cmd_motor(const char *args)
     }
     if (strncmp(args, "start", 5) == 0) {
         foc_app_Start(&tFocApp);
-        MLOG(I, "Motor starting...\r\n");
     } else if (strncmp(args, "stop", 4) == 0) {
         foc_app_Stop(&tFocApp);
-        MLOG(I, "Motor stopped\r\n");
+    } else if (strncmp(args, "clear", 5) == 0) {
+        if (motor_ClearFault(tFocApp.ptMotor) == FOC_RESULT_OK) {
+            MLOG(I, "Motor faults cleared\r\n");
+        } else {
+            MLOG(W, "ClearFault rejected (not in FAULT or PWM on)\r\n");
+        }
+    } else if (strncmp(args, "vq", 2) == 0) {
+        float fVq;
+        if (sscanf(args + 2, "%f", &fVq) == 1) {
+            s_tMotorRunConfig.tVoltageReference.qQ = FOC_SCALAR(fVq);
+            motor_SetVoltageReference(tFocApp.ptMotor,
+                                      FOC_ZERO, FOC_SCALAR(fVq));
+            MLOGF(I, "Vq reference: %.3f\r\n", (double)fVq);
+        } else {
+            MLOG(I, "Usage: motor vq <volts-pu>\r\n");
+        }
     } else if (strncmp(args, "status", 6) == 0) {
-        motor_handle_t *ptMotor = tFocApp.ptMotor;
-        MLOGF(I, "Motor state: %d\r\n", (int)ptMotor->tRt.eRunState);
-        MLOGF(I, " - ThetaE: %.3f deg\r\n",
-              (double)foc_angle_to_turns(ptMotor->tRt.tThetaE) * 360.0);
+        motor_snapshot_t tSnapshot;
+        if (motor_GetSnapshot(tFocApp.ptMotor, &tSnapshot) !=
+            FOC_RESULT_OK) {
+            MLOG(E, "Snapshot failed\r\n");
+            return;
+        }
+        MLOGF(I, "Motor state: %s (phase %d, mode %d, pwm %d)\r\n",
+              foc_app_StateName(tSnapshot.eRunState),
+              (int)tSnapshot.eStartupPhase, (int)tSnapshot.eControlMode,
+              (int)tSnapshot.bPwmEnabled);
+        MLOGF(I, " - Faults: 0x%lX, events: seq=%lu ovf=%lu\r\n",
+              (unsigned long)tSnapshot.wFaults,
+              (unsigned long)tSnapshot.wEventSequence,
+              (unsigned long)tSnapshot.wEventOverwriteCount);
+        MLOGF(I, " - Angle: %.1f deg, speed: %.3f e-turn/s\r\n",
+              (double)foc_angle_to_turns(tSnapshot.tActiveAngle) * 360.0,
+              _D(tSnapshot.qActiveSpeed));
         MLOGF(I, " - Duty U=%.1f%%, V=%.1f%%, W=%.1f%%\r\n",
-              _D(tFocApp.qDutyU)*100.0, _D(tFocApp.qDutyV)*100.0, _D(tFocApp.qDutyW)*100.0);
+              _D(tSnapshot.tDuty.qU) * 100.0,
+              _D(tSnapshot.tDuty.qV) * 100.0,
+              _D(tSnapshot.tDuty.qW) * 100.0);
         MLOGF(I, " - Current U=%.3f, V=%.3f, W=%.3f\r\n",
-              _D(ptMotor->tCurrent.qIu), _D(ptMotor->tCurrent.qIv), _D(ptMotor->tCurrent.qIw));
-        MLOGF(I, " - Calib Offsets: U=%lu V=%lu W=%lu Calibrated=%d\r\n",
-              (unsigned long)ptMotor->tCurrent.tCalib.wOffsetU,
-              (unsigned long)ptMotor->tCurrent.tCalib.wOffsetV,
-              (unsigned long)ptMotor->tCurrent.tCalib.wOffsetW,
-              (int)ptMotor->tCurrent.tCalib.bIsCalibrated);
+              _D(tSnapshot.tPhaseCurrent.qIu),
+              _D(tSnapshot.tPhaseCurrent.qIv),
+              _D(tSnapshot.tPhaseCurrent.qIw));
+        MLOGF(I, " - Calib: U=%lu V=%lu W=%lu done=%d\r\n",
+              (unsigned long)tSnapshot.tCurrentCalibration.wOffsetU,
+              (unsigned long)tSnapshot.tCurrentCalibration.wOffsetV,
+              (unsigned long)tSnapshot.tCurrentCalibration.wOffsetW,
+              (int)tSnapshot.tCurrentCalibration.bIsCalibrated);
     } else {
-        MLOG(I, "Usage: motor <start|stop|status>\r\n");
+        MLOG(I, "Usage: motor <start|stop|clear|vq <x>|status>\r\n");
     }
 }
-MODUS_SHELL_CMD(motor, cmd_motor, "Control FOC Motor (start/stop/status)");
+MODUS_SHELL_CMD(motor, cmd_motor, "Control FOC Motor (start/stop/clear/vq/status)");

@@ -18,7 +18,7 @@ mingw32-make size                # Display ELF section sizes
 ```
 
 `Makefile` and `make.bat` are authoritative. Available targets are the
-subdirectories under `target/`; `Makefile` currently defaults to `at32f407`.
+subdirectories under `target/`; `Makefile` currently defaults to `at32f413`.
 
 ## AI Debugging
 

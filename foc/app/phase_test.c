@@ -1,10 +1,20 @@
 /*******************************************************************************
  * @file    phase_test.c
  * @brief   FOC 阶段性验证测试程序
+ *
+ * 安全边界（Task 8 重构后）：
+ *  - phase_testC 与波形监控只读 motor_GetSnapshot()，正常构建保留；
+ *  - phase_testA（坐标变换数学自检）与 phase_testB（固定占空比直测）
+ *    仅在 FOC_ENABLE_DIAGNOSTIC=1 的诊断构建中编译，正常初始化不会
+ *    执行任何固定占空比旁路；phase_testB 只通过
+ *    foc/diagnostic/motor_diagnostic.c 的门控诊断 API 访问硬件。
  ******************************************************************************/
 
 #include "foc/foc.h"
 #include "foc/math/foc_math_types.h"
+
+#if defined(FOC_ENABLE_DIAGNOSTIC) && FOC_ENABLE_DIAGNOSTIC
+#include "diagnostic/motor_diagnostic.h"
 
 void phase_testA(void)
 {
@@ -46,28 +56,21 @@ void phase_testB(motor_handle_t *ptMotor)
         MLOGF(E, "phase_testB: ptMotor is NULL\r\n");
         return;
     }
-
-    MLOG(I, "\r\n=== Phase B: PWM & ADC Test (Instance based) ===\r\n");
-
-    q_type dutyU = _Q(0.1f);
-    q_type dutyV = _Q(0.5f);
-    q_type dutyW = _Q(0.9f);
-
-    (void)motor_SetDuty(ptMotor, dutyU, dutyV, dutyW);
-    (void)motor_Enable(ptMotor, true);
-    (void)motor_CalibrateCurrent(ptMotor);
-
-    MLOGF(I, "[PWM] Set Duty: U=%.1f%%, V=%.1f%%, W=%.1f%%\r\n",
-          _D(dutyU)*100.0, _D(dutyV)*100.0, _D(dutyW)*100.0);
-
-    (void)motor_SampleCurrent(ptMotor);
-
-    MLOGF(I, "[ADC] Reconstructed Current: Iu=%.3f, Iv=%.3f, Iw=%.3f\r\n",
-          _D(ptMotor->tCurrent.qIu), _D(ptMotor->tCurrent.qIv), _D(ptMotor->tCurrent.qIw));
-
-    (void)motor_Enable(ptMotor, false);
-    MLOG(I, "[PWM] Emergency Stop triggers successfully.\r\n");
+    /* 固定占空比直测由门控诊断模块执行：IDLE/无故障/占空比/电流/超时
+     * 检查全部在 motor 诊断 API 与 motor_diagnostic.c 内完成。 */
+    (void)motor_diagnostic_FixedDutyTest(ptMotor);
 }
+
+#else /* FOC_ENABLE_DIAGNOSTIC == 0 */
+
+void phase_testA(void) {}
+void phase_testB(motor_handle_t *ptMotor)
+{
+    /* 量产构建：固定占空比旁路已禁用。 */
+    (void)ptMotor;
+}
+
+#endif /* FOC_ENABLE_DIAGNOSTIC */
 
 void phase_testC(foc_app_t *ptApp)
 {
@@ -83,12 +86,8 @@ void phase_testC(foc_app_t *ptApp)
 }
 
 /* ---------------------------------------------------------------------------
- *  Waveform Demo — per-unit sine/cosine via mwaveform
- *  Uses hardware FPU (sinf/cosf) for generation.
- *
- *  Hook:
- *    phase_test_waveform_init()  → call once after modus_Init()
- *    phase_test_waveform_step()  → call from peripheral_Clock() or main loop
+ *  Waveform Demo — per-unit duty/current monitoring via mwaveform
+ *  Data source: motor_GetSnapshot() only (no private motor members).
  * ------------------------------------------------------------------------- */
 #if MWAVEFORM_ENABLE
 #include "mdebug/mwaveform.h"
@@ -106,23 +105,29 @@ void phase_test_waveform_init(void)
     s_chIv    = mwaveform.AddChannel("Iv", 1000.0f);
     s_chIw    = mwaveform.AddChannel("Iw", 1000.0f);
     mwaveform.Start();
-    MLOG(I, "[Waveform] FOC App Dynamic Monitoring started (Duties + Currents)\r\n");
+    MLOG(I, "[Waveform] FOC App Dynamic Monitoring started"
+         " (Duties + Currents)\r\n");
 }
 
 void phase_test_waveform_step(void)
 {
-    /* Push SVPWM Duties from the FOC app object */
     extern foc_app_t tFocApp;
-    mwaveform.Push(s_chDutyU, _D(tFocApp.qDutyU));
-    mwaveform.Push(s_chDutyV, _D(tFocApp.qDutyV));
-    mwaveform.Push(s_chDutyW, _D(tFocApp.qDutyW));
+    motor_snapshot_t tSnapshot;
+
+    if (tFocApp.ptMotor == NULL ||
+        motor_GetSnapshot(tFocApp.ptMotor, &tSnapshot) != FOC_RESULT_OK) {
+        return;
+    }
+
+    /* Push SVPWM Duties from the coherent motor snapshot */
+    mwaveform.Push(s_chDutyU, _D(tSnapshot.tDuty.qU));
+    mwaveform.Push(s_chDutyV, _D(tSnapshot.tDuty.qV));
+    mwaveform.Push(s_chDutyW, _D(tSnapshot.tDuty.qW));
 
     /* Push reconstructed phase currents */
-    if (tFocApp.ptMotor) {
-        mwaveform.Push(s_chIu, _D(tFocApp.ptMotor->tCurrent.qIu));
-        mwaveform.Push(s_chIv, _D(tFocApp.ptMotor->tCurrent.qIv));
-        mwaveform.Push(s_chIw, _D(tFocApp.ptMotor->tCurrent.qIw));
-    }
+    mwaveform.Push(s_chIu, _D(tSnapshot.tPhaseCurrent.qIu));
+    mwaveform.Push(s_chIv, _D(tSnapshot.tPhaseCurrent.qIv));
+    mwaveform.Push(s_chIw, _D(tSnapshot.tPhaseCurrent.qIw));
 
     /* mwaveform.Step() is called automatically via modus_Clock() */
 }

@@ -130,6 +130,10 @@ void haladc_Init(void)
     /* adc_voltage_monitor_threshold_value_set(ADC1, 0xFFF, 0x000); */
     /* adc_interrupt_enable(ADC1, ADC_VMOR_INT, TRUE); */
 
+    /* ---- Preempt conversion-complete interrupt: FOC high-frequency
+       control step entry (handled in ADC1_2_IRQHandler) ---- */
+    adc_interrupt_enable(ADC1, ADC_PCCE_INT, TRUE);
+
     /* ---- NVIC ---- */
     nvic_irq_enable(ADC1_2_IRQn, 1, 0);
 

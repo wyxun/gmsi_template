@@ -1,6 +1,6 @@
 # FOC Motor Object Refactor Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Refactor the FOC motor into a statically allocated opaque object with a small command API, an internal `fsm_rt_t` lifecycle, unified position sources, safe open-loop-to-closed-loop transfer, and stable diagnostics.
 
@@ -59,7 +59,7 @@
 - Modify: `tests/foc/test_foc.c`
 - Modify: `tests/foc/Makefile`
 
-- [ ] **Step 1: Record the existing host-test baseline**
+- [x] **Step 1: Record the existing host-test baseline**
 
 Run:
 
@@ -72,7 +72,7 @@ Expected: both `foc_test_float` and `foc_test_fixed` build and report zero
 failures. If the baseline fails, stop and record the pre-existing failure before
 changing production code.
 
-- [ ] **Step 2: Add a negative compile fixture**
+- [x] **Step 2: Add a negative compile fixture**
 
 Create this exact fixture:
 
@@ -91,7 +91,7 @@ int main(void)
 It deliberately compiles now and must fail after Task 2 because `tRt` is no
 longer public.
 
-- [ ] **Step 3: Add the negative compile target without putting it in `all` yet**
+- [x] **Step 3: Add the negative compile target without putting it in `all` yet**
 
 Add to `tests/foc/Makefile`:
 
@@ -110,14 +110,14 @@ encapsulation:
 	fi
 ```
 
-- [ ] **Step 4: Add a public multi-instance test shell**
+- [x] **Step 4: Add a public multi-instance test shell**
 
 Add `int test_motor_encapsulation(void)` with two fake hardware contexts. For
 now assert only that both `motor_Init()` calls succeed; register it in
 `test_foc.c`. This test becomes the migration destination for checks that
 currently inspect `tMotor.tHal`, `tMotor.tRt`, or `tMotor.tControl`.
 
-- [ ] **Step 5: Re-run the baseline**
+- [x] **Step 5: Re-run the baseline**
 
 Run `mingw32-make -C tests/foc all`.
 
@@ -134,7 +134,7 @@ Task 2.
 - Modify: `tests/foc/test_motor_encapsulation.c`
 - Modify: `tests/foc/Makefile`
 
-- [ ] **Step 1: Change behavioral tests to request snapshots**
+- [x] **Step 1: Change behavioral tests to request snapshots**
 
 Replace direct state assertions with the intended API shape:
 
@@ -149,13 +149,13 @@ TEST_CHECK((tSnapshotA.wFaults & MOTOR_FAULT_HARDWARE) != 0U);
 TEST_CHECK(tSnapshotB.eState == MOTOR_STATE_IDLE);
 ```
 
-- [ ] **Step 2: Run the tests and verify the new API is missing**
+- [x] **Step 2: Run the tests and verify the new API is missing**
 
 Run `mingw32-make -C tests/foc float`.
 
 Expected: compile failure naming `motor_snapshot_t` or `motor_GetSnapshot`.
 
-- [ ] **Step 3: Define the public storage and snapshot types**
+- [x] **Step 3: Define the public storage and snapshot types**
 
 In `motor_types.h`, expose aligned bytes instead of business members. Use a
 single documented capacity constant and C11 alignment:
@@ -195,7 +195,7 @@ typedef struct {
 Keep the numeric size private to the library contract and add a comment that
 changing it is an ABI change.
 
-- [ ] **Step 4: Move the current object layout into `motor_private.h`**
+- [x] **Step 4: Move the current object layout into `motor_private.h`**
 
 Define `motor_impl_t` with the old fields first, then add:
 
@@ -217,7 +217,7 @@ _Static_assert(_Alignof(motor_handle_t) >= _Alignof(motor_impl_t),
                "motor_handle_t alignment is insufficient");
 ```
 
-- [ ] **Step 5: Convert `motor.c` to private access and implement snapshot copy**
+- [x] **Step 5: Convert `motor.c` to private access and implement snapshot copy**
 
 Every public function must validate its handle, obtain `motor_impl_t *`, and
 operate only on the private type. `motor_GetSnapshot()` must not return a torn
@@ -237,7 +237,7 @@ Targets that run realtime steps in interrupts must bind both callbacks. Host
 tests may omit them only when every call is single-threaded. The motor library
 must not include CMSIS or vendor interrupt headers.
 
-- [ ] **Step 6: Enable the encapsulation target in `all`**
+- [x] **Step 6: Enable the encapsulation target in `all`**
 
 Change:
 
@@ -264,7 +264,7 @@ error, `PASS: motor internals are opaque`, then both numeric suites pass.
 - Modify: `tests/foc/test_foc.c`
 - Modify: `tests/foc/Makefile`
 
-- [ ] **Step 1: Write failing interface-adapter tests**
+- [x] **Step 1: Write failing interface-adapter tests**
 
 Cover these exact behaviors:
 
@@ -278,7 +278,7 @@ Cover these exact behaviors:
 Run `mingw32-make -C tests/foc float` and expect missing
 `foc_position_source_if_t` symbols.
 
-- [ ] **Step 2: Define one common interface**
+- [x] **Step 2: Define one common interface**
 
 Add validity flags, input, output, and interface:
 
@@ -321,20 +321,20 @@ typedef struct {
 } foc_position_source_if_t;
 ```
 
-- [ ] **Step 3: Implement validation and conversion helpers**
+- [x] **Step 3: Implement validation and conversion helpers**
 
 `motor_position.c` must provide focused internal functions for interface
 validation, stepping, mechanical-to-electrical conversion, shortest signed angle
 error, and blending. Do not place lifecycle state transitions in this file.
 
-- [ ] **Step 4: Adapt existing observers and Hall**
+- [x] **Step 4: Adapt existing observers and Hall**
 
 Retain algorithm-specific `Init/Reset/Step` APIs. Add adapter constructors that
 return `foc_position_source_if_t`. Delete `sensor_interface_t` and the
 `observer_interface_t` alias after all references migrate; do not keep two
 parallel public abstractions.
 
-- [ ] **Step 5: Run both numeric suites**
+- [x] **Step 5: Run both numeric suites**
 
 Run `mingw32-make -C tests/foc clean all`.
 
@@ -351,7 +351,7 @@ Expected: encapsulation, float, and fixed tests PASS.
 - Modify: `tests/foc/test_motor.c`
 - Modify: `tests/foc/Makefile`
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Use fake time/calibration/PWM callbacks and assert:
 
@@ -363,19 +363,19 @@ Use fake time/calibration/PWM callbacks and assert:
 - a second start while STARTING or RUNNING returns a busy/invalid-state result;
 - `motor_ClearFault()` fails unless PWM is off and state is FAULT.
 
-- [ ] **Step 2: Add the minimal run configuration**
+- [x] **Step 2: Add the minimal run configuration**
 
 Define `motor_run_config_t` exactly as approved in the design. Validate the four
 supported source combinations and reject two different non-null sources in the
 first release.
 
-- [ ] **Step 3: Add an internal one-command mailbox**
+- [x] **Step 3: Add an internal one-command mailbox**
 
 The private implementation stores command kind, copied run configuration, and
 pending status. `motor_Start()` and `motor_Stop()` validate and enqueue intent;
 they do not assign lifecycle states directly. Emergency stop remains immediate.
 
-- [ ] **Step 4: Implement `motor_RunFSM()`**
+- [x] **Step 4: Implement `motor_RunFSM()`**
 
 Use `PERFC_PT_BEGIN/ENTRY/WAIT_UNTIL/DELAY_MS/YIELD/END` consistently with the
 existing MODUS style. Keep the private startup phases:
@@ -395,7 +395,7 @@ The FSM owns lifecycle state, PWM enable/disable, calibration sequencing, and
 transition timeout. It delegates realtime qualification/blending samples to the
 high-frequency path.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run `mingw32-make -C tests/foc clean all`.
 
@@ -411,7 +411,7 @@ Expected: all lifecycle cases pass under float and fixed backends.
 - Modify: `foc/motor/motor.c`
 - Modify: `tests/foc/test_motor.c`
 
-- [ ] **Step 1: Write failing control-path tests**
+- [x] **Step 1: Write failing control-path tests**
 
 Assert these observable results through fake HAL plus `motor_GetSnapshot()`:
 
@@ -422,27 +422,27 @@ Assert these observable results through fake HAL plus `motor_GetSnapshot()`:
 - high-frequency calls outside STARTING/RUNNING do not energize PWM;
 - any sample/transform/modulation/set-duty error triggers emergency stop.
 
-- [ ] **Step 2: Rename public control APIs and enum typedefs**
+- [x] **Step 2: Rename public control APIs and enum typedefs**
 
 Replace `motor_ControlStart/Stop/Set*/HighFrequencyStep/LowFrequencyStep` with
 the approved `motor_Start/Stop/Set*/HighFrequencyStep/LowFrequencyStep`. Remove
 the old API rather than retaining undocumented aliases, because breaking the
 member/API contract was explicitly approved.
 
-- [ ] **Step 3: Implement deterministic high-frequency ordering**
+- [x] **Step 3: Implement deterministic high-frequency ordering**
 
 Use this exact ownership order: reference snapshot, current sample, position
 source update, angle choice/blend, Clarke/Park, current loop, inverse Park,
 modulation, duty write, snapshot update. Advance open-loop angle from the
 configured sample period, never from `get_system_ms()` in app code.
 
-- [ ] **Step 4: Implement low-frequency cascades**
+- [x] **Step 4: Implement low-frequency cascades**
 
 Position generates speed reference; speed generates Iq reference; current loops
 remain high frequency. Reject missing controller bindings at `motor_Start()` so
 the realtime path does not discover configuration errors after PWM enable.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run `mingw32-make -C tests/foc clean all`.
 
@@ -506,7 +506,7 @@ Expected: all qualification, timeout, wraparound, and continuity tests PASS.
 - Modify: `tests/foc/test_motor.c`
 - Modify: `tests/foc/test_motor_fsm.c`
 
-- [ ] **Step 1: Write failing snapshot/event tests**
+- [x] **Step 1: Write failing snapshot/event tests**
 
 Assert that a snapshot exposes lifecycle state, startup phase, control mode,
 active/candidate source validity, open/active/candidate angles, angle error,
@@ -515,7 +515,7 @@ and faults. Assert an event is appended for command rejection, state transition,
 source validity change, transition start/completion/timeout, and fault stop.
 Freeze each field's unit and source-role meaning before implementation.
 
-- [ ] **Step 2: Add a fixed-size private event ring**
+- [x] **Step 2: Add a fixed-size private event ring**
 
 First compress the private layout and keep the public handle at 512 bytes.
 Use capacity 4 and an overwrite-oldest policy. Each compact private record has
@@ -524,7 +524,7 @@ and one event-specific numeric payload. Track overwritten records. Do not mix
 milliseconds and high-frequency sample indices in the sequence field. Do not
 format strings or call logging from realtime code.
 
-- [ ] **Step 3: Complete `motor_GetSnapshot()`**
+- [x] **Step 3: Complete `motor_GetSnapshot()`**
 
 Copy one coherent snapshot through the configured `motor_sync_if_t`. Active
 means the angle currently used by control, candidate means the target source
@@ -535,7 +535,7 @@ calibration, HAL, or private storage. Initialization continues to accept either
 a complete synchronization pair or no synchronization callbacks for
 single-threaded host use.
 
-- [ ] **Step 4: Add the event-read API**
+- [x] **Step 4: Add the event-read API**
 
 Add and test this API:
 
@@ -548,7 +548,7 @@ Test FIFO order, monotonic sequence, and overwrite-oldest accounting.
 `foc_app` may drain events for logs; normal control must never depend on
 consuming the ring.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run `mingw32-make -C tests/foc clean all` and expect PASS.
 
@@ -560,7 +560,7 @@ Run `mingw32-make -C tests/foc clean all` and expect PASS.
 - Modify: `foc/app/phase_test.c`
 - Modify: target-specific FOC interrupt files only where they schedule high/low steps
 
-- [ ] **Step 1: Add a compile check for forbidden app dependencies**
+- [x] **Step 1: Add a compile check for forbidden app dependencies**
 
 Before migration, use:
 
@@ -572,33 +572,33 @@ Expected: current violations are listed. Save the command as a documented review
 check; after migration it must return no matches except explicitly gated
 diagnostic code.
 
-- [ ] **Step 2: Reduce `foc_app_RunFSM()` to application orchestration**
+- [x] **Step 2: Reduce `foc_app_RunFSM()` to application orchestration**
 
 It may submit product commands and return `motor_RunFSM(ptMotor)`. Remove open-loop
 angle, calibration, PWM, current reconstruction, Park, modulation, and motor
 state assignments.
 
-- [ ] **Step 3: Convert button and Shell code**
+- [x] **Step 3: Convert button and Shell code**
 
 Use `motor_GetSnapshot()` for decisions and printing. Use `motor_Start()` with a
 single product-owned `motor_run_config_t`, `motor_Stop()`, and reference setters
 for commands. Print command rejection and motor faults distinctly.
 
-- [ ] **Step 4: Schedule realtime calls at their actual rates**
+- [x] **Step 4: Schedule realtime calls at their actual rates**
 
 Ensure the PWM/ADC control interrupt calls `motor_HighFrequencyStep()` for its
 own instance. Ensure a documented lower-rate scheduler calls
 `motor_LowFrequencyStep()`. Do not run the high-frequency algorithm from the
 main-loop FSM.
 
-- [ ] **Step 5: Remove unsafe phase-test bypasses**
+- [x] **Step 5: Remove unsafe phase-test bypasses**
 
 Disable direct fixed-duty tests from normal initialization. If hardware bring-up
 still requires them, place the minimum code behind the existing experimental or
 new diagnostic build flag, enforce IDLE/no-fault/timeout/limit checks, and access
 hardware only through a narrow motor diagnostic API.
 
-- [ ] **Step 6: Run forbidden-access and host checks**
+- [x] **Step 6: Run forbidden-access and host checks**
 
 Run the `rg` command from Step 1 and `mingw32-make -C tests/foc clean all`.
 
@@ -611,7 +611,7 @@ Expected: no app-layer member/control-algorithm violations; all host tests PASS.
 - Modify: `foc/foc.h`
 - Review: `docs/superpowers/specs/2026-07-18-foc-motor-object-design.md`
 
-- [ ] **Step 1: Replace every direct-member example**
+- [x] **Step 1: Replace every direct-member example**
 
 Run:
 
@@ -622,26 +622,26 @@ rg -n "\.tRt|\.tControl|\.tCurrent|\.tParams|motor_Control" foc/README.md
 Replace each result with public API and snapshot usage. No example may rely on
 private layout.
 
-- [ ] **Step 2: Document four complete usage examples**
+- [x] **Step 2: Document four complete usage examples**
 
 Provide compilable examples for D/Q voltage open loop, open-angle D/Q current
 loop, sensored direct closed loop, and open-loop-to-observer transfer. For each,
 show initialization, run config, main FSM call, high/low scheduler calls,
 snapshot diagnostics, stop, and error handling.
 
-- [ ] **Step 3: Document unified source adapters**
+- [x] **Step 3: Document unified source adapters**
 
 Explain how Hall, AB/ABZ, optical, magnetic, and observer implementations fill
 valid flags; clarify mechanical-to-electrical conversion ownership and MDI/HAL
 boundaries.
 
-- [ ] **Step 4: Preserve bounded extension notes**
+- [x] **Step 4: Preserve bounded extension notes**
 
 Document the trigger and implementation direction for flying start, position
 manager, closed-loop degradation, runtime mode handover, online tuning, and
 expanded diagnostic FSM. Do not add dormant enums, states, or APIs for them.
 
-- [ ] **Step 5: Verify public header consistency**
+- [x] **Step 5: Verify public header consistency**
 
 Ensure `foc/foc.h` exports the new interfaces and no obsolete
 `observer_lib.h`/old motor-control API. Re-run README searches and expect no
@@ -652,7 +652,7 @@ direct-member results.
 **Files:**
 - Verify only; fix failures in the owning files from Tasks 1-9.
 
-- [ ] **Step 1: Run formatting and stale-symbol checks**
+- [x] **Step 1: Run formatting and stale-symbol checks**
 
 ```powershell
 git diff --check
@@ -663,7 +663,7 @@ Expected: no stale public names or app/test direct access. Matches in private
 implementation are acceptable only for private fields with deliberately retained
 names.
 
-- [ ] **Step 2: Run the complete host matrix**
+- [x] **Step 2: Run the complete host matrix**
 
 ```powershell
 mingw32-make -C tests/foc clean
@@ -672,7 +672,7 @@ mingw32-make -C tests/foc all
 
 Expected: encapsulation check, float suite, and fixed suite PASS.
 
-- [ ] **Step 3: Run the default target build**
+- [x] **Step 3: Run the default target build**
 
 ```powershell
 .\make.bat clean
@@ -681,7 +681,7 @@ Expected: encapsulation check, float suite, and fixed suite PASS.
 
 Expected: debug build succeeds for the Makefile default target (`at32f407`).
 
-- [ ] **Step 4: Build the FOC targets affected by adapters**
+- [x] **Step 4: Build the FOC targets affected by adapters**
 
 ```powershell
 .\make.bat clean TARGET_CHIP=at32f413
@@ -693,7 +693,7 @@ Expected: debug build succeeds for the Makefile default target (`at32f407`).
 Expected: both target builds succeed without vendor headers leaking into
 business or FOC core code.
 
-- [ ] **Step 5: Review the final diff against the design**
+- [x] **Step 5: Review the final diff against the design**
 
 Confirm every public operation is API-based, state transitions are FSM-owned,
 realtime paths are deterministic, the two-source limit is enforced, transition

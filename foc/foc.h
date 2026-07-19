@@ -31,9 +31,11 @@
 #include "hal/foc_hal_adc.h"
 #include "hal/foc_hal.h"
 
+/* Public motor object API. motor/motor_control.h is an internal
+ * implementation header; all public entry points are declared in
+ * motor/motor.h. */
 #include "motor/motor_types.h"
 #include "motor/motor.h"
-#include "motor/motor_control.h"
 #include "motor/motor_position.h"
 #include "observer/foc_hall.h"
 #include "observer/foc_smo.h"

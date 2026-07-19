@@ -11,6 +11,10 @@
 
 #include "mdi/mdi.h"
 
+/* This chip's MDI hardware pool provides a start/stop button input
+ * (ptButtonStart); FOC app button handling is enabled by this macro. */
+#define MDI_HW_HAS_BUTTON_START  1
+
 /*============================================================================
  * Project hardware resource pool
  *===========================================================================*/

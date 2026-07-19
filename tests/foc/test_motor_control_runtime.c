@@ -621,9 +621,23 @@ static int test_transition_failure(bool timeout)
     TEST_CHECK(motor_Init(&motor, &config) == FOC_RESULT_OK);
     TEST_CHECK(start_enabled(&motor, &run, true));
     if (timeout) {
+        motor_event_t tEvent;
+        motor_event_t tLastEvent = {0};
+        bool bGotEvent = false;
+
         TEST_CHECK(motor_HighFrequencyStep(&motor) == FOC_RESULT_OK);
         hw.now_ms = 6U;
         TEST_CHECK(motor_RunFSM(&motor) == fsm_rt_err);
+        while (motor_DebugReadEvent(&motor, &tEvent)) {
+            tLastEvent = tEvent;
+            bGotEvent = true;
+        }
+        TEST_CHECK(bGotEvent);
+        TEST_CHECK(tLastEvent.eType == MOTOR_EVENT_TRANSITION_TIMEOUT);
+        TEST_CHECK(tLastEvent.eFromState == MOTOR_STATE_STARTING);
+        TEST_CHECK(tLastEvent.eToState == MOTOR_STATE_FAULT);
+        TEST_CHECK(tLastEvent.wPreviousValue ==
+                   MOTOR_STARTUP_QUALIFY_SOURCE);
     } else {
         TEST_CHECK(motor_HighFrequencyStep(&motor) == FOC_RESULT_OK);
         source.faults = FOC_POSITION_FAULT_INVALID_DATA;
@@ -635,6 +649,80 @@ static int test_transition_failure(bool timeout)
                (timeout ? MOTOR_FAULT_TRANSITION_TIMEOUT :
                           MOTOR_FAULT_POSITION_SOURCE)) != 0U);
     TEST_CHECK(!hw.enabled && hw.stop_calls == 1U);
+    return nFailures;
+}
+
+static int test_transition_events(void)
+{
+    int nFailures = 0;
+    runtime_hw_t hw = {0};
+    runtime_controller_t controllers[4] = {{0}};
+    runtime_source_t source = valid_source();
+    foc_position_source_if_t source_if = {&source, NULL, source_step};
+    motor_config_t config = runtime_config(&hw, controllers);
+    motor_run_config_t run = {
+        .eControlMode = MOTOR_CONTROL_SPEED,
+        .ptTargetPositionSource = &source_if,
+        .qOpenLoopSpeed = FOC_SCALAR(0.4f),
+        .qAcceleration = FOC_SCALAR(1.0f),
+        .tCurrentReference = {FOC_SCALAR(0.05f), FOC_SCALAR(0.10f)},
+        .qSpeedReference = FOC_SCALAR(0.1f),
+    };
+    motor_handle_t motor;
+    motor_snapshot_t snapshot;
+    motor_event_t atEvents[4];
+    unsigned uCount = 0U;
+
+    config.tPosition.chPolePairs = 1U;
+    config.hwTransitionQualificationSamples = 1U;
+    config.hwTransitionBlendSamples = 2U;
+    controllers[0].output = FOC_SCALAR(0.05f);
+    controllers[1].output = FOC_SCALAR(0.10f);
+    controllers[2].output = FOC_SCALAR(0.10f);
+
+    TEST_CHECK(motor_Init(&motor, &config) == FOC_RESULT_OK);
+    TEST_CHECK(start_enabled(&motor, &run, true));
+    /* One qualification sample then two blend samples complete the
+       open-to-closed transfer entirely in the high-frequency path. */
+    TEST_CHECK(motor_HighFrequencyStep(&motor) == FOC_RESULT_OK);
+    TEST_CHECK(motor_HighFrequencyStep(&motor) == FOC_RESULT_OK);
+    TEST_CHECK(motor_HighFrequencyStep(&motor) == FOC_RESULT_OK);
+    TEST_CHECK(motor_RunFSM(&motor) == fsm_rt_cpl);
+    TEST_CHECK(motor_GetSnapshot(&motor, &snapshot) == FOC_RESULT_OK);
+    TEST_CHECK(snapshot.eRunState == MOTOR_STATE_RUNNING);
+
+    while (uCount < 4U &&
+           motor_DebugReadEvent(&motor, &atEvents[uCount])) {
+        uCount++;
+    }
+    TEST_CHECK(uCount == 4U);
+    TEST_CHECK(!motor_DebugReadEvent(&motor, &atEvents[0]));
+    if (uCount == 4U) {
+        TEST_CHECK(atEvents[0].eType ==
+                   MOTOR_EVENT_SOURCE_VALIDITY_CHANGED);
+        TEST_CHECK(atEvents[0].ePositionRole == MOTOR_POSITION_ROLE_ACTIVE);
+        TEST_CHECK(atEvents[0].wPreviousValue == 0U);
+        TEST_CHECK((atEvents[0].wCurrentValue &
+                    FOC_POSITION_VALID_ELECTRICAL_ANGLE) != 0U);
+        TEST_CHECK(atEvents[1].eType ==
+                   MOTOR_EVENT_SOURCE_VALIDITY_CHANGED);
+        TEST_CHECK(atEvents[1].ePositionRole ==
+                   MOTOR_POSITION_ROLE_CANDIDATE);
+        TEST_CHECK(atEvents[1].wPreviousValue == 0U);
+        TEST_CHECK((atEvents[1].wCurrentValue &
+                    FOC_POSITION_VALID_ELECTRICAL_ANGLE) != 0U);
+        TEST_CHECK(atEvents[2].eType == MOTOR_EVENT_TRANSITION_STARTED);
+        TEST_CHECK(atEvents[2].wPreviousValue ==
+                   MOTOR_STARTUP_QUALIFY_SOURCE);
+        TEST_CHECK(atEvents[2].wCurrentValue == MOTOR_STARTUP_BLEND_ANGLE);
+        TEST_CHECK(atEvents[3].eType == MOTOR_EVENT_TRANSITION_COMPLETED);
+        TEST_CHECK(atEvents[3].wPreviousValue == MOTOR_STARTUP_BLEND_ANGLE);
+        TEST_CHECK(atEvents[3].wCurrentValue == MOTOR_STARTUP_COMPLETE);
+        for (unsigned uIndex = 1U; uIndex < 4U; uIndex++) {
+            TEST_CHECK(atEvents[uIndex].wSequence ==
+                       atEvents[uIndex - 1U].wSequence + 1U);
+        }
+    }
     return nFailures;
 }
 
@@ -664,5 +752,6 @@ int test_motor_control_runtime(void)
     nFailures += test_transition_source_receives_control_input();
     nFailures += test_transition_failure(false);
     nFailures += test_transition_failure(true);
+    nFailures += test_transition_events();
     return nFailures;
 }

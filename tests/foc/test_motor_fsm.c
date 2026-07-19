@@ -151,6 +151,7 @@ int test_motor_fsm(void)
     TEST_CHECK(event.eResult == FOC_RESULT_INVALID_ARGUMENT);
     TEST_CHECK(event.eFromState == MOTOR_STATE_IDLE);
     TEST_CHECK(event.eToState == MOTOR_STATE_IDLE);
+    TEST_CHECK(event.wSequence == 1U);
     run = open_run();
     TEST_CHECK(motor_Start(&motor, &run) == FOC_RESULT_OK);
     motor_Reset(&motor);
@@ -163,10 +164,17 @@ int test_motor_fsm(void)
     TEST_CHECK(event.eType == MOTOR_EVENT_COMMAND_ACCEPTED);
     TEST_CHECK(event.eCommand == MOTOR_COMMAND_START);
     TEST_CHECK(event.eResult == FOC_RESULT_OK);
+    TEST_CHECK(event.wSequence == 2U);
+    TEST_CHECK(motor_DebugReadEvent(&motor, &event));
+    TEST_CHECK(event.eType == MOTOR_EVENT_COMMAND_REJECTED);
+    TEST_CHECK(event.eCommand == MOTOR_COMMAND_START);
+    TEST_CHECK(event.eResult == FOC_RESULT_BUSY);
+    TEST_CHECK(event.wSequence == 3U);
     TEST_CHECK(motor_DebugReadEvent(&motor, &event));
     TEST_CHECK(event.eType == MOTOR_EVENT_STATE_CHANGED);
     TEST_CHECK(event.eFromState == MOTOR_STATE_IDLE);
     TEST_CHECK(event.eToState == MOTOR_STATE_STARTING);
+    TEST_CHECK(event.wSequence == 4U);
     TEST_CHECK(hw.wCalibrateCalls == 1U && !hw.bEnabled);
     TEST_CHECK(!hw.bCalibrationWhileEnabled);
     TEST_CHECK(motor_GetSnapshot(&motor, &snap) == FOC_RESULT_OK);
@@ -236,6 +244,27 @@ int test_motor_fsm(void)
     TEST_CHECK(motor_GetSnapshot(&motor, &snap) == FOC_RESULT_OK);
     TEST_CHECK(snap.eRunState == MOTOR_STATE_FAULT);
     TEST_CHECK((snap.wFaults & MOTOR_FAULT_TRANSITION_TIMEOUT) != 0U);
+    {
+        motor_event_t tLastEvent = {0};
+        uint32_t wLastSequence = 0U;
+        bool bGotEvent = false;
+
+        while (motor_DebugReadEvent(&motor, &event)) {
+            if (bGotEvent) {
+                TEST_CHECK(event.wSequence > wLastSequence);
+            }
+            wLastSequence = event.wSequence;
+            tLastEvent = event;
+            bGotEvent = true;
+        }
+        TEST_CHECK(bGotEvent);
+        TEST_CHECK(tLastEvent.eType == MOTOR_EVENT_TRANSITION_TIMEOUT);
+        TEST_CHECK(tLastEvent.eFromState == MOTOR_STATE_STARTING);
+        TEST_CHECK(tLastEvent.eToState == MOTOR_STATE_FAULT);
+        TEST_CHECK(tLastEvent.wPreviousValue ==
+                   MOTOR_STARTUP_QUALIFY_SOURCE);
+        TEST_CHECK(tLastEvent.wCurrentValue == MOTOR_STARTUP_IDLE);
+    }
     TEST_CHECK(motor_ClearFault(&motor) == FOC_RESULT_OK);
 
     {

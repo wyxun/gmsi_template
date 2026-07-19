@@ -108,7 +108,7 @@ foc_result_t motor_LowFrequencyStep(motor_handle_t *ptMotor)
     foc_angle_t mechanical_angle = ptImpl->tMechanicalAngle;
     foc_scalar_t mechanical_speed = ptImpl->qMechanicalSpeed;
     foc_position_valid_flag_e mechanical_valid =
-        ptImpl->eMechanicalValidFlags;
+        ptImpl->chMechanicalValidFlags;
     bool direct_source = ptImpl->bOuterLoopActive;
     motor_private_exit(ptImpl, s);
     if (mode >= MOTOR_CONTROL_SPEED && !direct_source) {
@@ -136,7 +136,7 @@ foc_result_t motor_LowFrequencyStep(motor_handle_t *ptMotor)
                 speed_ref, mechanical_speed);
         s = motor_private_enter(ptImpl);
         bool stopping = ptImpl->bCommandPending &&
-                        ptImpl->ePendingCommand == MOTOR_COMMAND_STOP;
+                        ptImpl->chPendingCommand == MOTOR_COMMAND_STOP;
         if (ptImpl->tRt.eRunState != MOTOR_STATE_RUNNING || stopping) {
             ptImpl->bLowFrequencyStepInProgress = false;
             motor_private_exit(ptImpl, s);
@@ -190,7 +190,7 @@ static foc_result_t motor_control_commit_hf(
 {
     uintptr_t state = motor_private_enter(impl);
     bool stopping = impl->bCommandPending &&
-                    impl->ePendingCommand == MOTOR_COMMAND_STOP;
+                    impl->chPendingCommand == MOTOR_COMMAND_STOP;
     if ((impl->tRt.eRunState != MOTOR_STATE_RUNNING &&
          impl->tRt.eRunState != MOTOR_STATE_STARTING) ||
         impl->tRt.wFaults != MOTOR_FAULT_NONE ||
@@ -222,8 +222,8 @@ static foc_result_t motor_control_commit_hf(
                 impl, MOTOR_EVENT_SOURCE_VALIDITY_CHANGED,
                 impl->tRt.eRunState, impl->tRt.eRunState,
                 MOTOR_POSITION_ROLE_ACTIVE,
-                (uint32_t)impl->chActiveValidFlags |
-                ((uint32_t)active_valid << 16));
+                (uint16_t)((uint16_t)impl->chActiveValidFlags |
+                           ((uint16_t)active_valid << 8)));
             impl->chActiveValidFlags = active_valid;
         }
         if (candidate_valid != impl->chCandidateValidFlags) {
@@ -231,19 +231,19 @@ static foc_result_t motor_control_commit_hf(
                 impl, MOTOR_EVENT_SOURCE_VALIDITY_CHANGED,
                 impl->tRt.eRunState, impl->tRt.eRunState,
                 MOTOR_POSITION_ROLE_CANDIDATE,
-                (uint32_t)impl->chCandidateValidFlags |
-                ((uint32_t)candidate_valid << 16));
+                (uint16_t)((uint16_t)impl->chCandidateValidFlags |
+                           ((uint16_t)candidate_valid << 8)));
             impl->chCandidateValidFlags = candidate_valid;
         }
         impl->tMechanicalAngle = output->tMechanicalAngle;
         impl->qMechanicalSpeed = output->qMechanicalSpeed;
-        impl->eMechanicalValidFlags =
-            (foc_position_valid_flag_e)(output->eValidFlags &
+        impl->chMechanicalValidFlags =
+            (uint8_t)(output->eValidFlags &
              (FOC_POSITION_VALID_MECHANICAL_ANGLE |
               FOC_POSITION_VALID_MECHANICAL_SPEED));
         if (transition->bChanged) {
-            motor_startup_phase_e previous_phase = impl->eStartupPhase;
-            impl->eStartupPhase = transition->ePhase;
+            motor_startup_phase_e previous_phase = impl->chStartupPhase;
+            impl->chStartupPhase = transition->ePhase;
             impl->tTransitionStartAngle = transition->tStartAngle;
             impl->qTransitionStartSpeed = transition->qStartSpeed;
             impl->hwTransitionSampleCount = transition->hwSampleCount;
@@ -252,15 +252,15 @@ static foc_result_t motor_control_commit_hf(
                 motor_private_AppendEvent(
                     impl, MOTOR_EVENT_TRANSITION_STARTED,
                     impl->tRt.eRunState, impl->tRt.eRunState, 0U,
-                    (uint32_t)previous_phase |
-                    ((uint32_t)transition->ePhase << 16));
+                    (uint16_t)((uint16_t)previous_phase |
+                               ((uint16_t)transition->ePhase << 8)));
             } else if (previous_phase != transition->ePhase &&
                        transition->ePhase == MOTOR_STARTUP_COMPLETE) {
                 motor_private_AppendEvent(
                     impl, MOTOR_EVENT_TRANSITION_COMPLETED,
                     impl->tRt.eRunState, impl->tRt.eRunState, 0U,
-                    (uint32_t)previous_phase |
-                    ((uint32_t)transition->ePhase << 16));
+                    (uint16_t)((uint16_t)previous_phase |
+                               ((uint16_t)transition->ePhase << 8)));
             }
         }
         impl->tControl.tCurrent = work->tCurrent;
@@ -343,7 +343,7 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     foc_angle_t angle = ptImpl->tRt.tThetaE;
     open_angle = ptImpl->tOpenLoopAngle;
     foc_scalar_t speed = ptImpl->qOpenLoopCommandSpeed;
-    motor_startup_phase_e startup_phase = ptImpl->eStartupPhase;
+    motor_startup_phase_e startup_phase = ptImpl->chStartupPhase;
     uint16_t transition_samples = ptImpl->hwTransitionSampleCount;
     foc_angle_t transition_start_angle =
         ptImpl->tTransitionStartAngle;
