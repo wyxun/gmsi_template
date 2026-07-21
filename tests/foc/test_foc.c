@@ -13,6 +13,7 @@ int test_motor_control_runtime(void);
 int test_advanced(void);
 int test_optimization(void);
 int test_experimental(void);
+int test_trig(void);
 
 int main(void)
 {
@@ -31,6 +32,7 @@ int main(void)
     nFailures += test_advanced();
     nFailures += test_optimization();
     nFailures += test_experimental();
+    nFailures += test_trig();
 
     printf("FOC tests: %s (%d failures)\n",
            nFailures == 0 ? "PASS" : "FAIL", nFailures);

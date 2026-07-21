@@ -190,6 +190,7 @@ ASM_SOURCES = $(STARTUP_S)
 # Defines
 # ------------------------------------------------------------------------------
 C_DEFS += \
+    -DMSHELL_MAX_CMDS=32 \
     -D__PERFC_USE_USER_CUSTOM_PORTING__=1 \
     -D__C_LANGUAGE_EXTENSIONS_PERFC_PT__=1 \
     -D__PERFC_CFG_PORTING_INCLUDE__=\"perfc_port.h\" \
@@ -272,6 +273,10 @@ OBJECTS += $(ASM_OBJECTS)
 vpath %.c $(sort $(dir $(C_SOURCES)))
 vpath %.s $(sort $(dir $(ASM_SOURCES)))
 vpath %.S $(sort $(dir $(ASM_SOURCES)))
+
+# 针对高频控制步相关的密集计算模块强制启用 -O2 优化
+$(BUILD_DIR)/foc_%.o: CFLAGS += -O2
+$(BUILD_DIR)/motor_control.o: CFLAGS += -O2
 
 $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) -o $@ $<

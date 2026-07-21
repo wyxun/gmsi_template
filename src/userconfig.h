@@ -13,6 +13,9 @@
  * Enable for chips that don't have a debug probe connected (e.g. CH592). */
 #define USERCONFIG_MSHELL_ON_SERIAL 0
 
+/* 最大注册命令数（含内置命令），覆盖 mshell.h 默认的 16 */
+#define MSHELL_MAX_CMDS             32
+
 /* MODUS waveform: 1 = enable mwaveform for real-time plotting */
 #ifndef MWAVEFORM_ENABLE
 #   if defined(AT32F421F8P7)

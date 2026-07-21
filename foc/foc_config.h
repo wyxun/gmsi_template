@@ -42,4 +42,6 @@
 #define FOC_ENABLE_EXPERIMENTAL_IDENTIFY  0
 #endif
 
+#include "foc_trig.h"
+
 #endif /* __FOC_CONFIG_H__ */

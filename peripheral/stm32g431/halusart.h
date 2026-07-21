@@ -36,12 +36,12 @@
 #define USART3_GPIO_CLK_EN()    __HAL_RCC_GPIOB_CLK_ENABLE()
 #define USART3_BAUDRATE         115200UL
 
-#define USART1_TX_BUFFER_MAX    128
+#define USART1_TX_BUFFER_MAX    512
 #define USART1_RX_BUFFER_MAX    128
-#define USART2_TX_BUFFER_MAX    64
-#define USART2_RX_BUFFER_MAX    64
-#define USART3_TX_BUFFER_MAX    64
-#define USART3_RX_BUFFER_MAX    64
+#define USART2_TX_BUFFER_MAX    512
+#define USART2_RX_BUFFER_MAX    128
+#define USART3_TX_BUFFER_MAX    512
+#define USART3_RX_BUFFER_MAX    128
 
 typedef struct {
     UART_HandleTypeDef *ptUsart;

@@ -13,6 +13,7 @@ CPU_FLAGS = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
 
 # Chip preprocessor defines
 C_DEFS += -DSTM32G431xx -DUSE_HAL_DRIVER -DUSE_FULL_LL_DRIVER
+C_DEFS += -DFOC_TRIG_BACKEND=2
 
 C_DEFS += -DFOC_SUPPORT=1
 

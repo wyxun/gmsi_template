@@ -20,6 +20,7 @@ static void opamp_gpio_init(void)
     /* OPAMP3: PB0/PB1/PB2 */
     LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOA);
     LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOB);
+    LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_SYSCFG);
 
     GPIO_InitTypeDef gpio = {0};
     gpio.Mode = GPIO_MODE_ANALOG;

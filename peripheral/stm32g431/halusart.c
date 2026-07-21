@@ -28,11 +28,11 @@ static usartbuffer_t s_tUsart1Buffer;
 static usartbuffer_t s_tUsart2Buffer;
 static usartbuffer_t s_tUsart3Buffer;
 
-static uint8_t s_chRxByte;
+static uint8_t s_chUsart1RxByte;
+static uint8_t s_chUsart2RxByte;
+static uint8_t s_chUsart3RxByte;
 
-static void MX_USART1_Init(void);
 static void MX_USART2_Init(void);
-static void MX_USART3_Init(void);
 
 static usartbuffer_t *get_usart_buffer(uint8_t chUsartNum)
 {
@@ -90,7 +90,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
         GPIO_InitStruct.Pull      = GPIO_PULLUP;
         HAL_GPIO_Init(USART2_RX_PORT, &GPIO_InitStruct);
 
-        HAL_NVIC_SetPriority(USART2_IRQn, 1, 0);
+        HAL_NVIC_SetPriority(USART2_IRQn, 4, 0);
         HAL_NVIC_EnableIRQ(USART2_IRQn);
     }
     else if (huart->Instance == USART3) {
@@ -117,25 +117,6 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
     }
 }
 
-static void MX_USART1_Init(void)
-{
-    huart1.Instance                    = USART1;
-    huart1.Init.BaudRate               = USART1_BAUDRATE;
-    huart1.Init.WordLength             = UART_WORDLENGTH_8B;
-    huart1.Init.StopBits               = UART_STOPBITS_1;
-    huart1.Init.Parity                 = UART_PARITY_NONE;
-    huart1.Init.Mode                   = UART_MODE_TX_RX;
-    huart1.Init.HwFlowCtl              = UART_HWCONTROL_NONE;
-    huart1.Init.OverSampling           = UART_OVERSAMPLING_16;
-    huart1.Init.OneBitSampling         = UART_ONE_BIT_SAMPLE_DISABLE;
-    huart1.Init.ClockPrescaler         = UART_PRESCALER_DIV1;
-    huart1.AdvancedInit.AdvFeatureInit  = UART_ADVFEATURE_NO_INIT;
-    HAL_UART_Init(&huart1);
-    HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8);
-    HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8);
-    HAL_UARTEx_DisableFifoMode(&huart1);
-}
-
 static void MX_USART2_Init(void)
 {
     huart2.Instance                    = USART2;
@@ -155,46 +136,20 @@ static void MX_USART2_Init(void)
     HAL_UARTEx_DisableFifoMode(&huart2);
 }
 
-static void MX_USART3_Init(void)
-{
-    huart3.Instance                    = USART3;
-    huart3.Init.BaudRate               = USART3_BAUDRATE;
-    huart3.Init.WordLength             = UART_WORDLENGTH_8B;
-    huart3.Init.StopBits               = UART_STOPBITS_1;
-    huart3.Init.Parity                 = UART_PARITY_NONE;
-    huart3.Init.Mode                   = UART_MODE_TX_RX;
-    huart3.Init.HwFlowCtl              = UART_HWCONTROL_NONE;
-    huart3.Init.OverSampling           = UART_OVERSAMPLING_16;
-    huart3.Init.OneBitSampling         = UART_ONE_BIT_SAMPLE_DISABLE;
-    huart3.Init.ClockPrescaler         = UART_PRESCALER_DIV1;
-    huart3.AdvancedInit.AdvFeatureInit  = UART_ADVFEATURE_NO_INIT;
-    HAL_UART_Init(&huart3);
-    HAL_UARTEx_SetTxFifoThreshold(&huart3, UART_TXFIFO_THRESHOLD_1_8);
-    HAL_UARTEx_SetRxFifoThreshold(&huart3, UART_RXFIFO_THRESHOLD_1_8);
-    HAL_UARTEx_DisableFifoMode(&huart3);
-}
-
 void halusart_Init(void)
 {
-    MX_USART1_Init();
     MX_USART2_Init();
-    MX_USART3_Init();
-
-    mringbuf_Init(&s_tUsart1Buffer.tRXQueue, s_chUsart1RxBuf, USART1_RX_BUFFER_MAX);
-    mringbuf_Init(&s_tUsart1Buffer.tTXQueue, s_chUsart1TxBuf, USART1_TX_BUFFER_MAX);
-    s_tUsart1Buffer.ptUsart = &huart1;
 
     mringbuf_Init(&s_tUsart2Buffer.tRXQueue, s_chUsart2RxBuf, USART2_RX_BUFFER_MAX);
     mringbuf_Init(&s_tUsart2Buffer.tTXQueue, s_chUsart2TxBuf, USART2_TX_BUFFER_MAX);
     s_tUsart2Buffer.ptUsart = &huart2;
+    s_tUsart2Buffer.chTXFlag = USART_TXFLAG_IDLE;
+    s_tUsart2Buffer.chRXFlag = USART_RXFLAG_IDLE;
+    s_tUsart2Buffer.chRXFinishTime = 0;
 
-    mringbuf_Init(&s_tUsart3Buffer.tRXQueue, s_chUsart3RxBuf, USART3_RX_BUFFER_MAX);
-    mringbuf_Init(&s_tUsart3Buffer.tTXQueue, s_chUsart3TxBuf, USART3_TX_BUFFER_MAX);
-    s_tUsart3Buffer.ptUsart = &huart3;
-
-    HAL_UART_Receive_IT(&huart1, &s_chRxByte, 1);
-    HAL_UART_Receive_IT(&huart2, &s_chRxByte, 1);
-    HAL_UART_Receive_IT(&huart3, &s_chRxByte, 1);
+    __HAL_UART_CLEAR_FLAG(&huart2, UART_CLEAR_OREF | UART_CLEAR_NEF | UART_CLEAR_FEF | UART_CLEAR_PEF);
+    __HAL_UART_ENABLE_IT(&huart2, UART_IT_RXNE);
+    __HAL_UART_ENABLE_IT(&huart2, UART_IT_ERR);
 }
 
 uint16_t halusart_SendData(uint8_t chUsartNum, uint8_t *pchSendData, uint16_t hwLength)
@@ -202,20 +157,25 @@ uint16_t halusart_SendData(uint8_t chUsartNum, uint8_t *pchSendData, uint16_t hw
     usartbuffer_t *ptBuf = get_usart_buffer(chUsartNum);
     uint16_t hwCounter;
 
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+
     for (hwCounter = 0; hwCounter < hwLength; hwCounter++) {
         if (mringbuf_Write(&ptBuf->tTXQueue, *(pchSendData + hwCounter)) == 0) {
-            return hwCounter;
+            break;
         }
     }
 
-    if (ptBuf->chTXFlag == USART_TXFLAG_BUSY) {
-        return hwCounter;
+    if (ptBuf->chTXFlag == USART_TXFLAG_IDLE) {
+        uint8_t chData;
+        if (mringbuf_Read(&ptBuf->tTXQueue, &chData) == 1) {
+            ptBuf->ptUsart->Instance->TDR = chData;
+            ptBuf->chTXFlag = USART_TXFLAG_BUSY;
+            __HAL_UART_ENABLE_IT(ptBuf->ptUsart, UART_IT_TC);
+        }
     }
 
-    if (mringbuf_Read(&ptBuf->tTXQueue, &ptBuf->chTXByte) == 1) {
-        HAL_UART_Transmit_IT(ptBuf->ptUsart, &ptBuf->chTXByte, 1);
-        ptBuf->chTXFlag = USART_TXFLAG_BUSY;
-    }
+    __set_PRIMASK(primask);
     return hwCounter;
 }
 
@@ -224,16 +184,23 @@ uint16_t halusart_receiveData(uint8_t chUsartNum, uint8_t *pchReceiveData)
     usartbuffer_t *ptBuf = get_usart_buffer(chUsartNum);
     uint16_t hwCounter = 0;
 
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+
     if (ptBuf->chRXFlag != USART_RXFLAG_FINISH) {
+        __set_PRIMASK(primask);
         return 0;
     }
 
-    while (mringbuf_Read(&ptBuf->tRXQueue, pchReceiveData) == 1) {
+    while (mringbuf_Read(&ptBuf->tRXQueue, &pchReceiveData[hwCounter]) == 1) {
         hwCounter++;
-        pchReceiveData++;
     }
 
-    ptBuf->chRXFlag = USART_RXFLAG_IDLE;
+    if (mringbuf_GetUsed(&ptBuf->tRXQueue) == 0) {
+        ptBuf->chRXFlag = USART_RXFLAG_IDLE;
+    }
+
+    __set_PRIMASK(primask);
     return hwCounter;
 }
 
@@ -242,8 +209,9 @@ void halusart_Clock(void)
     usartbuffer_t *ptBufList[] = { &s_tUsart1Buffer, &s_tUsart2Buffer, &s_tUsart3Buffer };
     for (int i = 0; i < 3; i++) {
         usartbuffer_t *ptBuf = ptBufList[i];
+
         if (ptBuf->chRXFlag == USART_RXFLAG_BUSY) {
-            if (ptBuf->chRXFinishTime) {
+            if (ptBuf->chRXFinishTime > 0) {
                 ptBuf->chRXFinishTime--;
             } else {
                 ptBuf->chRXFlag = USART_RXFLAG_FINISH;
@@ -252,32 +220,37 @@ void halusart_Clock(void)
     }
 }
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+void halusart_IRQHandler(UART_HandleTypeDef *huart)
 {
-    usartbuffer_t *ptBuf = NULL;
-    if      (huart == &huart1) ptBuf = &s_tUsart1Buffer;
-    else if (huart == &huart2) ptBuf = &s_tUsart2Buffer;
-    else if (huart == &huart3) ptBuf = &s_tUsart3Buffer;
-    else return;
+    if (huart->Instance == USART2) {
+        usartbuffer_t *ptPriv = &s_tUsart2Buffer;
+        USART_TypeDef *ptHW = huart->Instance;
+        uint32_t isr = ptHW->ISR;
 
-    mringbuf_Write(&ptBuf->tRXQueue, s_chRxByte);
-    ptBuf->chRXFinishTime = USART_DELAYTIME;
-    ptBuf->chRXFlag       = USART_RXFLAG_BUSY;
+        // 硬件中断中：瞬间清空可能出现的错误（ORE / FE / NE / PE）
+        if (isr & (USART_ISR_ORE | USART_ISR_NE | USART_ISR_FE | USART_ISR_PE)) {
+            ptHW->ICR = USART_ICR_ORECF | USART_ICR_NECF | USART_ICR_FECF | USART_ICR_PECF;
+        }
 
-    HAL_UART_Receive_IT(huart, &s_chRxByte, 1);
-}
+        // 接收寄存器非空中断
+        if ((ptHW->CR1 & USART_CR1_RXNEIE) && (isr & USART_ISR_RXNE)) {
+            uint8_t ch = (uint8_t)(ptHW->RDR & 0xFFU);
+            mringbuf_Write(&ptPriv->tRXQueue, ch);
+            ptPriv->chRXFinishTime = USART_DELAYTIME;
+            ptPriv->chRXFlag = USART_RXFLAG_BUSY;
+        }
 
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-    usartbuffer_t *ptBuf = NULL;
-    if      (huart == &huart1) ptBuf = &s_tUsart1Buffer;
-    else if (huart == &huart2) ptBuf = &s_tUsart2Buffer;
-    else if (huart == &huart3) ptBuf = &s_tUsart3Buffer;
-    else return;
-
-    if (mringbuf_Read(&ptBuf->tTXQueue, &ptBuf->chTXByte) == 1) {
-        HAL_UART_Transmit_IT(huart, &ptBuf->chTXByte, 1);
-    } else {
-        ptBuf->chTXFlag = USART_TXFLAG_IDLE;
+        // 发送完成中断
+        if ((ptHW->CR1 & USART_CR1_TCIE) && (isr & USART_ISR_TC)) {
+            ptHW->ICR = USART_ICR_TCCF; // 清除 TC 中断标志
+            uint8_t chData;
+            if (mringbuf_Read(&ptPriv->tTXQueue, &chData) == 1) {
+                ptHW->TDR = chData;
+                ptPriv->chTXFlag = USART_TXFLAG_BUSY;
+            } else {
+                ptPriv->chTXFlag = USART_TXFLAG_IDLE;
+                __HAL_UART_DISABLE_IT(huart, UART_IT_TC); // 队列空，关闭 TC 中断允许
+            }
+        }
     }
 }

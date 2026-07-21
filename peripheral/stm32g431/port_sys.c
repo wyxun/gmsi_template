@@ -15,6 +15,11 @@
 #include "halusart.h"
 #include "halfdcan.h"
 #include "halledgpio.h"
+#include "halcordic.h"
+
+/* MDI interface includes */
+#include "mdi.h"
+#include "mdi_hw.h"
 
 /* --------------------------------------------------------------------------
  *  系统时钟配置：HSI 16 MHz → PLL → 170 MHz
@@ -64,7 +69,7 @@ void SystemClock_Config(void)
 
     HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000U);
     HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
-    HAL_NVIC_SetPriority(SysTick_IRQn, 0x0F, 0U);
+    HAL_NVIC_SetPriority(SysTick_IRQn, 3, 0U);
 }
 
 /* --------------------------------------------------------------------------
@@ -72,7 +77,13 @@ void SystemClock_Config(void)
  * -------------------------------------------------------------------------- */
 void peripheral_Clock(void)
 {
+    static uint16_t s_hwCounter = 0;
     halusart_Clock();
+
+    if (++s_hwCounter >= 500) {
+        s_hwCounter = 0;
+        MDI_Toggle(HW.ptLedStatus);
+    }
 }
 
 /* --------------------------------------------------------------------------
@@ -83,6 +94,7 @@ void peripheral_Init(void)
 {
     HAL_Init();
     SystemClock_Config();
+    hal_cordic_Init();
 
 #if !defined(GRBLHAL_ENABLE) || !GRBLHAL_ENABLE
     haldac_Init();

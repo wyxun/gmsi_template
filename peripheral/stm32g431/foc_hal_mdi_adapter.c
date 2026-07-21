@@ -15,6 +15,7 @@
 #include "foc_config.h"
 #include "haladc.h"
 #include "mdi/mdi.h"
+#include "stm32g4xx_ll_adc.h"
 
 static foc_result_t mdi_pwm_set_duty(void *pContext,
                                      q_type qDutyU,
@@ -32,6 +33,12 @@ static foc_result_t mdi_adc_offset_calib(void *pContext,
 static foc_result_t mdi_adc_reconstruct(void *pContext,
                                         phase_current_handle_t *ptHandle);
 static q_type mdi_adc_normalize(int32_t nDelta, uint32_t wBase);
+
+volatile uint32_t g_wCalibStartTrigger = 0;
+static uint32_t s_wCalibCount = 0;
+static uint64_t s_ullSumU = 0;
+static uint64_t s_ullSumV = 0;
+static uint64_t s_ullSumW = 0;
 
 static foc_mdi_motor_context_t s_tDefaultContext = {
     .ptHardware = &HW,
@@ -122,6 +129,8 @@ static void mdi_pwm_emergency_stop(void *pContext)
 static foc_result_t mdi_adc_start_conversion(void *pContext)
 {
     (void)pContext;
+    LL_ADC_ClearFlag_OVR(ADC1);
+    LL_ADC_ClearFlag_OVR(ADC2);
     return FOC_RESULT_OK;
 }
 
@@ -140,27 +149,23 @@ static foc_result_t mdi_adc_get_raw(void *pContext,
 static foc_result_t mdi_adc_offset_calib(void *pContext,
                                          foc_adc_calib_t *ptCalib)
 {
-    uint64_t ullSumU = 0U;
-    uint64_t ullSumV = 0U;
-    uint64_t ullSumW = 0U;
-    uint32_t wRawU = 0U;
-    uint32_t wRawV = 0U;
-    uint32_t wRawW = 0U;
-    uint16_t hwIndex;
-
+    (void)pContext;
     if (ptCalib == NULL) {
         return FOC_RESULT_NULL;
     }
-    for (hwIndex = 0U; hwIndex < FOC_OFFSET_CALIB_TIMES; hwIndex++) {
-        (void)mdi_adc_get_raw(pContext, &wRawU, &wRawV, &wRawW);
-        ullSumU += wRawU;
-        ullSumV += wRawV;
-        ullSumW += wRawW;
-    }
-    ptCalib->wOffsetU = (uint32_t)(ullSumU / FOC_OFFSET_CALIB_TIMES);
-    ptCalib->wOffsetV = (uint32_t)(ullSumV / FOC_OFFSET_CALIB_TIMES);
-    ptCalib->wOffsetW = (uint32_t)(ullSumW / FOC_OFFSET_CALIB_TIMES);
-    ptCalib->bIsCalibrated = true;
+    /* 默认设为左对齐中位 */
+    ptCalib->wOffsetU = 32768U;
+    ptCalib->wOffsetV = 32768U;
+    ptCalib->wOffsetW = 32768U;
+    ptCalib->bIsCalibrated = false;
+
+    /* 启动高频自适应偏置校准计数器 */
+    s_wCalibCount = 0;
+    s_ullSumU = 0;
+    s_ullSumV = 0;
+    s_ullSumW = 0;
+    g_wCalibStartTrigger = 1;
+
     return FOC_RESULT_OK;
 }
 
@@ -198,9 +203,33 @@ static foc_result_t mdi_adc_reconstruct(void *pContext,
     }
     (void)mdi_adc_get_raw(pContext, &wRawU, &wRawV, &wRawW);
     ptCalib = &ptHandle->tCalib;
-    wBaseU = ptCalib->bIsCalibrated ? ptCalib->wOffsetU : 2048U;
-    wBaseV = ptCalib->bIsCalibrated ? ptCalib->wOffsetV : 2048U;
-    wBaseW = ptCalib->bIsCalibrated ? ptCalib->wOffsetW : 2048U;
+
+    if (g_wCalibStartTrigger == 1) {
+        s_ullSumU += wRawU;
+        s_ullSumV += wRawV;
+        s_ullSumW += wRawW;
+        s_wCalibCount++;
+        if (s_wCalibCount >= 512U) {
+            ptCalib->wOffsetU = (uint32_t)(s_ullSumU / 512U);
+            ptCalib->wOffsetV = (uint32_t)(s_ullSumV / 512U);
+            ptCalib->wOffsetW = (uint32_t)(s_ullSumW / 512U);
+
+            if (ptCalib->wOffsetU < 8000U) ptCalib->wOffsetU = 32768U;
+            if (ptCalib->wOffsetV < 8000U) ptCalib->wOffsetV = 32768U;
+            if (ptCalib->wOffsetW < 8000U) ptCalib->wOffsetW = 32768U;
+
+            ptCalib->bIsCalibrated = true;
+            g_wCalibStartTrigger = 0;
+        }
+        ptHandle->qIu = FOC_ZERO;
+        ptHandle->qIv = FOC_ZERO;
+        ptHandle->qIw = FOC_ZERO;
+        return FOC_RESULT_OK;
+    }
+
+    wBaseU = ptCalib->bIsCalibrated ? ptCalib->wOffsetU : 32768U;
+    wBaseV = ptCalib->bIsCalibrated ? ptCalib->wOffsetV : 32768U;
+    wBaseW = ptCalib->bIsCalibrated ? ptCalib->wOffsetW : 32768U;
     nDeltaU = (int32_t)wRawU - (int32_t)wBaseU;
     nDeltaV = (int32_t)wRawV - (int32_t)wBaseV;
     nDeltaW = (int32_t)wRawW - (int32_t)wBaseW;

@@ -17,8 +17,10 @@ TEST_SRCS = test_foc.c test_numeric.c test_transform.c \
             test_modulation.c test_control.c test_motor.c \
             test_motor_encapsulation.c test_motor_fsm.c test_observer.c \
             test_motor_position.c test_motor_control_runtime.c \
-            test_advanced.c test_optimization.c test_experimental.c
+            test_advanced.c test_optimization.c test_experimental.c \
+            test_trig.c
 FOC_SRCS = ../../foc/math/foc_numeric.c ../../foc/math/foc_angle.c \
+           ../../foc/math/foc_trig_lut.c \
            ../../foc/math/foc_math.c ../../foc/middleware/foc_core.c \
            ../../foc/modulation/foc_modulation.c \
            ../../foc/control/foc_pid.c ../../foc/control/foc_filter.c \

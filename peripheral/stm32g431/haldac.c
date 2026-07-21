@@ -33,6 +33,10 @@ void haldac_Init(void)
 
     LL_DAC_Enable(DAC3, LL_DAC_CHANNEL_1);
     LL_DAC_Enable(DAC3, LL_DAC_CHANNEL_2);
+
+    /* 默认写入过流保护比较阈值：运放中位偏置约 1.65V，设置过流动作电压为 2.15V (约 2668 LSB) 确保大电流瞬间停机 */
+    haldac_SetCH1(2668U);
+    haldac_SetCH2(2668U);
 }
 
 void haldac_SetCH1(uint16_t wVal)

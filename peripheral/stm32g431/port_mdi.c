@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file   port_MDI.c
  * @brief  STM32G431 MDI 缁旑垰褰?閳?绾兛娆㈤幎鍊熻杽鐎圭偘绶ラ崠?
  */
@@ -136,9 +136,25 @@ static int32_t uart_write(void *pPriv, const uint8_t *pchData, uint32_t wLen)
 static int32_t uart_read(void *pPriv, uint8_t *pchBuf, uint32_t wLen)
 {
     (void)pPriv;
-    (void)wLen;
-    uint16_t hwRead = halusart_receiveData(1, pchBuf);
-    return (hwRead > 0) ? (int32_t)hwRead : -1;
+    static uint8_t s_chTempBuf[128];
+    static uint16_t s_hwTempLen = 0;
+    static uint16_t s_hwTempOffset = 0;
+
+    if (s_hwTempOffset >= s_hwTempLen) {
+        s_hwTempLen = halusart_receiveData(1, s_chTempBuf);
+        s_hwTempOffset = 0;
+    }
+
+    if (s_hwTempLen == 0) {
+        return -1;
+    }
+
+    uint32_t i = 0;
+    while (i < wLen && s_hwTempOffset < s_hwTempLen) {
+        pchBuf[i++] = s_chTempBuf[s_hwTempOffset++];
+    }
+
+    return (i > 0) ? (int32_t)i : -1;
 }
 
 static int32_t uart_isbusy(void *pPriv)

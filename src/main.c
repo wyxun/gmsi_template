@@ -14,12 +14,41 @@ static modus_t s_tModus = { .ptAppFlash = NULL };
 
 #if MODUS_ENABLE && (MSHELL_ENABLE || !defined(__NO_USE_LOG__))
 #include <string.h>
+#include "mdebug/mshell.h"  // 引入 mshell_io_t 和 mshell_SetIO
+
+#if USERCONFIG_MSHELL_ON_SERIAL
+static unsigned s_uart_read(char *pchBuf, unsigned hwSize)
+{
+    if (HW.ptSerial == NULL) {
+        return 0;
+    }
+    int32_t nRead = MDI_Read(HW.ptSerial, (uint8_t *)pchBuf, (uint32_t)hwSize);
+    return nRead > 0 ? (unsigned)nRead : 0;
+}
+
+static void s_uart_write(const char *pchBuf, unsigned hwSize)
+{
+    if (HW.ptSerial == NULL) {
+        return;
+    }
+    MDI_Write(HW.ptSerial, (const uint8_t *)pchBuf, (uint32_t)hwSize);
+}
+
+static const mshell_io_t s_tUartIO = {
+    .pfcnRead  = s_uart_read,
+    .pfcnWrite = s_uart_write,
+};
+#endif
+
 void user_trace_output(const char *str)
 {
+#if USERCONFIG_MSHELL_ON_SERIAL
+    if (str && HW.ptSerial) {
+        MDI_Write(HW.ptSerial, (const uint8_t *)str, strlen(str));
+    }
+#else
     debug_transport_write_string(str);
-
-    /* MODUS debug/mlog/mshell output goes exclusively via RTT.
-       HW.ptSerial is reserved for grblHAL G-code stream I/O. */
+#endif
 }
 #endif
 
@@ -33,6 +62,9 @@ int main(void)
         debug_transport_init();
     #endif
     modus_Init(&s_tModus);
+    #if USERCONFIG_MSHELL_ON_SERIAL && MSHELL_ENABLE
+    mshell_SetIO(&s_tUartIO);
+    #endif
 #endif
 
 #if defined(GRBLHAL_ENABLE)

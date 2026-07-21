@@ -22,6 +22,9 @@
 #include "foc_controller.h"
 #include "mdebug/mshell.h"
 #include "perfc_port.h"
+#include "motor/motor_private.h"
+
+extern uint32_t haladc_GetInjected(uint32_t wAdc, uint32_t wRank);
 
 /* 控制周期（归一化秒）：
  * 高频 — TMR1 CH4 在中心对齐 TWO_WAY_1 模式下仅向下计数时产生一次比较
@@ -291,12 +294,45 @@ static int foc_app_Run(uintptr_t wObjectAddr)
         ptThis->wLastHeartbeatTick = wNow;
         if (motor_GetSnapshot(ptThis->ptMotor, &tSnapshot) ==
             FOC_RESULT_OK) {
-            MLOGF(T, "[Heartbeat] foc_app alive, motor: %s, flt: 0x%lX,"
-                  " Vq_ref: %.3f, Iu: %.3f\r\n",
+            extern volatile uint32_t g_wHFStepCycles;
+#if defined(MOTOR_PROFILE_CYCLES)
+            extern volatile uint32_t g_wTestSinfCycles;
+            extern volatile uint32_t g_wSampleCurrentCycles;
+            extern volatile uint32_t g_wClarkeCycles;
+            extern volatile uint32_t g_wParkCycles;
+            extern volatile uint32_t g_wIparkCycles;
+            extern volatile uint32_t g_wModulateCycles;
+            extern volatile uint32_t g_wCommitCycles;
+            MLOGF(T, "[Heartbeat] motor: %s, HF: %lu, sinf: %lu, sample: %lu, clarke: %lu, park: %lu, ipark: %lu, mod: %lu, commit: %lu, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f\r\n",
                   foc_app_StateName(tSnapshot.eRunState),
-                  (unsigned long)tSnapshot.wFaults,
-                  _D(tSnapshot.tVoltageReference.qQ),
-                  _D(tSnapshot.tPhaseCurrent.qIu));
+                  (unsigned long)g_wHFStepCycles,
+                  (unsigned long)g_wTestSinfCycles,
+                  (unsigned long)g_wSampleCurrentCycles,
+                  (unsigned long)g_wClarkeCycles,
+                  (unsigned long)g_wParkCycles,
+                  (unsigned long)g_wIparkCycles,
+                  (unsigned long)g_wModulateCycles,
+                  (unsigned long)g_wCommitCycles,
+                  (double)foc_angle_to_turns(tSnapshot.tActiveAngle),
+                  (double)foc_to_float(tSnapshot.tPhaseCurrent.qIu),
+                  (double)foc_to_float(tSnapshot.tPhaseCurrent.qIv),
+                  (double)foc_to_float(tSnapshot.tPhaseCurrent.qIw));
+#else
+            uint32_t rawU = haladc_GetInjected(0, 0);
+            uint32_t rawV = haladc_GetInjected(1, 1);
+            uint32_t rawW = haladc_GetInjected(0, 1);
+            MLOGF(T, "[Heartbeat] motor: %s, HF_cycles: %lu, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f, offset: %lu/%lu/%lu, raw: %lu/%lu/%lu\r\n",
+                  foc_app_StateName(tSnapshot.eRunState),
+                  (unsigned long)g_wHFStepCycles,
+                  (double)foc_angle_to_turns(tSnapshot.tActiveAngle),
+                  (double)foc_to_float(tSnapshot.tPhaseCurrent.qIu),
+                  (double)foc_to_float(tSnapshot.tPhaseCurrent.qIv),
+                  (double)foc_to_float(tSnapshot.tPhaseCurrent.qIw),
+                  (unsigned long)tSnapshot.tCurrentCalibration.wOffsetU,
+                  (unsigned long)tSnapshot.tCurrentCalibration.wOffsetV,
+                  (unsigned long)tSnapshot.tCurrentCalibration.wOffsetW,
+                  (unsigned long)rawU, (unsigned long)rawV, (unsigned long)rawW);
+#endif
         }
     }
 
@@ -321,13 +357,13 @@ static int foc_app_Clock(uintptr_t wObjectAddr)
 static foc_result_t foc_app_InitControllers(void)
 {
     const foc_pid_params_t tCurrentParams = {
-        .tKp = {0, FOC_SCALAR(0.5f)},
-        .tKiTs = {0, FOC_SCALAR(0.01f)},
+        .tKp = {0, FOC_SCALAR(0.3f)},
+        .tKiTs = {0, FOC_SCALAR(0.005f)},
         .tKdOverTs = {0, FOC_ZERO},
-        .qOutputMinimum = FOC_SCALAR(-0.5f),
-        .qOutputMaximum = FOC_SCALAR(0.5f),
-        .qIntegratorMinimum = FOC_SCALAR(-0.3f),
-        .qIntegratorMaximum = FOC_SCALAR(0.3f),
+        .qOutputMinimum = FOC_SCALAR(-0.25f),
+        .qOutputMaximum = FOC_SCALAR(0.25f),
+        .qIntegratorMinimum = FOC_SCALAR(-0.18f),
+        .qIntegratorMaximum = FOC_SCALAR(0.18f),
     };
     const foc_pid_params_t tOuterParams = {
         .tKp = {0, FOC_SCALAR(0.2f)},
@@ -403,6 +439,15 @@ static void cmd_motor(const char *args)
         return;
     }
     if (strncmp(args, "start", 5) == 0) {
+        extern motor_run_config_t s_tMotorRunConfig;
+        s_tMotorRunConfig.eControlMode = MOTOR_CONTROL_VOLTAGE_OPEN_LOOP;
+        s_tMotorRunConfig.ptInitialPositionSource = NULL;
+        s_tMotorRunConfig.ptTargetPositionSource = NULL;
+        s_tMotorRunConfig.qInitialAngle = FOC_ZERO;
+        s_tMotorRunConfig.qOpenLoopSpeed = FOC_SCALAR(FOC_APP_OPEN_LOOP_SPEED);
+        s_tMotorRunConfig.qAcceleration = FOC_SCALAR(FOC_APP_OPEN_LOOP_ACCEL);
+        s_tMotorRunConfig.tVoltageReference.qD = FOC_ZERO;
+        s_tMotorRunConfig.tVoltageReference.qQ = FOC_SCALAR(FOC_APP_VOLTAGE_REF_Q);
         foc_app_Start(&tFocApp);
     } else if (strncmp(args, "stop", 4) == 0) {
         foc_app_Stop(&tFocApp);
@@ -411,6 +456,74 @@ static void cmd_motor(const char *args)
             MLOG(I, "Motor faults cleared\r\n");
         } else {
             MLOG(W, "ClearFault rejected (not in FAULT or PWM on)\r\n");
+        }
+    } else if (strncmp(args, "static", 6) == 0) {
+        float fTurns = 0.0f;
+        float fVq = 0.0f;
+        if (sscanf(args + 6, "%f %f", &fTurns, &fVq) == 2) {
+            extern motor_run_config_t s_tMotorRunConfig;
+            s_tMotorRunConfig.qOpenLoopSpeed = FOC_ZERO;
+            s_tMotorRunConfig.qAcceleration = FOC_ZERO;
+            motor_impl_t *p = motor_private(tFocApp.ptMotor);
+            if (p->tRt.eRunState != MOTOR_STATE_RUNNING) {
+                foc_app_Start(&tFocApp);
+                /* 延时几毫秒让启动和初始化重置完成 */
+                for (volatile uint32_t i = 0; i < 2000000UL; i++) {}
+            }
+            p->qOpenLoopCommandSpeed = FOC_ZERO;
+            p->tOpenLoopAngle = foc_angle_from_turns(fTurns);
+            p->tRt.tThetaE = foc_angle_from_turns(fTurns);
+            p->tControl.tVoltageReference.qQ = FOC_SCALAR(fVq);
+            p->tControl.tVoltageReference.qD = FOC_ZERO;
+            MLOGF(I, "Static lock: angle = %.3f turns, Vq = %.3f\r\n", (double)fTurns, (double)fVq);
+        } else {
+            MLOG(I, "Usage: motor static <turns> <vq>\r\n");
+        }
+    } else if (strncmp(args, "current", 7) == 0) {
+        float fIq = 0.0f;
+        float fSpeed = 1.0f;
+        int nArgs = sscanf(args + 7, "%f %f", &fIq, &fSpeed);
+        if (nArgs >= 1) {
+            extern motor_run_config_t s_tMotorRunConfig;
+            s_tMotorRunConfig.eControlMode = MOTOR_CONTROL_CURRENT;
+            s_tMotorRunConfig.qOpenLoopSpeed = FOC_SCALAR(fSpeed);
+            s_tMotorRunConfig.qAcceleration = FOC_SCALAR(10.0f);
+            s_tMotorRunConfig.tCurrentReference.qQ = FOC_SCALAR(fIq);
+            s_tMotorRunConfig.tCurrentReference.qD = FOC_ZERO;
+
+            foc_pid_Reset(&s_tPidId);
+            foc_pid_Reset(&s_tPidIq);
+
+            motor_impl_t *p = motor_private(tFocApp.ptMotor);
+            if (p->tRt.eRunState != MOTOR_STATE_RUNNING) {
+                foc_app_Start(&tFocApp);
+                /* 延时几毫秒让启动和初始化重置完成 */
+                for (volatile uint32_t i = 0; i < 2000000UL; i++) {}
+            }
+            p->tControl.eMode = MOTOR_CONTROL_CURRENT;
+            p->qOpenLoopCommandSpeed = FOC_SCALAR(fSpeed);
+            p->qOpenLoopSpeed = FOC_SCALAR(fSpeed);
+            p->tControl.tCurrentReference.qQ = FOC_SCALAR(fIq);
+            p->tControl.tCurrentReference.qD = FOC_ZERO;
+
+            foc_pid_Reset(&s_tPidId);
+            foc_pid_Reset(&s_tPidIq);
+
+            MLOGF(I, "Current loop run: Iq ref = %.3f pu, Speed = %.2f Hz\r\n", (double)fIq, (double)fSpeed);
+        } else {
+            MLOG(I, "Usage: motor current <iq-pu> [speed-hz]\r\n");
+        }
+    } else if (strncmp(args, "pid", 3) == 0) {
+        float fKp = 0.0f;
+        float fKi = 0.0f;
+        if (sscanf(args + 3, "%f %f", &fKp, &fKi) == 2) {
+            (void)foc_gain_from_float(fKp, &s_tPidId.tParams.tKp);
+            (void)foc_gain_from_float(fKi, &s_tPidId.tParams.tKiTs);
+            (void)foc_gain_from_float(fKp, &s_tPidIq.tParams.tKp);
+            (void)foc_gain_from_float(fKi, &s_tPidIq.tParams.tKiTs);
+            MLOGF(I, "PID params updated: Kp = %.3f, KiTs = %.3f\r\n", (double)fKp, (double)fKi);
+        } else {
+            MLOG(I, "Usage: motor pid <kp> <ki>\r\n");
         }
     } else if (strncmp(args, "vq", 2) == 0) {
         float fVq;
@@ -454,7 +567,7 @@ static void cmd_motor(const char *args)
               (unsigned long)tSnapshot.tCurrentCalibration.wOffsetW,
               (int)tSnapshot.tCurrentCalibration.bIsCalibrated);
     } else {
-        MLOG(I, "Usage: motor <start|stop|clear|vq <x>|status>\r\n");
+        MLOG(I, "Usage: motor <start|stop|clear|vq <x>|static <t> <v>|current <x>|pid <p> <i>|status>\r\n");
     }
 }
-MODUS_SHELL_CMD(motor, cmd_motor, "Control FOC Motor (start/stop/clear/vq/status)");
+MODUS_SHELL_CMD(motor, cmd_motor, "Control FOC Motor (start/stop/clear/vq/static/current/pid/status)");

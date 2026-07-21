@@ -4,6 +4,11 @@
  ******************************************************************************/
 
 #include "foc_angle.h"
+#include "foc_config.h"
+
+#if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_CORDIC)
+#include "halcordic.h"
+#endif
 
 #if defined(FOC_NUMERIC_FLOAT)
 #include <math.h>
@@ -14,8 +19,17 @@
 static foc_scalar_t angle_wrap_scalar(foc_scalar_t qTurns)
 {
 #if defined(FOC_NUMERIC_FLOAT)
-    qTurns -= floorf(qTurns);
-    return qTurns < FOC_ZERO ? qTurns + FOC_ONE : qTurns;
+    /* 利用强转向零截断的性质构造向下取整 */
+    int32_t ipart = (int32_t)qTurns;
+    if (qTurns < 0.0f) {
+        ipart -= 1;
+    }
+    qTurns -= (foc_scalar_t)ipart;
+    /* 针对负整数圈产生的 1.0f 进行钳位归一，确保值域为严格的 [0.0f, 1.0f) */
+    if (qTurns >= 1.0f) {
+        qTurns = 0.0f;
+    }
+    return qTurns;
 #else
     qTurns %= FOC_ONE;
     return qTurns < FOC_ZERO ? qTurns + FOC_ONE : qTurns;
@@ -84,7 +98,15 @@ static foc_scalar_t angle_sin_fixed(foc_scalar_t qTurns)
 foc_scalar_t foc_angle_sin(foc_angle_t tAngle)
 {
 #if defined(FOC_NUMERIC_FLOAT)
+  #if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_CORDIC)
+    foc_scalar_t qSin, qCos;
+    hal_cordic_SinCos(tAngle.qTurns, &qSin, &qCos);
+    return qSin;
+  #elif (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_LUT)
+    return lut_sin_turns(angle_wrap_scalar(tAngle.qTurns));
+  #else
     return sinf(angle_wrap_scalar(tAngle.qTurns) * FOC_TWO_PI_F);
+  #endif
 #else
     return angle_sin_fixed(tAngle.qTurns);
 #endif
@@ -92,16 +114,31 @@ foc_scalar_t foc_angle_sin(foc_angle_t tAngle)
 
 foc_scalar_t foc_angle_cos(foc_angle_t tAngle)
 {
+#if defined(FOC_NUMERIC_FLOAT)
+  #if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_CORDIC)
+    foc_scalar_t qSin, qCos;
+    hal_cordic_SinCos(tAngle.qTurns, &qSin, &qCos);
+    return qCos;
+  #else
     tAngle.qTurns = foc_add_sat(tAngle.qTurns, FOC_SCALAR(0.25f));
     return foc_angle_sin(tAngle);
+  #endif
+#else
+    tAngle.qTurns = foc_add_sat(tAngle.qTurns, FOC_SCALAR(0.25f));
+    return foc_angle_sin(tAngle);
+#endif
 }
 
 foc_angle_t foc_angle_atan2(foc_scalar_t qY,
                             foc_scalar_t qX)
 {
 #if defined(FOC_NUMERIC_FLOAT)
+  #if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_CORDIC)
+    return foc_angle_from_scalar(hal_cordic_Atan2(qY, qX));
+  #else
     float fTurns = atan2f(qY, qX) / FOC_TWO_PI_F;
     return foc_angle_from_turns(fTurns);
+  #endif
 #else
     static const int16_t s_hwAtanTurnsQ16[] = {
         8192, 4836, 2555, 1297, 651, 326, 163,
