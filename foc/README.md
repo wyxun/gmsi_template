@@ -1316,7 +1316,82 @@ mingw32-make all
 
 `all` 依次执行：封装负面编译检查（证明 `motor_handle_t` 成员不可直接访问）、浮点测试套件、定点测试套件。测试环境可通过 `CC=<compiler>` 显式指定可用的 C11 编译器。
 
-烧录和硬件调试必须使用项目规定入口。AI 调试统一使用 `tools/aitrace.exe`；CPU halt、reset 或 GDB 操作前需要明确确认。
+
+### 17.1 常规应用层控制指令集 (`motor`)
+
+在应用层 (`foc_app.c`) 中，注册了标准的业务控制命令集 `motor`，用于正常运行、在线参数更新与快照查询：
+
+#### 指令指南
+- `motor start`：按应用层既定 `motor_run_config_t` 配置启动电机（进入 `STARTING` 自适应零偏校准与平滑启动）。
+- `motor stop`：常规平滑软停机，使电机回归 `IDLE` 状态。
+- `motor vq <volts-pu>`：在线实时更新开环 Vq 参考电压（例如 `motor vq 0.05`）。
+- `motor pid <kp> <ki>`：在线动态整定 D/Q 轴电流环 PID 控制器的 $K_p$ 与 $K_i T_s$ 增益（例如 `motor pid 0.1 0.01`）。
+- `motor status`：读取电机原生快照（`motor_GetSnapshot`），打印当前的运行状态、启动相位、控制模式、使能状态、故障字、实时电角度、三相 PWM 占空比、三相采样电流及 ADC 自适应偏置。
+- `motor clear`：清除挂起的错误故障状态。
+
+
+### 17.2 电机初步验证与调试模块 (`foc_verify`)
+
+`experimental/foc_verify.h` / `foc_verify.c` 模块专为新硬件上电初期的相序定位、静态锁角、开环旋转提速与电流闭环测试而设计。
+
+#### 1. 架构与设计规范 (高度可移植)
+- **无状态与显式句柄 API**：模块内部**不保存任何侵入式 `static` 状态变量**，零反向依赖应用层句柄。所有 C 函数显式接受 `motor_handle_t *ptMotor` 电机句柄，保持绝对的高度可移植与模块化特性。
+- **原生生命周期 FSM 兼容**：内部完全基于 Universal-FOC 原生的 `MOTOR_CONTROL_VOLTAGE_OPEN_LOOP` / `MOTOR_CONTROL_CURRENT` 配置与 `motor_Start()` 实现，由框架自动管理 25ms (512步) 自适应零偏校准与安全使能，零侵入高频 ISR，`HF_cycles` 保持极致低耗。
+- **BUSY 状态防重入保护**：当电机已在运行状态中时，下发新验证命令会自动执行平滑 `motor_Stop()` 切换，避免返回 `FOC_RESULT_BUSY` (code 2)。
+
+#### 2. 零代码侵入使能
+- **只需要使能宏**：在 `foc_config.h` 中将 `FOC_ENABLE_MOTOR_VERIFY` 置为 `1` 即可：
+  ```c
+  #define FOC_ENABLE_MOTOR_VERIFY 1
+  ```
+- **无需修改 `foc_app.c`**：该模块使用 MODUS 框架的 `MODUS_SHELL_CMD` 宏自动注册命令。在 `foc_app.c` 中**无需添加任何初始化或调用代码**，应用层保持 100% 干净。
+
+#### 3. C 语言 API
+
+```c
+/* 静态电角度锁定：指定电角度 turns (0.0~1.0) 与安全电压 Vq (pu, 限制 <= 0.05) */
+foc_result_t foc_verify_StaticLock(motor_handle_t *ptMotor, float fTurns, float fVq);
+
+/* 开环旋转强拖：指定旋转频率 (Hz) 与开环电压 Vq (pu, 限制 <= 0.05) */
+foc_result_t foc_verify_OpenLoopRun(motor_handle_t *ptMotor, float fVoltageQ, float fSpeedHz);
+
+/* 电流闭环测试：指定目标 Iq 电流 (pu, 限制 <= 0.05) 与开环拖动频率 (Hz) */
+foc_result_t foc_verify_CurrentLoopRun(motor_handle_t *ptMotor, float fIqRef, float fSpeedHz);
+
+/* 停止测试并平滑回归 IDLE 状态 */
+foc_result_t foc_verify_Stop(motor_handle_t *ptMotor);
+```
+
+#### 4. MSHELL 控制台调试指令使用指南
+
+在 RTT Shell 终端中可直接输入 `motor_verify` 及其子命令：
+
+- **静态锁定指定电角度**：
+  ```bash
+  motor_verify static <turns> [vq=0.05]
+  ```
+  *说明*：`<turns>` 为电角度圈数（0.0 ~ 1.0），`[vq]` 为给定开环 Vq 电压 (pu，默认 0.05，最大钳位 0.05)。
+  *示例*：`motor_verify static 0.667 0.03`（在 0.667 圈注入 0.03 pu 电压锁定）。
+
+- **开环提速旋转强拖**：
+  ```bash
+  motor_verify run <speed-hz> [vq=0.05]
+  ```
+  *说明*：`<speed-hz>` 为开环电角度旋转频率 (Hz)，`[vq]` 为给定 Vq 电压。
+  *示例*：`motor_verify run 2.0 0.05`（以 2.0 Hz 开环旋转）。
+
+- **电流闭环测试**：
+  ```bash
+  motor_verify current <iq-pu> [speed-hz=2.0]
+  ```
+  *说明*：`<iq-pu>` 为目标 Iq 闭环参考电流 (pu，限制最大 0.05)，`[speed-hz]` 为拖动电频率 (Hz，默认 2.0)。
+  *示例*：`motor_verify current 0.03 2.0`（电流环闭环运行在 0.03 pu Iq，开环 2 Hz 拖动）。
+
+- **平滑停止测试**：
+  ```bash
+  motor_verify stop
+  ```
+  *说明*：使电机安全停机回归 `IDLE` 状态。
 
 ## 18. 常见问题
 
@@ -1412,6 +1487,7 @@ Q16.15 存在量化和饱和。检查基准值、增益范围和中间量是否�
 | `experimental/foc_experiment.h` | 实验安全契约 |
 | `experimental/foc_nsd.h` | 转子极性检测状态机 |
 | `experimental/foc_identify.h` | 电阻、电感、磁链辨识状态机 |
+| `experimental/foc_verify.h` | 上电初试相序与开环调试验证例程 |
 | `diagnostic/motor_diagnostic.h` | 硬件诊断输出（默认不进构建） |
 
 `motor/motor_control.h`、`motor/motor_private.h` 和 `motor/motor_control_types.h` 是 motor 内部实现头，应用不应直接包含；公共声明以 `motor/motor.h` 为准。旧的 `middleware/observer_lib.h` 并行传感器抽象已删除，由 `motor/motor_position.h` 统一取代。

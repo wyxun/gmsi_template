@@ -142,7 +142,7 @@ static foc_result_t mdi_adc_get_raw(void *pContext,
     (void)pContext;
     if (pwRawU != NULL) *pwRawU = haladc_GetInjected(HALADC_ADC1, 0U);
     if (pwRawV != NULL) *pwRawV = haladc_GetInjected(HALADC_ADC2, 1U);
-    if (pwRawW != NULL) *pwRawW = haladc_GetInjected(HALADC_ADC1, 1U);
+    if (pwRawW != NULL) *pwRawW = haladc_GetInjected(HALADC_ADC2, 0U);
     return FOC_RESULT_OK;
 }
 
@@ -153,7 +153,7 @@ static foc_result_t mdi_adc_offset_calib(void *pContext,
     if (ptCalib == NULL) {
         return FOC_RESULT_NULL;
     }
-    /* 默认设为左对齐中位 */
+    /* 默认设为 16 位 ADC 左对齐中位 32768 */
     ptCalib->wOffsetU = 32768U;
     ptCalib->wOffsetV = 32768U;
     ptCalib->wOffsetW = 32768U;
@@ -214,9 +214,9 @@ static foc_result_t mdi_adc_reconstruct(void *pContext,
             ptCalib->wOffsetV = (uint32_t)(s_ullSumV / 512U);
             ptCalib->wOffsetW = (uint32_t)(s_ullSumW / 512U);
 
-            if (ptCalib->wOffsetU < 8000U) ptCalib->wOffsetU = 32768U;
-            if (ptCalib->wOffsetV < 8000U) ptCalib->wOffsetV = 32768U;
-            if (ptCalib->wOffsetW < 8000U) ptCalib->wOffsetW = 32768U;
+            if (ptCalib->wOffsetU < 20000U || ptCalib->wOffsetU > 60000U) ptCalib->wOffsetU = 32768U;
+            if (ptCalib->wOffsetV < 20000U || ptCalib->wOffsetV > 60000U) ptCalib->wOffsetV = 32768U;
+            if (ptCalib->wOffsetW < 20000U || ptCalib->wOffsetW > 60000U) ptCalib->wOffsetW = 32768U;
 
             ptCalib->bIsCalibrated = true;
             g_wCalibStartTrigger = 0;
@@ -230,9 +230,9 @@ static foc_result_t mdi_adc_reconstruct(void *pContext,
     wBaseU = ptCalib->bIsCalibrated ? ptCalib->wOffsetU : 32768U;
     wBaseV = ptCalib->bIsCalibrated ? ptCalib->wOffsetV : 32768U;
     wBaseW = ptCalib->bIsCalibrated ? ptCalib->wOffsetW : 32768U;
-    nDeltaU = (int32_t)wRawU - (int32_t)wBaseU;
-    nDeltaV = (int32_t)wRawV - (int32_t)wBaseV;
-    nDeltaW = (int32_t)wRawW - (int32_t)wBaseW;
+    nDeltaU = (int32_t)wBaseU - (int32_t)wRawU;
+    nDeltaV = (int32_t)wBaseV - (int32_t)wRawV;
+    nDeltaW = (int32_t)wBaseW - (int32_t)wRawW;
 
     switch (ptHandle->eTopology) {
         case SENSING_TOPOLOGY_3P:

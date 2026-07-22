@@ -94,19 +94,21 @@ void phase_testC(foc_app_t *ptApp)
 
 static uint8_t s_chDutyU, s_chDutyV, s_chDutyW;
 static uint8_t s_chIu, s_chIv, s_chIw;
+static uint8_t s_chIqRef, s_chIq;
 
 void phase_test_waveform_init(void)
 {
     mwaveform.Init(NULL);
-    s_chDutyU = mwaveform.AddChannel("DutyU", 1000.0f);
-    s_chDutyV = mwaveform.AddChannel("DutyV", 1000.0f);
-    s_chDutyW = mwaveform.AddChannel("DutyW", 1000.0f);
-    s_chIu    = mwaveform.AddChannel("Iu", 1000.0f);
-    s_chIv    = mwaveform.AddChannel("Iv", 1000.0f);
-    s_chIw    = mwaveform.AddChannel("Iw", 1000.0f);
+    /* s_chDutyU = mwaveform.AddChannel("DutyU", 1000.0f); */
+    /* s_chDutyV = mwaveform.AddChannel("DutyV", 1000.0f); */
+    /* s_chDutyW = mwaveform.AddChannel("DutyW", 1000.0f); */
+    /* s_chIu    = mwaveform.AddChannel("Iu", 1000.0f);    */
+    /* s_chIv    = mwaveform.AddChannel("Iv", 1000.0f);    */
+    /* s_chIw    = mwaveform.AddChannel("Iw", 1000.0f);    */
+    s_chIqRef = mwaveform.AddChannel("IqRef", 1000.0f);
+    s_chIq    = mwaveform.AddChannel("Iq", 1000.0f);
     mwaveform.Start();
-    MLOG(I, "[Waveform] FOC App Dynamic Monitoring started"
-         " (Duties + Currents)\r\n");
+    MLOG(I, "[Waveform] FOC App Dynamic Monitoring started (IqRef + Iq)\r\n");
 }
 
 void phase_test_waveform_step(void)
@@ -121,14 +123,18 @@ void phase_test_waveform_step(void)
     }
 
     /* Push SVPWM Duties from the coherent motor snapshot */
-    mwaveform.Push(s_chDutyU, _D(tSnapshot.tDuty.qU));
-    mwaveform.Push(s_chDutyV, _D(tSnapshot.tDuty.qV));
-    mwaveform.Push(s_chDutyW, _D(tSnapshot.tDuty.qW));
+    /* mwaveform.Push(s_chDutyU, _D(tSnapshot.tDuty.qU)); */
+    /* mwaveform.Push(s_chDutyV, _D(tSnapshot.tDuty.qV)); */
+    /* mwaveform.Push(s_chDutyW, _D(tSnapshot.tDuty.qW)); */
 
     /* Push reconstructed phase currents */
-    mwaveform.Push(s_chIu, _D(tSnapshot.tPhaseCurrent.qIu));
-    mwaveform.Push(s_chIv, _D(tSnapshot.tPhaseCurrent.qIv));
-    mwaveform.Push(s_chIw, _D(tSnapshot.tPhaseCurrent.qIw));
+    /* mwaveform.Push(s_chIu, _D(tSnapshot.tPhaseCurrent.qIu)); */
+    /* mwaveform.Push(s_chIv, _D(tSnapshot.tPhaseCurrent.qIv)); */
+    /* mwaveform.Push(s_chIw, _D(tSnapshot.tPhaseCurrent.qIw)); */
+
+    /* Push Iq Reference and Real Iq Feedback */
+    mwaveform.Push(s_chIqRef, _D(tSnapshot.tCurrentReference.qQ));
+    mwaveform.Push(s_chIq, _D(tSnapshot.tCurrent.qQ));
 #else
     /* TEMP DEBUG: fixed test pattern to verify the waveform data path.
      * DutyU/V/W = 0.1/0.2/0.3 (constant), Iu = ramping counter. */
