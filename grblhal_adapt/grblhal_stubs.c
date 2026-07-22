@@ -241,7 +241,7 @@ bool driver_init(void)
 
     /* Required properties */
     hal.info            = "AT32F407 CNC Controller";
-    hal.driver_version  = "260715";
+    hal.driver_version  = "260721";
     hal.step_us_min     = 2.0f;
     hal.f_step_timer    = 120000000U;
     hal.f_mcu           = 240U;

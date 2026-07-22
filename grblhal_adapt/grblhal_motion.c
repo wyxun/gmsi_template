@@ -18,6 +18,20 @@ static axes_signals_t s_tEnableInvert = {0};
 static spindle_state_t s_tSpindleState = {0};
 static spindle_id_t s_chSpindleId = -1;
 
+/* ---- PWM spindle — TMR3 @ 120 MHz ---- */
+static spindle_pwm_t s_tSpindlePwm = {0};
+static spindle_pwm_settings_t s_tSpindlePwmSettings = {0};
+
+static uint_fast16_t pwm_spindle_get_pwm(spindle_ptrs_t *spindle, float rpm)
+{
+    return s_tSpindlePwm.compute_value(&s_tSpindlePwm, rpm, false);
+}
+
+static void pwm_spindle_update_pwm(spindle_ptrs_t *spindle, uint_fast16_t pwm)
+{
+    TMR3->c1dt = pwm;
+}
+
 static void stepper_write_dir(axes_signals_t signals)
 {
     signals.mask ^= s_tDirInvert.mask;
@@ -129,13 +143,15 @@ void grblhal_stepper_isr(void)
 static void dc_spindle_set_state(spindle_ptrs_t *spindle,
                                  spindle_state_t state, float rpm)
 {
-    (void)spindle;
-    (void)rpm;
     s_tSpindleState.value = 0;
     s_tSpindleState.on = state.on;
-    gpio_bits_write(SPINDLE_ENABLE_PORT, SPINDLE_ENABLE_PIN,
-                    state.on ? TRUE : FALSE);
-    gpio_bits_reset(SPINDLE_DIR_PORT, SPINDLE_DIR_PIN);
+    s_tSpindleState.ccw = state.ccw;
+
+    /* PA6 is now TMR3_CH1 PWM; on/off is encoded in the PWM duty cycle.
+       PA5 (D13) is the direction output. */
+    gpio_bits_write(SPINDLE_DIR_PORT, SPINDLE_DIR_PIN,
+                    state.on && state.ccw ? TRUE : FALSE);
+    pwm_spindle_update_pwm(spindle, state.on ? spindle->get_pwm(spindle, rpm) : 0);
 }
 
 static spindle_state_t dc_spindle_get_state(spindle_ptrs_t *spindle)
@@ -144,20 +160,67 @@ static spindle_state_t dc_spindle_get_state(spindle_ptrs_t *spindle)
     return s_tSpindleState;
 }
 
+static bool grblhal_spindle_config(spindle_ptrs_t *spindle)
+{
+    (void)spindle;
+
+    /* TMR3 clock = APB1 x 2 = 60 x 2 = 120 MHz (TMR3 is on APB1) */
+    crm_periph_clock_enable(CRM_TMR3_PERIPH_CLOCK, TRUE);
+
+    s_tSpindlePwmSettings = (spindle_pwm_settings_t){
+        .rpm_max               = 10000.0f,
+        .rpm_min               = 0.0f,
+        .pwm_freq              = 5000.0f,
+        .pwm_off_value         = 0.0f,
+        .pwm_min_value         = 0.0f,
+        .pwm_max_value         = 100.0f,
+        .flags.pwm_disable     = false,
+        .flags.enable_rpm_controlled = false,
+        .flags.laser_mode_disable    = true,
+        .flags.pwm_ramped            = true,
+        .flags.ignore_delays         = false,
+    };
+
+    spindle_precompute_pwm_values(spindle, &s_tSpindlePwm, &s_tSpindlePwmSettings, 120000000UL);
+
+    tmr_reset(TMR3);
+    /* period = clock / freq counts per PWM cycle. ARR must be period-1 so that
+       the counter runs 0..period-1 (period counts) and CCR=period yields 100% duty. */
+    tmr_base_init(TMR3, s_tSpindlePwm.period - 1, 0);
+    tmr_cnt_dir_set(TMR3, TMR_COUNT_UP);
+    tmr_clock_source_div_set(TMR3, TMR_CLOCK_DIV1);
+
+    static tmr_output_config_type tmr_oc;
+    tmr_output_default_para_init(&tmr_oc);
+    tmr_oc.oc_mode         = TMR_OUTPUT_CONTROL_PWM_MODE_A;
+    tmr_oc.oc_idle_state   = FALSE;
+    tmr_oc.oc_polarity     = TMR_OUTPUT_ACTIVE_HIGH;
+    tmr_oc.oc_output_state = TRUE;
+    tmr_output_channel_config(TMR3, TMR_SELECT_CHANNEL_1, &tmr_oc);
+    tmr_channel_value_set(TMR3, TMR_SELECT_CHANNEL_1, 0);
+    tmr_output_channel_buffer_enable(TMR3, TMR_SELECT_CHANNEL_1, TRUE);
+    tmr_counter_enable(TMR3, TRUE);
+
+    return true;
+}
+
 bool grblhal_spindle_init(void)
 {
     static const spindle_ptrs_t spindle = {
-        .type = SpindleType_Basic,
+        .type       = SpindleType_PWM,
         .cap.enable = On,
         .cap.direction = Off,
-        .cap.variable = Off,
+        .cap.variable  = On,
         .cap.gpio_controlled = On,
-        .set_state = dc_spindle_set_state,
-        .get_state = dc_spindle_get_state,
+        .config      = grblhal_spindle_config,
+        .set_state   = dc_spindle_set_state,
+        .get_state   = dc_spindle_get_state,
+        .get_pwm     = pwm_spindle_get_pwm,
+        .update_pwm  = pwm_spindle_update_pwm,
     };
 
     if (s_chSpindleId < 0) {
-        s_chSpindleId = spindle_register(&spindle, "DC spindle");
+        s_chSpindleId = spindle_register(&spindle, "PWM Spindle");
     }
     return s_chSpindleId >= 0;
 }
@@ -172,5 +235,6 @@ void grblhal_emergency_stop(void)
     gpio_bits_reset(Z_STEP_PORT, Z_STEP_PIN);
     gpio_bits_reset(SPINDLE_ENABLE_PORT, SPINDLE_ENABLE_PIN);
     gpio_bits_reset(SPINDLE_DIR_PORT, SPINDLE_DIR_PIN);
+    TMR3->c1dt = 0; /* Drive PWM duty to 0 (PA6 is TMR3_CH1) */
     s_tSpindleState.value = 0;
 }

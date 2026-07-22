@@ -22,6 +22,35 @@
 #define HOMING_CYCLE_0  (1 << 0)
 #define HOMING_CYCLE_1  (1 << 1)
 #define HOMING_CYCLE_2  (1 << 2)
+/* ---- Axis travel limits ---- */
+#define DEFAULT_X_MAX_TRAVEL    450.0f  /* $130 */
+#define DEFAULT_Y_MAX_TRAVEL    400.0f  /* $131 */
+#define DEFAULT_Z_MAX_TRAVEL    100.0f  /* $132 */
+
+/* ---- Steps per mm ---- */
+#define DEFAULT_X_STEPS_PER_MM  80.0f   /* $100 */
+#define DEFAULT_Y_STEPS_PER_MM  800.0f  /* $101 */
+#define DEFAULT_Z_STEPS_PER_MM  800.0f  /* $102 */
+
+/* ---- Axis speeds ---- */
+#define DEFAULT_X_MAX_RATE      500.0f
+#define DEFAULT_Y_MAX_RATE      500.0f
+#define DEFAULT_Z_MAX_RATE      500.0f
+
+/* ---- Axis acceleration ---- */
+#define DEFAULT_X_ACCELERATION  30.0f   /* $120 */
+#define DEFAULT_Y_ACCELERATION  30.0f   /* $121 */
+#define DEFAULT_Z_ACCELERATION  30.0f   /* $122 */
+
+/* ---- Stepper signals ---- */
+#define DEFAULT_STEP_PULSE_MICROSECONDS 10.0f  /* $0   — min pulse width (must also set hal.step_us_min in grblhal_stubs.c) */
+#define DEFAULT_STEPPER_IDLE_LOCK_TIME  25      /* $1   — idle lock time (ms) */
+#define DEFAULT_STEP_SIGNALS_INVERT_MASK  0     /* $2   — step polarity, 0 = positive pulse */
+#define DEFAULT_DIR_SIGNALS_INVERT_MASK   1     /* $3   — dir invert, 1 = invert X-axis only */
+#define DEFAULT_ENABLE_SIGNALS_INVERT_MASK 0    /* $4   — enable invert, 0 = no invert (active low) */
+#define DEFAULT_STEP_PULSE_DELAY          0.0f  /* $29  — DIR setup time (µs) */
+#define DEFAULT_STEPPER_DEENERGIZE_MASK   0     /* $37  — axes to keep energized */
+#define DEFAULT_STEPPER_ENABLE_DELAY      0     /* $680 — enable delay (ms) */
 
 /* ---- Buffer sizes ---- */
 #define RX_BUFFER_SIZE      256
@@ -42,6 +71,10 @@
 #define ETHERNET_ENABLE     0
 #define WIFI_ENABLE         0
 #define ENABLE_SOFTWARE_DEBOUNCE  0
+
+/* ---- Spindle defaults ---- */
+#define DEFAULT_SPINDLE_ON_DELAY     8000    /* $394 — ms, slow accel for DC motor */
+#define DEFAULT_SPINDLE_OFF_DELAY    5000    /* $539 — ms, coast-down time */
 
 /* ---- Full feature set (no trimming) ---- */
 #define NGC_PARAMETERS_ENABLE           1

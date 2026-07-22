@@ -205,14 +205,23 @@ static void cnc_gpio_Init(void)
     gpio_init_struct.gpio_pins = PROBE_PIN;
     gpio_init(PROBE_PORT, &gpio_init_struct);
 
-    /* 5. Configure Spindle Outputs (D12 -> PA6, D13 -> PA5) */
-    gpio_init_struct.gpio_mode           = GPIO_MODE_OUTPUT;
+    /* 5. Configure Spindle Outputs:
+       D12 (PA6) → SpinEnable / TMR3_CH1 PWM
+       D13 (PA5) → SpinDir */
+    gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+    gpio_init_struct.gpio_out_type       = GPIO_OUTPUT_PUSH_PULL;
+    gpio_init_struct.gpio_mode           = GPIO_MODE_MUX;
     gpio_init_struct.gpio_pull           = GPIO_PULL_NONE;
-    gpio_init_struct.gpio_pins           = GPIO_PINS_5 | GPIO_PINS_6;
+    gpio_init_struct.gpio_pins           = GPIO_PINS_6;
     gpio_init(GPIOA, &gpio_init_struct);
 
-    /* Default spindle to inactive (LOW) */
-    gpio_bits_reset(GPIOA, GPIO_PINS_5 | GPIO_PINS_6);
+    gpio_init_struct.gpio_mode           = GPIO_MODE_OUTPUT;
+    gpio_init_struct.gpio_pins           = GPIO_PINS_5;
+    gpio_init(GPIOA, &gpio_init_struct);
+
+    /* Default spindle inactive: direction LOW, GPIO/PWM output LOW */
+    gpio_bits_reset(GPIOA, GPIO_PINS_5);
+    gpio_bits_reset(GPIOA, GPIO_PINS_6);
 }
 
 /* --------------------------------------------------------------------------

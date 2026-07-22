@@ -16,7 +16,7 @@ This document details the mapping between the standard Arduino CNC Shield pin no
 | **D7** | Z-DIR | **PA8** | GPIO | Digital | Output |
 | **D8** | EN (Stepper Enable) | **PA9** | GPIO | Digital | Output |
 | **D9** | X-EndStop (Limit) | **PC7** | TMR3_CH2 / GPIO | Digital | Input (Pull-up) |
-| **D10** | Y-EndStop (Limit) | **PA15 / PB6** | TMR4_CH1 / GPIO | Digital | Input (Pull-up) |
+| **D10** | Y-EndStop (Limit) | **PA15** / PB6 | TMR4_CH1 / GPIO | Digital | Input (Pull-up) |
 | **D11** | Z-EndStop (Limit) | **PA7** | TMR3_CH2 / GPIO | Digital | Input (Pull-up) |
 | **D12** | SpinEnable (Spindle) | **PA6** | TMR3_CH1 / GPIO | Digital | Output / PWM |
 | **D13** | SpinDir (Spindle Dir) | **PA5** | GPIO | Digital | Output |

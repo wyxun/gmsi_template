@@ -56,6 +56,9 @@
 #define SPINDLE_ENABLE_PIN      GPIO_PINS_6
 #define SPINDLE_DIR_PORT        GPIOA
 #define SPINDLE_DIR_PIN         GPIO_PINS_5
+/* Note: PA6 (D12) is TMR3_CH1 PWM output; PA5 (D13) is direction GPIO.
+   The SPINDLE_ENABLE_PORT/PIN macros are retained for legacy references but
+   PA6 is now driven by the timer, not by GPIO. */
 
 #ifdef __cplusplus
 extern "C" {

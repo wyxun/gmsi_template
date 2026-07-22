@@ -13,7 +13,8 @@
       "Bash(taskkill /F /IM openocd-at32.exe /T)",
       "Bash(taskkill /F /IM openocd.exe /T)",
       "Bash(\"D:/software/msys64/mingw64/bin/openocd-at32.exe\" -s \"D:/software/msys64/mingw64/share/openocd/scripts\" -f \"target/at32f413/openocd.cfg\" -c \"adapter speed 2000\" -c \"tcl_port 0\")",
-      "Bash(powershell -NoProfile -Command '$t=New-Object Net.Sockets.TcpClient;try{$t.Connect\\('\\\\''127.0.0.1'\\\\'',4444\\);Write-Host '\\\\''OK'\\\\'';$t.Close\\(\\)}catch{Write-Host '\\\\''NO'\\\\''}')"
+      "Bash(powershell -NoProfile -Command '$t=New-Object Net.Sockets.TcpClient;try{$t.Connect\\('\\\\''127.0.0.1'\\\\'',4444\\);Write-Host '\\\\''OK'\\\\'';$t.Close\\(\\)}catch{Write-Host '\\\\''NO'\\\\''}')",
+      "Bash(\"D:\\\\0_software\\\\msys64\\\\mingw64\\\\bin\\\\mingw32-make\" TARGET_CHIP=at32f407)"
     ]
   }
 }
