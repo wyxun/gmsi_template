@@ -32,6 +32,23 @@ void hal_cordic_SinCos(foc_scalar_t qTurns, foc_scalar_t *pqSin, foc_scalar_t *p
     *pqSin = (float)qSin * 4.6566128730773926e-10f;
 }
 
+void hal_cordic_SinCosBam32(uint32_t wBam32, foc_scalar_t *pqSin, foc_scalar_t *pqCos)
+{
+    int32_t q31Angle = (int32_t)wBam32;
+
+    CORDIC->CSR = (6U << CORDIC_CSR_PRECISION_Pos) | 
+                  (0U << CORDIC_CSR_FUNC_Pos) | 
+                  CORDIC_CSR_NRES;
+
+    CORDIC->WDATA = q31Angle;
+
+    int32_t qCos = CORDIC->RDATA;
+    int32_t qSin = CORDIC->RDATA;
+
+    if (pqCos != NULL) *pqCos = (float)qCos * 4.6566128730773926e-10f;
+    if (pqSin != NULL) *pqSin = (float)qSin * 4.6566128730773926e-10f;
+}
+
 foc_scalar_t hal_cordic_Atan2(foc_scalar_t qY, foc_scalar_t qX)
 {
     float fMax = fmaxf(fabsf(qX), fabsf(qY));

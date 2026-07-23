@@ -149,7 +149,6 @@ foc_result_t foc_phase_delay_Compensate(
     } else if (qElectricalSpeed < FOC_ZERO) {
         qCorrection = foc_sub_sat(qCorrection, qDirectionOffset);
     }
-    ptCompensated->qTurns = foc_add_sat(tAngle.qTurns, qCorrection);
-    *ptCompensated = foc_angle_wrap(*ptCompensated);
+    *ptCompensated = foc_angle_add_scalar(tAngle, qCorrection);
     return FOC_RESULT_OK;
 }

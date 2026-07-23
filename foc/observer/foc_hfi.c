@@ -82,8 +82,6 @@ foc_result_t foc_hfi_Step(foc_hfi_t *ptHfi,
         ptOutput->qResponse >= ptHfi->tParams.qMinimumResponse;
     ptHfi->qPreviousCarrier = qCarrier;
     ptHfi->bHasPreviousCarrier = true;
-    ptHfi->tPhase.qTurns = foc_add_sat(
-        ptHfi->tPhase.qTurns, ptHfi->tParams.qPhaseStep);
-    ptHfi->tPhase = foc_angle_wrap(ptHfi->tPhase);
+    ptHfi->tPhase = foc_angle_add_scalar(ptHfi->tPhase, ptHfi->tParams.qPhaseStep);
     return FOC_RESULT_OK;
 }

@@ -51,13 +51,6 @@ mcoroutine_handle_t tMcoroutineFocAppHandle = {
 static modus_base_t     s_tFocAppBase;
 static motor_handle_t  *s_ptMotorISR;   /* 高频 ISR 绑定的实例 */
 
-/* Id/Iq/速度/位置四个控制器实例，电压开环模式不使用，为后续闭环模式
- * 预先绑定（motor_Start 对闭环模式强制校验控制器存在）。 */
-static foc_pid_t s_tPidId;
-static foc_pid_t s_tPidIq;
-static foc_pid_t s_tPidSpeed;
-static foc_pid_t s_tPidPosition;
-
 static int foc_app_Clock(uintptr_t wObjectAddr);
 static int foc_app_Run  (uintptr_t wObjectAddr);
 
@@ -271,13 +264,16 @@ static int foc_app_Run(uintptr_t wObjectAddr)
 
     if (ptThis == NULL) { return MODUS_EFAIL; }
 
+#if MODUS_ENABLE
     wEvent = mbase_EventPend(ptThis->ptBase);
     (void)wEvent;
+#endif
 
     foc_app_HandleButton(ptThis);
 
     /* 物理串口接收等待：当有串口输入数据时，跨模块 Post 转发给
        TEMPLATE_CLASS 的 RingBuffer，达到 Echo 效果 */
+#if MODUS_ENABLE
     {
         uint8_t chBuf[64];
         int32_t nReadBytes = MDI_Read(HW.ptSerial, chBuf, sizeof(chBuf));
@@ -285,6 +281,7 @@ static int foc_app_Run(uintptr_t wObjectAddr)
             mbase_MessagePostToRing(TEMPLATE_CLASS, chBuf, nReadBytes);
         }
     }
+#endif
 
     (void)foc_app_RunFSM(ptThis);
     foc_app_DrainEvents(ptThis);
@@ -294,25 +291,19 @@ static int foc_app_Run(uintptr_t wObjectAddr)
         ptThis->wLastHeartbeatTick = wNow;
         if (motor_GetSnapshot(ptThis->ptMotor, &tSnapshot) ==
             FOC_RESULT_OK) {
-            extern volatile uint32_t g_wHFStepCycles;
-#if defined(MOTOR_PROFILE_CYCLES)
-            extern volatile uint32_t g_wTestSinfCycles;
-            extern volatile uint32_t g_wSampleCurrentCycles;
-            extern volatile uint32_t g_wClarkeCycles;
-            extern volatile uint32_t g_wParkCycles;
-            extern volatile uint32_t g_wIparkCycles;
-            extern volatile uint32_t g_wModulateCycles;
-            extern volatile uint32_t g_wCommitCycles;
-            MLOGF(T, "[Heartbeat] motor: %s, HF: %lu, sinf: %lu, sample: %lu, clarke: %lu, park: %lu, ipark: %lu, mod: %lu, commit: %lu, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f\r\n",
+#if FOC_HF_PROFILE
+            motor_hf_profile_snapshot_t tProf = {0};
+            (void)motor_GetHighFrequencyProfileSnapshot(ptThis->ptMotor, &tProf);
+            MLOGF(T, "[Heartbeat] motor: %s, seq: %lu, total: %lu, sample: %lu, clarke: %lu, park: %lu, ipark: %lu, mod: %lu, commit: %lu, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f\r\n",
                   foc_app_StateName(tSnapshot.eRunState),
-                  (unsigned long)g_wHFStepCycles,
-                  (unsigned long)g_wTestSinfCycles,
-                  (unsigned long)g_wSampleCurrentCycles,
-                  (unsigned long)g_wClarkeCycles,
-                  (unsigned long)g_wParkCycles,
-                  (unsigned long)g_wIparkCycles,
-                  (unsigned long)g_wModulateCycles,
-                  (unsigned long)g_wCommitCycles,
+                  (unsigned long)tProf.wSampleSequence,
+                  (unsigned long)tProf.wTotalCycles,
+                  (unsigned long)tProf.wSampleCurrentCycles,
+                  (unsigned long)tProf.wClarkeCycles,
+                  (unsigned long)tProf.wParkCycles,
+                  (unsigned long)tProf.wIparkCycles,
+                  (unsigned long)tProf.wModulateCycles,
+                  (unsigned long)tProf.wCommitCycles,
                   (double)foc_angle_to_turns(tSnapshot.tActiveAngle),
                   (double)foc_to_float(tSnapshot.tPhaseCurrent.qIu),
                   (double)foc_to_float(tSnapshot.tPhaseCurrent.qIv),
@@ -321,9 +312,8 @@ static int foc_app_Run(uintptr_t wObjectAddr)
             uint32_t rawU = haladc_GetInjected(0, 0);
             uint32_t rawV = haladc_GetInjected(1, 1);
             uint32_t rawW = haladc_GetInjected(1, 0);
-            MLOGF(T, "[Heartbeat] motor: %s, HF_cycles: %lu, Iq: %.4f, Id: %.4f, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f, offset: %lu/%lu/%lu\r\n",
+            MLOGF(T, "[Heartbeat] motor: %s, Iq: %.4f, Id: %.4f, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f, offset: %lu/%lu/%lu\r\n",
                   foc_app_StateName(tSnapshot.eRunState),
-                  (unsigned long)g_wHFStepCycles,
                   (double)foc_to_float(tSnapshot.tCurrent.qQ),
                   (double)foc_to_float(tSnapshot.tCurrent.qD),
                   (double)foc_angle_to_turns(tSnapshot.tActiveAngle),
@@ -355,7 +345,7 @@ static int foc_app_Clock(uintptr_t wObjectAddr)
     return MODUS_SUCCESS;
 }
 
-static foc_result_t foc_app_InitControllers(void)
+static void foc_app_InitControlConfig(void)
 {
     const foc_pid_params_t tCurrentParams = {
         .tKp = {0, FOC_SCALAR(0.20f)},
@@ -366,32 +356,32 @@ static foc_result_t foc_app_InitControllers(void)
         .qIntegratorMinimum = FOC_SCALAR(-0.15f),
         .qIntegratorMaximum = FOC_SCALAR(0.15f),
     };
-    const foc_pid_params_t tOuterParams = {
+    /* 速度环参数：PI 控制，输出限幅为最大 Iq 电流 */
+    const foc_pid_params_t tSpeedParams = {
         .tKp = {0, FOC_SCALAR(0.2f)},
-        .tKiTs = {0, FOC_SCALAR(0.005f)},
+        .tKiTs = {0, FOC_SCALAR(0.005f)},     // 带积分以消除稳态速差
         .tKdOverTs = {0, FOC_ZERO},
-        .qOutputMinimum = FOC_SCALAR(-0.5f),
-        .qOutputMaximum = FOC_SCALAR(0.5f),
-        .qIntegratorMinimum = FOC_SCALAR(-0.3f),
-        .qIntegratorMaximum = FOC_SCALAR(0.3f),
+        .qOutputMinimum = FOC_SCALAR(-0.8f),   // 最大允许 Iq 电流 (-80%)
+        .qOutputMaximum = FOC_SCALAR(0.8f),    // 最大允许 Iq 电流 (+80%)
+        .qIntegratorMinimum = FOC_SCALAR(-0.5f),
+        .qIntegratorMaximum = FOC_SCALAR(0.5f),
+    };
+    /* 位置环参数：纯 P 控制，输出限幅为最大目标转速 */
+    const foc_pid_params_t tPositionParams = {
+        .tKp = {0, FOC_SCALAR(4.0f)},         // 位置 P 增益通常较大
+        .tKiTs = {0, FOC_ZERO},                // 位置环推荐 Ki = 0
+        .tKdOverTs = {0, FOC_ZERO},
+        .qOutputMinimum = FOC_SCALAR(-0.5f),   // 最大允许目标转速 (-50% max speed)
+        .qOutputMaximum = FOC_SCALAR(0.5f),    // 最大允许目标转速 (+50% max speed)
+        .qIntegratorMinimum = FOC_ZERO,
+        .qIntegratorMaximum = FOC_ZERO,
     };
 
-    if (foc_pid_Init(&s_tPidId, &tCurrentParams) != FOC_RESULT_OK ||
-        foc_pid_Init(&s_tPidIq, &tCurrentParams) != FOC_RESULT_OK ||
-        foc_pid_Init(&s_tPidSpeed, &tOuterParams) != FOC_RESULT_OK ||
-        foc_pid_Init(&s_tPidPosition, &tOuterParams) != FOC_RESULT_OK) {
-        return FOC_RESULT_INVALID_ARGUMENT;
-    }
-    s_tMotorConfig.tControl.tIdController =
-        foc_controller_FromPid(&s_tPidId);
-    s_tMotorConfig.tControl.tIqController =
-        foc_controller_FromPid(&s_tPidIq);
-    s_tMotorConfig.tControl.tSpeedController =
-        foc_controller_FromPid(&s_tPidSpeed);
-    s_tMotorConfig.tControl.tPositionController =
-        foc_controller_FromPid(&s_tPidPosition);
+    s_tMotorConfig.tControl.tIdParams = tCurrentParams;
+    s_tMotorConfig.tControl.tIqParams = tCurrentParams;
+    s_tMotorConfig.tControl.tSpeedParams = tSpeedParams;
+    s_tMotorConfig.tControl.tPositionParams = tPositionParams;
     s_tMotorConfig.tControl.eModulation = MOTOR_MODULATION_SVPWM;
-    return FOC_RESULT_OK;
 }
 
 int foc_app_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
@@ -409,8 +399,8 @@ int foc_app_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
     ptThis->ptBase = &s_tFocAppBase;
     s_tFocAppBaseCfg.wParent = wObjectAddr;
 
-    if (foc_app_InitControllers() != FOC_RESULT_OK ||
-        foc_hal_mdi_BindDefault(&s_tMotorConfig.tHal) != FOC_RESULT_OK ||
+    foc_app_InitControlConfig();
+    if (foc_hal_mdi_BindDefault(&s_tMotorConfig.tHal) != FOC_RESULT_OK ||
         motor_Init(ptThis->ptMotor, &s_tMotorConfig) != FOC_RESULT_OK) {
         MLOG(E, "foc_app_Init: motor init or binding failed.\r\n");
         return MODUS_EFAIL;
@@ -423,7 +413,11 @@ int foc_app_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
     phase_testB(ptThis->ptMotor);
     phase_testC(ptThis);
 
+#if MODUS_ENABLE
     return mbase_Init(ptThis->ptBase, &s_tFocAppBaseCfg);
+#else
+    return MODUS_SUCCESS;
+#endif
 }
 
 #if FOC_SUPPORT
@@ -462,10 +456,10 @@ static void cmd_motor(const char *args)
         float fKp = 0.0f;
         float fKi = 0.0f;
         if (sscanf(args + 3, "%f %f", &fKp, &fKi) == 2) {
-            (void)foc_gain_from_float(fKp, &s_tPidId.tParams.tKp);
-            (void)foc_gain_from_float(fKi, &s_tPidId.tParams.tKiTs);
-            (void)foc_gain_from_float(fKp, &s_tPidIq.tParams.tKp);
-            (void)foc_gain_from_float(fKi, &s_tPidIq.tParams.tKiTs);
+            (void)foc_gain_from_float(fKp, &s_tMotorConfig.tControl.tIdParams.tKp);
+            (void)foc_gain_from_float(fKi, &s_tMotorConfig.tControl.tIdParams.tKiTs);
+            (void)foc_gain_from_float(fKp, &s_tMotorConfig.tControl.tIqParams.tKp);
+            (void)foc_gain_from_float(fKi, &s_tMotorConfig.tControl.tIqParams.tKiTs);
             MLOGF(I, "PID params updated: Kp = %.3f, KiTs = %.3f\r\n", (double)fKp, (double)fKi);
         } else {
             MLOG(I, "Usage: motor pid <kp> <ki>\r\n");

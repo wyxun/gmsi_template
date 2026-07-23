@@ -40,7 +40,9 @@ void SysTick_Handler(void)
 {
     HAL_IncTick();
     perfc_port_insert_to_system_timer_insert_ovf_handler();
+#if MODUS_ENABLE
     modus_Clock();
+#endif
     peripheral_Clock();
 }
 
@@ -73,9 +75,13 @@ void TIM1_TRG_COM_TIM17_IRQHandler(void)    {}
 void TIM1_CC_IRQHandler(void)               {}
 
 #include <math.h>
-volatile uint32_t g_wHFStepCycles = 0;
-#if defined(MOTOR_PROFILE_CYCLES)
-volatile uint32_t g_wTestSinfCycles = 0;
+#include "foc_hf_profile.h"
+
+#if (FOC_HF_PROFILE_LEVEL >= 1)
+uint32_t foc_hf_profile_ReadCycles(void)
+{
+    return (uint32_t)get_system_ticks();
+}
 #endif
 
 /* ---- ADC1_2 (current sensing end-of-conversion) ---- */
@@ -88,22 +94,8 @@ void ADC1_2_IRQHandler(void)
         ADC2->ISR = ADC_ISR_OVR;
         (void)ADC1->ISR;
         (void)ADC2->ISR;
-        
-#if defined(MOTOR_PROFILE_CYCLES)
-        // Measure single sinf() performance
-        volatile float fTest = 0.5f;
-        uint32_t wSinfStart = (uint32_t)get_system_ticks();
-        volatile float fRes = sinf(fTest);
-        (void)fRes;
-        g_wTestSinfCycles = (uint32_t)get_system_ticks() - wSinfStart;
-#endif
 
-        /* FOC 高频控制步：TIM1 CH4 触发的注入转换完成，
-         * 每个 20 kHz PWM 载波一次。这是 motor_HighFrequencyStep()
-         * 的唯一调用点（经 app层）。 */
-        uint32_t wStart = (uint32_t)get_system_ticks();
         foc_app_HighFrequencyISR();
-        g_wHFStepCycles = (uint32_t)get_system_ticks() - wStart;
     }
 }
 #endif

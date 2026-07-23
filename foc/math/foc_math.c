@@ -21,7 +21,12 @@ q_type foc_cos(q_type qTurns)
 
 q_type foc_atan2(q_type qY, q_type qX)
 {
-    return foc_angle_atan2(qY, qX).qTurns;
+    foc_angle_t tAngle = foc_angle_atan2(qY, qX);
+#if defined(FOC_NUMERIC_FLOAT)
+    return foc_angle_to_turns(tAngle);
+#else
+    return (q_type)(tAngle.wBam32 >> 16);
+#endif
 }
 
 q_type foc_sqrt(q_type qValue)

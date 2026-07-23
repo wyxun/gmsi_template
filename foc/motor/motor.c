@@ -25,6 +25,7 @@ void motor_TestSetOpenLoopCommandSpeed(motor_handle_t *ptMotor,
 {
     if (motor_private_is_initialized(ptMotor)) {
         motor_private(ptMotor)->qOpenLoopCommandSpeed = qSpeed;
+        motor_private(ptMotor)->tDefaultOpenLoopSource.qSpeed = qSpeed;
         motor_private(ptMotor)->tRt.qOmegaE = qSpeed;
     }
 }
@@ -70,26 +71,81 @@ foc_result_t motor_Init(motor_handle_t *ptMotor,
     memset(ptMotor, 0, sizeof(*ptMotor));
     ptImpl = motor_private(ptMotor);
     ptImpl->tHal = ptConfig->tHal;
-    ptImpl->tControl.tConfig.tIdController.pContext =
-        ptConfig->tControl.tIdController.pContext;
-    ptImpl->tControl.tConfig.tIdController.fnStep =
-        ptConfig->tControl.tIdController.fnStep;
-    ptImpl->tControl.tConfig.tIqController.pContext =
-        ptConfig->tControl.tIqController.pContext;
-    ptImpl->tControl.tConfig.tIqController.fnStep =
-        ptConfig->tControl.tIqController.fnStep;
-    ptImpl->tControl.tConfig.tSpeedController.pContext =
-        ptConfig->tControl.tSpeedController.pContext;
-    ptImpl->tControl.tConfig.tSpeedController.fnStep =
-        ptConfig->tControl.tSpeedController.fnStep;
-    ptImpl->tControl.tConfig.tSpeedController.fnTrack =
-        ptConfig->tControl.tSpeedController.fnTrack;
-    ptImpl->tControl.tConfig.tPositionController.pContext =
-        ptConfig->tControl.tPositionController.pContext;
-    ptImpl->tControl.tConfig.tPositionController.fnStep =
-        ptConfig->tControl.tPositionController.fnStep;
-    ptImpl->tControl.tConfig.tPositionController.fnTrack =
-        ptConfig->tControl.tPositionController.fnTrack;
+
+    /* Id Controller binding */
+    if (ptConfig->tControl.tIdController.fnStep != NULL) {
+        ptImpl->tControl.tConfig.tIdController.pContext =
+            ptConfig->tControl.tIdController.pContext;
+        ptImpl->tControl.tConfig.tIdController.fnStep =
+            ptConfig->tControl.tIdController.fnStep;
+    } else if (ptConfig->tControl.tIdParams.qOutputMinimum != FOC_ZERO ||
+               ptConfig->tControl.tIdParams.qOutputMaximum != FOC_ZERO) {
+        eResult = foc_pid_Init(&ptImpl->tIdPid, &ptConfig->tControl.tIdParams);
+        if (eResult != FOC_RESULT_OK) {
+            return eResult;
+        }
+        foc_controller_if_t tCtrl = foc_controller_FromPid(&ptImpl->tIdPid);
+        ptImpl->tControl.tConfig.tIdController.pContext = tCtrl.pContext;
+        ptImpl->tControl.tConfig.tIdController.fnStep = tCtrl.fnStep;
+    }
+
+    /* Iq Controller binding */
+    if (ptConfig->tControl.tIqController.fnStep != NULL) {
+        ptImpl->tControl.tConfig.tIqController.pContext =
+            ptConfig->tControl.tIqController.pContext;
+        ptImpl->tControl.tConfig.tIqController.fnStep =
+            ptConfig->tControl.tIqController.fnStep;
+    } else if (ptConfig->tControl.tIqParams.qOutputMinimum != FOC_ZERO ||
+               ptConfig->tControl.tIqParams.qOutputMaximum != FOC_ZERO) {
+        eResult = foc_pid_Init(&ptImpl->tIqPid, &ptConfig->tControl.tIqParams);
+        if (eResult != FOC_RESULT_OK) {
+            return eResult;
+        }
+        foc_controller_if_t tCtrl = foc_controller_FromPid(&ptImpl->tIqPid);
+        ptImpl->tControl.tConfig.tIqController.pContext = tCtrl.pContext;
+        ptImpl->tControl.tConfig.tIqController.fnStep = tCtrl.fnStep;
+    }
+
+    /* Speed Controller binding */
+    if (ptConfig->tControl.tSpeedController.fnStep != NULL) {
+        ptImpl->tControl.tConfig.tSpeedController.pContext =
+            ptConfig->tControl.tSpeedController.pContext;
+        ptImpl->tControl.tConfig.tSpeedController.fnStep =
+            ptConfig->tControl.tSpeedController.fnStep;
+        ptImpl->tControl.tConfig.tSpeedController.fnTrack =
+            ptConfig->tControl.tSpeedController.fnTrack;
+    } else if (ptConfig->tControl.tSpeedParams.qOutputMinimum != FOC_ZERO ||
+               ptConfig->tControl.tSpeedParams.qOutputMaximum != FOC_ZERO) {
+        eResult = foc_pid_Init(&ptImpl->tSpeedPid, &ptConfig->tControl.tSpeedParams);
+        if (eResult != FOC_RESULT_OK) {
+            return eResult;
+        }
+        foc_controller_if_t tCtrl = foc_controller_FromPid(&ptImpl->tSpeedPid);
+        ptImpl->tControl.tConfig.tSpeedController.pContext = tCtrl.pContext;
+        ptImpl->tControl.tConfig.tSpeedController.fnStep = tCtrl.fnStep;
+        ptImpl->tControl.tConfig.tSpeedController.fnTrack = tCtrl.fnTrack;
+    }
+
+    /* Position Controller binding */
+    if (ptConfig->tControl.tPositionController.fnStep != NULL) {
+        ptImpl->tControl.tConfig.tPositionController.pContext =
+            ptConfig->tControl.tPositionController.pContext;
+        ptImpl->tControl.tConfig.tPositionController.fnStep =
+            ptConfig->tControl.tPositionController.fnStep;
+        ptImpl->tControl.tConfig.tPositionController.fnTrack =
+            ptConfig->tControl.tPositionController.fnTrack;
+    } else if (ptConfig->tControl.tPositionParams.qOutputMinimum != FOC_ZERO ||
+               ptConfig->tControl.tPositionParams.qOutputMaximum != FOC_ZERO) {
+        eResult = foc_pid_Init(&ptImpl->tPositionPid, &ptConfig->tControl.tPositionParams);
+        if (eResult != FOC_RESULT_OK) {
+            return eResult;
+        }
+        foc_controller_if_t tCtrl = foc_controller_FromPid(&ptImpl->tPositionPid);
+        ptImpl->tControl.tConfig.tPositionController.pContext = tCtrl.pContext;
+        ptImpl->tControl.tConfig.tPositionController.fnStep = tCtrl.fnStep;
+        ptImpl->tControl.tConfig.tPositionController.fnTrack = tCtrl.fnTrack;
+    }
+
     ptImpl->tControl.tConfig.eModulation =
         ptConfig->tControl.eModulation;
     ptImpl->tCurrent.eTopology = ptConfig->eTopology;
@@ -322,7 +378,7 @@ foc_result_t motor_GetSnapshot(const motor_handle_t *ptMotor,
         .tDuty = ptImpl->tControl.tDuty,
         .qSpeedReference = ptImpl->tControl.qSpeedReference,
         .qPositionReference = ptImpl->tControl.qPositionReference,
-        .tOpenLoopAngle = ptImpl->tOpenLoopAngle,
+        .tOpenLoopAngle = ptImpl->tDefaultOpenLoopSource.tAngle,
         .tActiveAngle = ptImpl->tRt.tThetaE,
         .tCandidateAngle = ptImpl->tCandidateAngle,
         .qActiveSpeed = ptImpl->tRt.qOmegaE,
@@ -346,6 +402,29 @@ foc_result_t motor_GetSnapshot(const motor_handle_t *ptMotor,
     };
     motor_private_exit(ptImpl, wSyncState);
     return FOC_RESULT_OK;
+}
+
+foc_result_t motor_GetHighFrequencyProfileSnapshot(
+    const motor_handle_t *ptMotor,
+    motor_hf_profile_snapshot_t *ptSnapshot)
+{
+    if (ptMotor == NULL || ptSnapshot == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    if (!motor_private_is_initialized(ptMotor)) {
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+#if FOC_HF_PROFILE
+    const motor_impl_t *ptImpl = motor_private_const(ptMotor);
+    uintptr_t wSyncState = motor_private_enter(ptImpl);
+    *ptSnapshot = ptImpl->tProfileSnapshot;
+    motor_private_exit(ptImpl, wSyncState);
+    return FOC_RESULT_OK;
+#else
+    (void)ptMotor;
+    (void)ptSnapshot;
+    return FOC_RESULT_DISABLED;
+#endif
 }
 
 bool motor_DebugReadEvent(motor_handle_t *ptMotor,

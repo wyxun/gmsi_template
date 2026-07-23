@@ -1,10 +1,11 @@
 /*******************************************************************************
  * @file    foc_angle.c
- * @brief   Normalized electrical-angle implementation
+ * @brief   Normalized electrical-angle implementation based on BAM32
  ******************************************************************************/
 
 #include "foc_angle.h"
 #include "foc_config.h"
+#include "foc_trig.h"
 
 #if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_CORDIC)
 #include "halcordic.h"
@@ -16,117 +17,96 @@
 
 #define FOC_TWO_PI_F 6.2831853071795864769f
 
-static foc_scalar_t angle_wrap_scalar(foc_scalar_t qTurns)
-{
-#if defined(FOC_NUMERIC_FLOAT)
-    /* 利用强转向零截断的性质构造向下取整 */
-    int32_t ipart = (int32_t)qTurns;
-    if (qTurns < 0.0f) {
-        ipart -= 1;
-    }
-    qTurns -= (foc_scalar_t)ipart;
-    /* 针对负整数圈产生的 1.0f 进行钳位归一，确保值域为严格的 [0.0f, 1.0f) */
-    if (qTurns >= 1.0f) {
-        qTurns = 0.0f;
-    }
-    return qTurns;
-#else
-    qTurns %= FOC_ONE;
-    return qTurns < FOC_ZERO ? qTurns + FOC_ONE : qTurns;
-#endif
-}
-
 foc_angle_t foc_angle_from_turns(float fTurns)
 {
-    return foc_angle_from_scalar(foc_from_float(fTurns));
+    float wrapped = fTurns - (float)(int32_t)fTurns;
+    if (wrapped < 0.0f) {
+        wrapped += 1.0f;
+    }
+    if (wrapped >= 1.0f) {
+        wrapped = 0.0f;
+    }
+    return (foc_angle_t){ (uint32_t)(wrapped * 4294967296.0f) };
 }
 
 foc_angle_t foc_angle_from_scalar(foc_scalar_t qTurns)
 {
-    foc_angle_t tAngle = { angle_wrap_scalar(qTurns) };
-    return tAngle;
+#if defined(FOC_NUMERIC_FLOAT)
+    return foc_angle_from_turns(qTurns);
+#else
+    return (foc_angle_t){ (uint32_t)qTurns * 131072U };
+#endif
 }
 
 float foc_angle_to_turns(foc_angle_t tAngle)
 {
-    return foc_to_float(angle_wrap_scalar(tAngle.qTurns));
+    return (float)tAngle.wBam32 * (1.0f / 4294967296.0f);
+}
+
+foc_angle_t foc_angle_add(foc_angle_t tLeft, foc_angle_t tRight)
+{
+    return (foc_angle_t){ tLeft.wBam32 + tRight.wBam32 };
+}
+
+foc_angle_t foc_angle_add_scalar(foc_angle_t tAngle, foc_scalar_t qTurns)
+{
+    return foc_angle_add(tAngle, foc_angle_from_scalar(qTurns));
 }
 
 foc_angle_t foc_angle_wrap(foc_angle_t tAngle)
 {
-    tAngle.qTurns = angle_wrap_scalar(tAngle.qTurns);
-    return tAngle;
+    return tAngle; /* Natural unsigned 32-bit integer overflow */
 }
 
 foc_scalar_t foc_angle_diff(foc_angle_t tTarget,
                             foc_angle_t tActual)
 {
-    foc_scalar_t qDifference = angle_wrap_scalar(
-        foc_sub_sat(tTarget.qTurns, tActual.qTurns));
-
-    if (qDifference >= FOC_HALF) {
-        qDifference = foc_sub_sat(qDifference, FOC_ONE);
-    }
-    return qDifference;
-}
-
-#if defined(FOC_NUMERIC_FIXED)
-static foc_scalar_t angle_sin_fixed(foc_scalar_t qTurns)
-{
-    int32_t nPhase = angle_wrap_scalar(qTurns);
-    bool bNegative = nPhase >= (FOC_Q_SCALE / 2);
-    int32_t nHalfPhase;
-    int32_t nProduct;
-    int32_t nValue;
-    int32_t nCorrection;
-
-    if (bNegative) {
-        nPhase -= FOC_Q_SCALE / 2;
-    }
-    nHalfPhase = nPhase << 1;
-    nProduct = nHalfPhase * (FOC_Q_SCALE - nHalfPhase);
-    nValue = nProduct >> 13;
-    nCorrection = (nValue * (FOC_Q_SCALE - nValue)) >>
-                  FOC_Q_FRACTION_BITS;
-    nValue -= (nCorrection * 7373) >> FOC_Q_FRACTION_BITS;
-    nValue = foc_sat(nValue, FOC_ZERO, FOC_ONE);
-
-    return bNegative ? -nValue : nValue;
-}
+    uint32_t wDelta = tTarget.wBam32 - tActual.wBam32;
+    int32_t nDelta = (wDelta < 0x80000000U) ?
+                     (int32_t)wDelta :
+                     -(int32_t)(0U - wDelta);
+#if defined(FOC_NUMERIC_FLOAT)
+    return (float)nDelta * (1.0f / 4294967296.0f);
+#else
+    return (foc_scalar_t)(nDelta >> 17);
 #endif
+}
 
-foc_scalar_t foc_angle_sin(foc_angle_t tAngle)
+void foc_angle_sincos(foc_angle_t tAngle, foc_scalar_t *pqSin, foc_scalar_t *pqCos)
 {
 #if defined(FOC_NUMERIC_FLOAT)
   #if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_CORDIC)
-    foc_scalar_t qSin, qCos;
-    hal_cordic_SinCos(tAngle.qTurns, &qSin, &qCos);
-    return qSin;
+    hal_cordic_SinCosBam32(tAngle.wBam32, pqSin, pqCos);
   #elif (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_LUT)
-    return lut_sin_turns(angle_wrap_scalar(tAngle.qTurns));
+    lut_sincos_bam32(tAngle.wBam32, pqSin, pqCos);
   #else
-    return sinf(angle_wrap_scalar(tAngle.qTurns) * FOC_TWO_PI_F);
+    float fTurns = foc_angle_to_turns(tAngle);
+    if (pqSin != NULL) *pqSin = sinf(fTurns * FOC_TWO_PI_F);
+    if (pqCos != NULL) *pqCos = cosf(fTurns * FOC_TWO_PI_F);
   #endif
 #else
-    return angle_sin_fixed(tAngle.qTurns);
+  #if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_LUT)
+    lut_sincos_bam32(tAngle.wBam32, pqSin, pqCos);
+  #else
+    float fTurns = (float)tAngle.wBam32 * (1.0f / 4294967296.0f);
+    if (pqSin != NULL) *pqSin = foc_from_float(sinf(fTurns * FOC_TWO_PI_F));
+    if (pqCos != NULL) *pqCos = foc_from_float(cosf(fTurns * FOC_TWO_PI_F));
+  #endif
 #endif
+}
+
+foc_scalar_t foc_angle_sin(foc_angle_t tAngle)
+{
+    foc_scalar_t qSin, qCos;
+    foc_angle_sincos(tAngle, &qSin, &qCos);
+    return qSin;
 }
 
 foc_scalar_t foc_angle_cos(foc_angle_t tAngle)
 {
-#if defined(FOC_NUMERIC_FLOAT)
-  #if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_CORDIC)
     foc_scalar_t qSin, qCos;
-    hal_cordic_SinCos(tAngle.qTurns, &qSin, &qCos);
+    foc_angle_sincos(tAngle, &qSin, &qCos);
     return qCos;
-  #else
-    tAngle.qTurns = foc_add_sat(tAngle.qTurns, FOC_SCALAR(0.25f));
-    return foc_angle_sin(tAngle);
-  #endif
-#else
-    tAngle.qTurns = foc_add_sat(tAngle.qTurns, FOC_SCALAR(0.25f));
-    return foc_angle_sin(tAngle);
-#endif
 }
 
 foc_angle_t foc_angle_atan2(foc_scalar_t qY,

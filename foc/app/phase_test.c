@@ -12,6 +12,7 @@
 
 #include "foc/foc.h"
 #include "foc/math/foc_math_types.h"
+#include "mdebug/util_debug.h"
 
 #if defined(FOC_ENABLE_DIAGNOSTIC) && FOC_ENABLE_DIAGNOSTIC
 #include "diagnostic/motor_diagnostic.h"

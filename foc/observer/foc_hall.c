@@ -147,8 +147,7 @@ foc_result_t foc_hall_Step(foc_hall_t *ptHall,
             ptHall->bValid = true;
             ptHall->qConfidence = FOC_ONE;
         } else if (ptHall->bValid) {
-            ptHall->tAngle = foc_angle_from_scalar(
-                foc_add_sat(ptHall->tAngle.qTurns, ptHall->qSpeed));
+            ptHall->tAngle = foc_angle_add_scalar(ptHall->tAngle, ptHall->qSpeed);
         }
     }
     *ptOutput = (foc_position_output_t){

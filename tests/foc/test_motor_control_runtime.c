@@ -357,8 +357,8 @@ static int test_callback_interlock(bool stop_motor)
     TEST_CHECK(motor_GetSnapshot(&motor, &after) == FOC_RESULT_OK);
     if (stop_motor) {
         TEST_CHECK(after.ePendingCommand == MOTOR_COMMAND_STOP);
-        TEST_CHECK(after.tElectricalAngle.qTurns ==
-                   before.tElectricalAngle.qTurns);
+        TEST_CHECK(foc_angle_to_turns(after.tElectricalAngle) ==
+                   foc_angle_to_turns(before.tElectricalAngle));
         TEST_CHECK(after.wFaults == MOTOR_FAULT_NONE);
         TEST_CHECK(motor_RunFSM(&motor) == fsm_rt_cpl && !hw.enabled);
     }

@@ -89,9 +89,8 @@ foc_result_t foc_position_ApplyMechanicalConfig(
         }
         qElectrical = foc_mul_wide(
             qMechanical, foc_from_float((float)ptConfig->chPolePairs));
-        qElectrical = foc_add_sat(qElectrical,
-                                  ptConfig->tElectricalOffset.qTurns);
-        ptOutput->tElectricalAngle = foc_angle_from_scalar(qElectrical);
+        ptOutput->tElectricalAngle = foc_angle_add(
+            foc_angle_from_scalar(qElectrical), ptConfig->tElectricalOffset);
         ptOutput->eValidFlags = (foc_position_valid_flag_e)(
             ptOutput->eValidFlags |
             FOC_POSITION_VALID_ELECTRICAL_ANGLE);
@@ -180,18 +179,16 @@ foc_result_t foc_position_Blend(const foc_position_output_t *ptFrom,
          FOC_POSITION_VALID_ELECTRICAL_ANGLE) != 0U) {
         qError = foc_angle_diff(ptTo->tElectricalAngle,
                                 ptFrom->tElectricalAngle);
-        ptOutput->tElectricalAngle = foc_angle_from_scalar(foc_add_sat(
-            ptFrom->tElectricalAngle.qTurns,
-            foc_mul_pu(qError, qProgress)));
+        ptOutput->tElectricalAngle = foc_angle_add_scalar(
+            ptFrom->tElectricalAngle, foc_mul_pu(qError, qProgress));
         ptOutput->eValidFlags = FOC_POSITION_VALID_ELECTRICAL_ANGLE;
     }
     if ((ptFrom->eValidFlags & ptTo->eValidFlags &
          FOC_POSITION_VALID_MECHANICAL_ANGLE) != 0U) {
         qError = foc_angle_diff(ptTo->tMechanicalAngle,
                                 ptFrom->tMechanicalAngle);
-        ptOutput->tMechanicalAngle = foc_angle_from_scalar(foc_add_sat(
-            ptFrom->tMechanicalAngle.qTurns,
-            foc_mul_pu(qError, qProgress)));
+        ptOutput->tMechanicalAngle = foc_angle_add_scalar(
+            ptFrom->tMechanicalAngle, foc_mul_pu(qError, qProgress));
         ptOutput->eValidFlags = (foc_position_valid_flag_e)(
             ptOutput->eValidFlags |
             FOC_POSITION_VALID_MECHANICAL_ANGLE);

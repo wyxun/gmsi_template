@@ -32,7 +32,7 @@ int test_trig(void)
     TEST_NEAR(lut_sin_turns(0.5f), 0.0f, 1e-9f);
     TEST_NEAR(lut_sin_turns(0.75f), -1.0f, 1e-9f);
 
-    /* 3. angle_wrap_scalar 的截断与归一等价性 */
+    /* 3. BAM32 wrap 与 差值等价性 */
     float test_cases[] = {
         0.0f, 0.123f, 0.999f,
         1.0f, 1.25f, 2.75f,
@@ -42,11 +42,21 @@ int test_trig(void)
         float input = test_cases[i];
         float ref = input - floorf(input);
         if (ref < 0.0f) ref += 1.0f;
-        if (ref >= 1.0f) ref = 0.0f; // wrap 归一契约
+        if (ref >= 1.0f) ref = 0.0f;
 
-        foc_angle_t tIn = { input };
+        foc_angle_t tIn = foc_angle_from_turns(input);
         foc_angle_t tOut = foc_angle_wrap(tIn);
-        TEST_NEAR(tOut.qTurns, ref, 1e-7f);
+        TEST_NEAR(foc_angle_to_turns(tOut), ref, 1e-7f);
+    }
+
+    /* 4. foc_angle_sincos 匹配度 */
+    for (int i = 0; i < 360; i += 15) {
+        float turns = (float)i / 360.0f;
+        foc_angle_t a = foc_angle_from_turns(turns);
+        foc_scalar_t s, c;
+        foc_angle_sincos(a, &s, &c);
+        TEST_NEAR(s, sinf(turns * 6.2831853f), 1e-3f);
+        TEST_NEAR(c, cosf(turns * 6.2831853f), 1e-3f);
     }
 
     return nFailures;

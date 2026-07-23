@@ -29,7 +29,7 @@ static int test_position_helpers(void)
 {
     int nFailures = 0;
     foc_position_output_t tFrom = {
-        .tElectricalAngle = { FOC_SCALAR(0.99f) },
+        .tElectricalAngle = foc_angle_from_turns(0.99f),
         .qElectricalSpeed = FOC_SCALAR(0.2f),
         .qConfidence = FOC_SCALAR(0.8f),
         .eValidFlags = FOC_POSITION_VALID_ELECTRICAL_ANGLE |
@@ -38,7 +38,7 @@ static int test_position_helpers(void)
         .wTimestamp = 90U,
     };
     foc_position_output_t tTo = {
-        .tElectricalAngle = { FOC_SCALAR(0.01f) },
+        .tElectricalAngle = foc_angle_from_turns(0.01f),
         .qElectricalSpeed = FOC_SCALAR(0.4f),
         .qConfidence = FOC_ONE,
         .eValidFlags = FOC_POSITION_VALID_ELECTRICAL_ANGLE |
@@ -250,7 +250,7 @@ int test_motor_position(void)
                FOC_RESULT_OK);
     TEST_CHECK(foc_position_ApplyMechanicalConfig(&tConfig, &tOutput) ==
                FOC_RESULT_OK);
-    TEST_NEAR(foc_to_float(tOutput.tElectricalAngle.qTurns),
+    TEST_NEAR(foc_angle_to_turns(tOutput.tElectricalAngle),
               0.50f, 0.002f);
     TEST_NEAR(foc_to_float(tOutput.qElectricalSpeed), -0.40f,
               0.002f);
@@ -266,7 +266,7 @@ int test_motor_position(void)
                 FOC_POSITION_VALID_ELECTRICAL_ANGLE) == 0U);
     TEST_CHECK((tOutput.eValidFlags &
                 FOC_POSITION_VALID_ELECTRICAL_SPEED) != 0U);
-    TEST_CHECK(tOutput.tElectricalAngle.qTurns == FOC_ZERO);
+    TEST_CHECK(tOutput.tElectricalAngle.wBam32 == 0U);
 #if defined(FOC_NUMERIC_FIXED)
     tOutput = (foc_position_output_t){
         .qMechanicalSpeed = INT32_MIN,

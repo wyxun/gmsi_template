@@ -14,6 +14,7 @@
 #include "foc_hal.h"
 #include "motor_control_types.h"
 #include "motor_position.h"
+#include "motor_profile.h"
 #include "perf_counter.h"
 
 typedef enum {
@@ -128,9 +129,13 @@ typedef struct {
 } motor_config_t;
 
 /* Per-instance RAM and public ABI capacity. motor_private.h enforces the limit. */
-#define MOTOR_HANDLE_STORAGE_SIZE 512U
+#if FOC_HF_PROFILE
+#define MOTOR_HANDLE_STORAGE_SIZE 832U
+#else
+#define MOTOR_HANDLE_STORAGE_SIZE 768U
+#endif
 
-typedef union {
+typedef union motor_handle_u {
     max_align_t tAlignment;
     uint8_t achPrivate[MOTOR_HANDLE_STORAGE_SIZE];
 } motor_handle_t;

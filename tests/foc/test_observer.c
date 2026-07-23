@@ -45,8 +45,7 @@ static int test_hall(void)
                 FOC_POSITION_VALID_ELECTRICAL_ANGLE) != 0U);
     TEST_NEAR(foc_to_float(tOutput.qElectricalSpeed),
               1.0f / 36.0f, 0.002f);
-    TEST_CHECK(tOutput.tElectricalAngle.qTurns >= FOC_ZERO &&
-               tOutput.tElectricalAngle.qTurns < FOC_ONE);
+    TEST_CHECK(tOutput.tElectricalAngle.wBam32 < 0xFFFFFFFFU);
     TEST_CHECK(foc_hall_Step(&tHall, 0U, &tOutput) ==
                FOC_RESULT_INVALID_ARGUMENT);
     TEST_CHECK(tOutput.eValidFlags == FOC_POSITION_VALID_NONE);
@@ -80,8 +79,7 @@ static int test_observer_initialization(void)
     TEST_CHECK(foc_smo_Init(&tSmo, &tSmoParams) == FOC_RESULT_OK);
     TEST_CHECK(foc_smo_Step(&tSmo, &tInput, &tOutput) == FOC_RESULT_OK);
     TEST_CHECK(tOutput.eValidFlags == FOC_POSITION_VALID_NONE);
-    TEST_CHECK(tOutput.tElectricalAngle.qTurns >= FOC_ZERO &&
-               tOutput.tElectricalAngle.qTurns < FOC_ONE);
+    TEST_CHECK(tOutput.tElectricalAngle.wBam32 < 0xFFFFFFFFU);
     TEST_CHECK(foc_nlfo_Init(&tNlfo, &tNlfoParams) == FOC_RESULT_OK);
     TEST_CHECK(foc_nlfo_Step(&tNlfo, &tInput, &tOutput) == FOC_RESULT_OK);
     TEST_CHECK(tOutput.eValidFlags == FOC_POSITION_VALID_NONE);
@@ -97,7 +95,7 @@ static int test_selector(void)
     unsigned int wIndex;
     fake_observer_t tPrimary = {
         .tOutput = {
-            .tElectricalAngle = { FOC_SCALAR(0.10f) },
+            .tElectricalAngle = { 429496729U },
             .qElectricalSpeed = FOC_SCALAR(0.10f),
             .qConfidence = FOC_ONE,
             .eValidFlags = FOC_POSITION_VALID_ELECTRICAL_ANGLE |
@@ -106,7 +104,7 @@ static int test_selector(void)
     };
     fake_observer_t tTarget = {
         .tOutput = {
-            .tElectricalAngle = { FOC_SCALAR(0.12f) },
+            .tElectricalAngle = { 515396075U },
             .qElectricalSpeed = FOC_SCALAR(0.11f),
             .qConfidence = FOC_ONE,
             .eValidFlags = FOC_POSITION_VALID_ELECTRICAL_ANGLE |
@@ -145,7 +143,7 @@ static int test_selector(void)
                                               &tOutput) == FOC_RESULT_OK);
     }
     TEST_CHECK(tSelector.ptActive == &tTargetIf);
-    TEST_NEAR(foc_to_float(tOutput.tElectricalAngle.qTurns),
+    TEST_NEAR(foc_angle_to_turns(tOutput.tElectricalAngle),
               0.12f, 0.003f);
     TEST_CHECK((tOutput.eValidFlags & FOC_POSITION_VALID_MULTI_TURN) !=
                0U);

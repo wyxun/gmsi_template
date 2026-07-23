@@ -63,17 +63,23 @@ static void save_run(motor_impl_t *impl, const motor_run_config_t *run)
         run->ptInitialPositionSource != NULL;
     impl->bTargetPositionSourceBound = run->ptTargetPositionSource != NULL;
     impl->bOuterLoopActive = impl->bInitialPositionSourceBound;
+    foc_open_loop_source_Init(&impl->tDefaultOpenLoopSource);
+    foc_open_loop_source_SetSpeed(&impl->tDefaultOpenLoopSource, run->qOpenLoopSpeed);
+    foc_open_loop_source_SetTargetSpeed(&impl->tDefaultOpenLoopSource, run->qOpenLoopSpeed);
+    foc_open_loop_source_SetAcceleration(&impl->tDefaultOpenLoopSource, run->qAcceleration);
+    foc_open_loop_source_SetAngle(&impl->tDefaultOpenLoopSource, foc_angle_from_scalar(run->qInitialAngle));
+
     if (impl->bInitialPositionSourceBound)
         impl->tPositionSource = *run->ptInitialPositionSource;
     else if (impl->bTargetPositionSourceBound)
         impl->tPositionSource = *run->ptTargetPositionSource;
-    impl->qOpenLoopSpeed = run->qOpenLoopSpeed;
-    impl->qAcceleration = run->qAcceleration;
-    impl->qOpenLoopCommandSpeed = FOC_ZERO;
+    else
+        impl->tPositionSource = foc_open_loop_source_GetInterface(&impl->tDefaultOpenLoopSource);
+
+    impl->qOpenLoopCommandSpeed = run->qOpenLoopSpeed;
     impl->wPositionSampleTimestamp = 0U;
     impl->hwTransitionSampleCount = 0U;
     impl->tRt.tThetaE = foc_angle_from_scalar(run->qInitialAngle);
-    impl->tOpenLoopAngle = impl->tRt.tThetaE;
     impl->tCandidateAngle = (foc_angle_t){0};
     impl->qCandidateSpeed = FOC_ZERO;
     impl->qAngleError = FOC_ZERO;

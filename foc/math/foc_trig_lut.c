@@ -541,4 +541,41 @@ float lut_sin_turns(float fTurns)
     }
     return fRes;
 }
+
+foc_scalar_t lut_sin_bam32(uint32_t wBam32)
+{
+    uint32_t wQuadrant = wBam32 >> 30;
+    uint32_t wQuarter = wBam32 & 0x3FFFFFFFU;
+    uint32_t wIndex = wQuarter >> 21;
+    uint32_t wFraction = (wQuarter >> 5) & 0xFFFFU;
+
+    if (wQuadrant & 1U) { /* Quadrant 1 and 3: mirror quarter-wave */
+        wIndex = 511U - wIndex;
+        wFraction = 65536U - wFraction;
+    }
+
+    float fY0 = s_afSinQuarter[wIndex];
+    float fY1 = s_afSinQuarter[wIndex + 1U];
+    float fLerp = (float)wFraction * (1.0f / 65536.0f);
+    float fRes = fY0 + (fY1 - fY0) * fLerp;
+
+    if (wQuadrant >= 2U) { /* Quadrant 2 and 3: negative */
+        fRes = -fRes;
+    }
+#if defined(FOC_NUMERIC_FLOAT)
+    return fRes;
+#else
+    return foc_from_float(fRes);
+#endif
+}
+
+void lut_sincos_bam32(uint32_t wBam32, foc_scalar_t *pqSin, foc_scalar_t *pqCos)
+{
+    if (pqSin != NULL) {
+        *pqSin = lut_sin_bam32(wBam32);
+    }
+    if (pqCos != NULL) {
+        *pqCos = lut_sin_bam32(wBam32 + 0x40000000U);
+    }
+}
 #endif

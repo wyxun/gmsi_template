@@ -7,6 +7,7 @@
 #define MOTOR_PRIVATE_H
 
 #include "motor_types.h"
+#include "foc_open_loop_source.h"
 
 #define MOTOR_IMPL_MAGIC 0x4D4F544FU
 #define MOTOR_EVENT_CAPACITY 4U
@@ -57,6 +58,11 @@ typedef struct MOTOR_PRIVATE_MAY_ALIAS {
     /* 8-byte aligned interface and control blocks. */
     foc_hal_t               tHal;
     motor_control_t         tControl;
+    /* Internal default PID instances if custom controllers are not provided. */
+    foc_pid_t               tIdPid;
+    foc_pid_t               tIqPid;
+    foc_pid_t               tSpeedPid;
+    foc_pid_t               tPositionPid;
     /* One copy backs both bindings because different sources are rejected. */
     foc_position_source_if_t tPositionSource;
     motor_time_if_t         tTime;
@@ -67,13 +73,11 @@ typedef struct MOTOR_PRIVATE_MAY_ALIAS {
     foc_position_config_t   tPositionConfig;
     foc_angle_t             tMechanicalAngle;
     foc_scalar_t            qMechanicalSpeed;
-    foc_angle_t             tOpenLoopAngle;
+    foc_open_loop_source_t  tDefaultOpenLoopSource;
     foc_angle_t             tCandidateAngle;
     foc_scalar_t            qCandidateSpeed;
     foc_scalar_t            qAngleError;
     foc_scalar_t            qBlendFactor;
-    foc_scalar_t            qOpenLoopSpeed;
-    foc_scalar_t            qAcceleration;
     foc_scalar_t            qOpenLoopCommandSpeed;
     foc_scalar_t            qHighFrequencyPeriod;
     foc_scalar_t            qTransitionMinimumConfidence;
@@ -89,6 +93,9 @@ typedef struct MOTOR_PRIVATE_MAY_ALIAS {
     uint32_t                wPositionSampleTimestamp;
     uint32_t                wNextEventSequence;
     uint32_t                wEventOverwriteCount;
+#if FOC_HF_PROFILE
+    motor_hf_profile_snapshot_t tProfileSnapshot;
+#endif
     uint32_t                wMagic;
     motor_event_record_t    atEvents[MOTOR_EVENT_CAPACITY];
     /* 2-byte block. */

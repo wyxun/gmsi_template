@@ -46,6 +46,23 @@
 #define FOC_ENABLE_MOTOR_VERIFY 1
 #endif
 
+#ifndef FOC_HF_PROFILE
+#define FOC_HF_PROFILE 0
+#endif
+
+#ifndef FOC_HF_PROFILE_LEVEL
+#define FOC_HF_PROFILE_LEVEL 0
+#endif
+
+#if !FOC_HF_PROFILE
+#undef FOC_HF_PROFILE_LEVEL
+#define FOC_HF_PROFILE_LEVEL 0
+#endif
+
+#if (FOC_HF_PROFILE_LEVEL < 0) || (FOC_HF_PROFILE_LEVEL > 2)
+#error "FOC_HF_PROFILE_LEVEL must be 0, 1, or 2"
+#endif
+
 #include "foc_trig.h"
 
 #endif /* __FOC_CONFIG_H__ */

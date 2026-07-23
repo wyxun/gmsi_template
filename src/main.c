@@ -12,7 +12,7 @@
 static modus_t s_tModus = { .ptAppFlash = NULL };
 #endif
 
-#if MODUS_ENABLE && (MSHELL_ENABLE || !defined(__NO_USE_LOG__))
+#if MODUS_ENABLE
 #include <string.h>
 #include "mdebug/mshell.h"  // 引入 mshell_io_t 和 mshell_SetIO
 

@@ -3,7 +3,7 @@
 # Toolchain : LLVM Embedded Toolchain for Arm (Windows)
 # Usage     : make [BUILD=debug|release] [TARGET_CHIP=stm32g431] ...
 # ==============================================================================
-SW_ROOT ?= D:/software
+SW_ROOT ?= D:/0_software
 MSYS2_BIN = $(SW_ROOT)/msys64/mingw64/bin
 MAKE      = $(MSYS2_BIN)/mingw32-make.exe
 
@@ -79,7 +79,7 @@ MODUS_USE_LOG    = 1
 ifeq ($(BUILD),release)
     # Production: no debug modules, completely compiled-out MODUS
     OPT = -Os
-    MODUS_ENABLE = 0
+    MODUS_ENABLE = 1
     MSHELL_ENABLE    = 0
     MWAVEFORM_ENABLE = 0
     MSTORAGE_ENABLE  = 0
@@ -100,7 +100,7 @@ ifeq ($(MODUS_ENABLE),1)
     include $(MODUS_ROOT)/modus.mk
     C_DEFS += -DMODUS_ENABLE=1
 else
-    C_DEFS += -DMODUS_ENABLE=0
+    C_DEFS += -DMODUS_ENABLE=0 -D__NO_USE_LOG__ -D__NO_USE_ASSERT
     MODUS_INCLUDES = \
         -I$(MODUS_ROOT) \
         -I$(MODUS_ROOT)/src \
@@ -110,7 +110,7 @@ else
         -I$(MODUS_ROOT)/src/arch/riscv \
         -I$(LIB_PLOOC_DIR) \
         -I$(LIB_PERF_DIR)
-    MODUS_CFLAGS = -DMSHELL_ENABLE=0 -DMWAVEFORM_ENABLE=0
+    MODUS_CFLAGS = -DMSHELL_ENABLE=0 -DMWAVEFORM_ENABLE=0 -D__NO_USE_LOG__ -D__NO_USE_ASSERT
     MODUS_SRCS = \
         $(MODUS_ROOT)/src/arch/perfc_port.c \
         $(MODUS_ROOT)/src/utilities/mringbuf.c

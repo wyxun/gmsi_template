@@ -155,9 +155,9 @@ int test_motor(void)
                FOC_POSITION_VALID_NONE);
     TEST_CHECK(tSnapshotA.eCandidateSourceValidFlags ==
                FOC_POSITION_VALID_NONE);
-    TEST_CHECK(tSnapshotA.tOpenLoopAngle.qTurns == FOC_ZERO);
-    TEST_CHECK(tSnapshotA.tActiveAngle.qTurns == FOC_ZERO);
-    TEST_CHECK(tSnapshotA.tCandidateAngle.qTurns == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tOpenLoopAngle.wBam32 == 0U);
+    TEST_CHECK(tSnapshotA.tActiveAngle.wBam32 == 0U);
+    TEST_CHECK(tSnapshotA.tCandidateAngle.wBam32 == 0U);
     TEST_CHECK(tSnapshotA.qAngleError == FOC_ZERO);
     TEST_CHECK(tSnapshotA.qBlendFactor == FOC_ZERO);
     TEST_CHECK(tSnapshotA.wEventOverwriteCount == 0U);
@@ -174,7 +174,7 @@ int test_motor(void)
     TEST_CHECK(tSnapshotA.tDuty.qU == FOC_ZERO);
     TEST_CHECK(tSnapshotA.tDuty.qV == FOC_ZERO);
     TEST_CHECK(tSnapshotA.tDuty.qW == FOC_ZERO);
-    TEST_CHECK(tSnapshotA.tElectricalAngle.qTurns == FOC_ZERO);
+    TEST_CHECK(tSnapshotA.tElectricalAngle.wBam32 == 0U);
     TEST_CHECK(tSnapshotA.qElectricalSpeed == FOC_ZERO);
     TEST_CHECK(tSnapshotA.qVbus == FOC_ZERO);
     TEST_CHECK(tSnapshotA.tCurrentCalibration.wOffsetU == 2048U);
@@ -274,7 +274,7 @@ int test_motor(void)
         TEST_CHECK(tSnapshotA.tDuty.qV == tHwA.qDutyV);
         TEST_CHECK(tSnapshotA.tDuty.qW == tHwA.qDutyW);
         TEST_CHECK(tSnapshotA.bPwmEnabled);
-        TEST_CHECK(tSnapshotA.tElectricalAngle.qTurns > FOC_SCALAR(0.1f));
+        TEST_CHECK(foc_angle_to_turns(tSnapshotA.tElectricalAngle) > 0.1f);
         TEST_CHECK(tHwA.qDutyU != tHwB.qDutyU ||
                    tHwA.qDutyV != tHwB.qDutyV ||
                    tHwA.qDutyW != tHwB.qDutyW);
@@ -333,6 +333,22 @@ int test_motor(void)
             TEST_CHECK(tEvent.wFaults == awExpectedFaults[wIndex]);
         }
         TEST_CHECK(!motor_DebugReadEvent(&tMotorA, &tEvent));
+    }
+
+    {
+        motor_hf_profile_snapshot_t tProfileA = {0};
+        motor_hf_profile_snapshot_t tProfileB = {0};
+        foc_result_t eProfA = motor_GetHighFrequencyProfileSnapshot(&tMotorA, &tProfileA);
+        foc_result_t eProfB = motor_GetHighFrequencyProfileSnapshot(&tMotorB, &tProfileB);
+#if FOC_HF_PROFILE
+        TEST_CHECK(eProfA == FOC_RESULT_OK);
+        TEST_CHECK(eProfB == FOC_RESULT_OK);
+#else
+        TEST_CHECK(eProfA == FOC_RESULT_DISABLED);
+        TEST_CHECK(eProfB == FOC_RESULT_DISABLED);
+        TEST_CHECK(tProfileA.wSampleSequence == 0U);
+        TEST_CHECK(tProfileB.wSampleSequence == 0U);
+#endif
     }
 
     return nFailures;

@@ -59,8 +59,7 @@ foc_result_t foc_pll_Step(foc_pll_t *ptPll,
     qPhaseError = foc_angle_diff(tMeasuredAngle, ptPll->tAngle);
     ptPll->qSpeed = foc_pid_Step(&ptPll->tLoopFilter,
                                  qPhaseError, FOC_ZERO);
-    ptPll->tAngle = foc_angle_from_scalar(
-        foc_add_sat(ptPll->tAngle.qTurns, ptPll->qSpeed));
+    ptPll->tAngle = foc_angle_add_scalar(ptPll->tAngle, ptPll->qSpeed);
 
     if (foc_abs(qPhaseError) <= ptPll->tParams.qLockError) {
         if (ptPll->hwLockCounter < ptPll->tParams.hwLockSamples) {

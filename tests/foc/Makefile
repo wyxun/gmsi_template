@@ -35,7 +35,8 @@ FOC_SRCS = ../../foc/math/foc_numeric.c ../../foc/math/foc_angle.c \
            ../../foc/motor/motor_position.c \
            ../../foc/observer/foc_hall.c ../../foc/observer/foc_smo.c \
            ../../foc/observer/foc_nlfo.c \
-           ../../foc/observer/foc_observer_selector.c
+           ../../foc/observer/foc_observer_selector.c \
+           ../../foc/observer/foc_open_loop_source.c
 FOC_SRCS += ../../foc/observer/foc_hfi.c
 FOC_SRCS += ../../foc/optimization/foc_optimization.c \
             ../../foc/optimization/foc_cogging.c

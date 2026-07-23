@@ -23,6 +23,10 @@ typedef enum {
 } motor_modulation_e;
 
 typedef struct {
+    foc_pid_params_t    tIdParams;
+    foc_pid_params_t    tIqParams;
+    foc_pid_params_t    tSpeedParams;
+    foc_pid_params_t    tPositionParams;
     foc_controller_if_t tIdController;
     foc_controller_if_t tIqController;
     foc_controller_if_t tSpeedController;

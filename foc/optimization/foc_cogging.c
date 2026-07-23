@@ -40,20 +40,16 @@ foc_result_t foc_cogging_Get(const foc_cogging_t *ptCogging,
         return FOC_RESULT_INVALID_ARGUMENT;
     }
     tWrapped = foc_angle_wrap(tMechanicalAngle);
+    {
+        uint64_t wPosition = (uint64_t)tWrapped.wBam32 * (uint64_t)ptCogging->hwCount;
+        hwIndex = (uint16_t)(wPosition >> 32);
+        uint32_t wFraction32 = (uint32_t)wPosition;
 #if defined(FOC_NUMERIC_FLOAT)
-    {
-        float fPosition = tWrapped.qTurns * (float)ptCogging->hwCount;
-        hwIndex = (uint16_t)fPosition;
-        qFraction = foc_from_float(fPosition - (float)hwIndex);
-    }
+        qFraction = (float)wFraction32 * (1.0f / 4294967296.0f);
 #else
-    {
-        uint32_t wPosition = (uint32_t)tWrapped.qTurns *
-                             (uint32_t)ptCogging->hwCount;
-        hwIndex = (uint16_t)(wPosition >> FOC_Q_FRACTION_BITS);
-        qFraction = (foc_scalar_t)(wPosition & (FOC_Q_SCALE - 1U));
-    }
+        qFraction = (foc_scalar_t)(wFraction32 >> 17);
 #endif
+    }
     if (hwIndex >= ptCogging->hwCount) {
         hwIndex = 0U;
         qFraction = FOC_ZERO;
