@@ -133,8 +133,10 @@ PERIPHERAL_SOURCES = $(wildcard peripheral/*.c)
 PERIPHERAL_SOURCES += $(wildcard peripheral/$(TARGET_CHIP)/*.c)
 
 
-# FOC framework — defined per-chip in target.mk (not all chips support FOC)
+# FOC framework — defined by foc/foc.mk (included from target.mk).
+# Targets without FOC support leave both empty.
 FOC_SOURCES ?=
+FOC_INCLUDES ?=
 
 # FOC numeric backend is selected explicitly, never inferred from the CPU.
 FOC_NUMERIC ?= float
@@ -156,9 +158,6 @@ C_DEFS += -DFOC_ENABLE_EXPERIMENTAL_IDENTIFY=$(FOC_EXPERIMENTAL_IDENTIFY)
 # excluded from production builds. Enable with FOC_DIAGNOSTIC=1.
 FOC_DIAGNOSTIC ?= 0
 C_DEFS += -DFOC_ENABLE_DIAGNOSTIC=$(FOC_DIAGNOSTIC)
-ifeq ($(FOC_DIAGNOSTIC),1)
-FOC_SOURCES += $(wildcard foc/diagnostic/*.c)
-endif
 
 # ------------------------------------------------------------------------------
 # All C sources  (chip-specific vars set by target.mk)
@@ -217,17 +216,7 @@ C_INCLUDES = \
     -Iperipheral \
     -Iperipheral/$(TARGET_CHIP) \
     -Iclass \
-    -Ifoc \
-    -Ifoc/math \
-    -Ifoc/hal \
-    -Ifoc/motor \
-    -Ifoc/middleware \
-    -Ifoc/control \
-    -Ifoc/modulation \
-    -Ifoc/observer \
-    -Ifoc/optimization \
-    -Ifoc/experimental \
-    -Ifoc/app
+    $(FOC_INCLUDES)
 
 # grblHAL includes and defines (only when enabled, after C_INCLUDES is fully built)
 ifdef GRBLHAL_ENABLE

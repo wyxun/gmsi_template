@@ -79,17 +79,8 @@ LL_SOURCES = \
 
 CHIP_SOURCES = $(HAL_SOURCES) $(LL_SOURCES)
 
-# FOC framework — STM32G431 supports FOC (same module set as at32f413)
-FOC_SOURCES = $(wildcard foc/math/*.c)       \
-              $(wildcard foc/hal/*.c)         \
-              $(wildcard foc/motor/*.c)       \
-              $(wildcard foc/middleware/*.c)  \
-              $(wildcard foc/control/*.c)     \
-              $(wildcard foc/modulation/*.c)  \
-              $(wildcard foc/observer/*.c)    \
-              $(wildcard foc/optimization/*.c) \
-              $(wildcard foc/experimental/*.c) \
-              $(wildcard foc/app/*.c)
+# FOC framework — STM32G431 supports FOC with CORDIC trig backend
+include foc/foc.mk
 
 # 启用 MODUS 默认内置的 perf_counter 移植
 MODUS_USE_DEFAULT_PERFC_PORT = 1

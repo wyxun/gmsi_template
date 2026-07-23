@@ -105,16 +105,7 @@ endif
 CHIP_SOURCES = $(DRV_SOURCES)
 
 # FOC framework — AT32F413 supports FOC
-FOC_SOURCES = $(wildcard foc/math/*.c)       \
-              $(wildcard foc/hal/*.c)         \
-              $(wildcard foc/motor/*.c)       \
-              $(wildcard foc/middleware/*.c)  \
-              $(wildcard foc/control/*.c)     \
-              $(wildcard foc/modulation/*.c)  \
-              $(wildcard foc/observer/*.c)    \
-              $(wildcard foc/optimization/*.c) \
-              $(wildcard foc/experimental/*.c) \
-              $(wildcard foc/app/*.c)
+include foc/foc.mk
 
 # OpenOCD (AT32 custom v0.11 — same as at32f421)
 OPENOCD_BIN     = $(SW_ROOT)/msys64/mingw64/bin/openocd-at32.exe
