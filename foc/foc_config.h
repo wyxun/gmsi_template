@@ -47,11 +47,11 @@
 #endif
 
 #ifndef FOC_HF_PROFILE
-#define FOC_HF_PROFILE 0
+#define FOC_HF_PROFILE 1
 #endif
 
 #ifndef FOC_HF_PROFILE_LEVEL
-#define FOC_HF_PROFILE_LEVEL 0
+#define FOC_HF_PROFILE_LEVEL 2
 #endif
 
 #if !FOC_HF_PROFILE

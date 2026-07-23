@@ -5,6 +5,7 @@
 
 #include "motor.h"
 #include "motor_private.h"
+#include "foc_hf_profile.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -67,6 +68,12 @@ foc_result_t motor_Init(motor_handle_t *ptMotor,
     if (eResult != FOC_RESULT_OK) {
         return eResult;
     }
+
+#if FOC_HF_PROFILE
+    /* Enable the DWT cycle counter once so per-step profiling reads cost a
+     * single register load instead of a get_system_ticks() call. */
+    foc_hf_profile_InitCycles();
+#endif
 
     memset(ptMotor, 0, sizeof(*ptMotor));
     ptImpl = motor_private(ptMotor);

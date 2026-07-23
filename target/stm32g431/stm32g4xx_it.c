@@ -77,12 +77,6 @@ void TIM1_CC_IRQHandler(void)               {}
 #include <math.h>
 #include "foc_hf_profile.h"
 
-#if (FOC_HF_PROFILE_LEVEL >= 1)
-uint32_t foc_hf_profile_ReadCycles(void)
-{
-    return (uint32_t)get_system_ticks();
-}
-#endif
 
 /* ---- ADC1_2 (current sensing end-of-conversion) ---- */
 void ADC1_2_IRQHandler(void)
