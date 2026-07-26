@@ -18,13 +18,13 @@
 #include "foc_hal_mdi_adapter.h"
 #include "foc_app.h"
 #include "motor.h"
+#include "motor_control.h"
 #include "foc_pid.h"
 #include "foc_controller.h"
 #include "mdebug/mshell.h"
 #include "perfc_port.h"
 #include "motor/motor_private.h"
 
-extern uint32_t haladc_GetInjected(uint32_t wAdc, uint32_t wRank);
 
 /* 控制周期（归一化秒）：
  * 高频 — TMR1 CH4 在中心对齐 TWO_WAY_1 模式下仅向下计数时产生一次比较
@@ -294,24 +294,25 @@ static int foc_app_Run(uintptr_t wObjectAddr)
 #if FOC_HF_PROFILE
             motor_hf_profile_snapshot_t tProf = {0};
             (void)motor_GetHighFrequencyProfileSnapshot(ptThis->ptMotor, &tProf);
-            MLOGF(T, "[Heartbeat] motor: %s, seq: %lu, total: %lu, sample: %lu, clarke: %lu, park: %lu, ipark: %lu, mod: %lu, commit: %lu, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f\r\n",
+            MLOGF(T, "[Heartbeat] motor: %s, seq: %lu, total: %lu, entry: %lu, sample: %lu, clarke: %lu, pos: %lu, park: %lu, pi: %lu, ipark: %lu, mod: %lu, commit: %lu, setduty: %lu, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f\r\n",
                   foc_app_StateName(tSnapshot.eRunState),
                   (unsigned long)tProf.wSampleSequence,
                   (unsigned long)tProf.wTotalCycles,
+                  (unsigned long)tProf.wEntryCycles,
                   (unsigned long)tProf.wSampleCurrentCycles,
                   (unsigned long)tProf.wClarkeCycles,
+                  (unsigned long)tProf.wPositionCycles,
                   (unsigned long)tProf.wParkCycles,
+                  (unsigned long)tProf.wPiCycles,
                   (unsigned long)tProf.wIparkCycles,
                   (unsigned long)tProf.wModulateCycles,
                   (unsigned long)tProf.wCommitCycles,
+                  (unsigned long)tProf.wSetDutyCycles,
                   (double)foc_angle_to_turns(tSnapshot.tActiveAngle),
                   (double)foc_to_float(tSnapshot.tPhaseCurrent.qIu),
                   (double)foc_to_float(tSnapshot.tPhaseCurrent.qIv),
                   (double)foc_to_float(tSnapshot.tPhaseCurrent.qIw));
 #else
-            uint32_t rawU = haladc_GetInjected(0, 0);
-            uint32_t rawV = haladc_GetInjected(1, 1);
-            uint32_t rawW = haladc_GetInjected(1, 0);
             MLOGF(T, "[Heartbeat] motor: %s, Iq: %.4f, Id: %.4f, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f, offset: %lu/%lu/%lu\r\n",
                   foc_app_StateName(tSnapshot.eRunState),
                   (double)foc_to_float(tSnapshot.tCurrent.qQ),

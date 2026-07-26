@@ -29,27 +29,21 @@
  * declare separate contexts per motor.
  */
 typedef struct {
-    /* TODO: add hardware handles here, e.g.:
-     *   TIM_TypeDef      *ptTimer;         // PWM timer base
-     *   ADC_TypeDef      *ptAdc;           // ADC peripheral
-     *   uint32_t          wAdcChannelU;    // ADC channel index for phase U
-     *   uint32_t          wAdcChannelV;
-     *   uint32_t          wAdcChannelW;    */
-    uint32_t wPwmPeriod;                    /* Timer auto-reload / period */
+    uint32_t wPwmPeriod;        /**< 定时器自动重装载值（ARR/period） */
 } foc_motor_context_t;
 
-/*
- * One-shot bind: populate all HAL callbacks and validate.
- *
- * @param ptHal      [out] HAL interface to populate
- * @param ptContext  [in]  per-motor context, must live as long as the motor
- * @return FOC_RESULT_OK on success
+/**
+ * @brief  初始化 HAL 适配器并绑定所有回调
+ * @param  ptHal     [out] 待填充的 HAL 接口
+ * @param  ptContext [in]  单电机硬件上下文（必须在整个生命周期内有效）
+ * @return          FOC_RESULT_OK 或错误码
  */
 foc_result_t foc_hal_Bind(foc_hal_t *ptHal, foc_motor_context_t *ptContext);
 
-/*
- * Convenience: bind ptHal to a static default context.
- * Multi-motor boards should call foc_hal_Bind() with per-motor contexts instead.
+/**
+ * @brief  使用静态默认上下文绑定 HAL 接口
+ * @param  ptHal  [out] 待填充的 HAL 接口
+ * @return        FOC_RESULT_OK 或错误码
  */
 foc_result_t foc_hal_BindDefault(foc_hal_t *ptHal);
 

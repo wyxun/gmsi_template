@@ -24,7 +24,8 @@
 
 static void regulator_stabilize(void)
 {
-    uint32_t wait_loop_index;
+    /* volatile 防止空循环被 -Os/-O2 优化掉，稳压器稳定时间必须真实等待 */
+    volatile uint32_t wait_loop_index;
     wait_loop_index = ((LL_ADC_DELAY_INTERNAL_REGUL_STAB_US *
                        (SystemCoreClock / (100000UL * 2UL))) / 10UL);
     while (wait_loop_index != 0U) { wait_loop_index--; }
@@ -32,7 +33,7 @@ static void regulator_stabilize(void)
 
 static void post_calib_delay(void)
 {
-    uint32_t wait_loop_index = (ADC_DELAY_CALIB_ENABLE_CPU_CYCLES >> 1);
+    volatile uint32_t wait_loop_index = (ADC_DELAY_CALIB_ENABLE_CPU_CYCLES >> 1);
     while (wait_loop_index != 0U) { wait_loop_index--; }
 }
 
@@ -229,6 +230,11 @@ void haladc_Init(void)
      * 只需 ADC1 的 JEOS 作为高频环时基（同 MCSDK 做法）。 */
     LL_ADC_EnableIT_JEOS(ADC1);
     HAL_NVIC_SetPriority(ADC1_2_IRQn, 1, 0);
+    /* NVIC 在所有底层硬件（含 TIM1）初始化完成后统一由 haladc_EnableISR 使能 */
+}
+
+void haladc_EnableISR(void)
+{
     HAL_NVIC_EnableIRQ(ADC1_2_IRQn);
 }
 
@@ -246,9 +252,3 @@ uint32_t haladc_GetRegular(uint32_t wChannel)
     return LL_ADC_REG_ReadConversionData12(ADC1);
 }
 
-uint32_t haladc_GetInjected(uint32_t wAdc, uint32_t wRank)
-{
-    ADC_TypeDef *inst = (wAdc == HALADC_ADC1) ? ADC1 : ADC2;
-    if (wRank == 0) return LL_ADC_INJ_ReadConversionData12(inst, LL_ADC_INJ_RANK_1);
-    else            return LL_ADC_INJ_ReadConversionData12(inst, LL_ADC_INJ_RANK_2);
-}

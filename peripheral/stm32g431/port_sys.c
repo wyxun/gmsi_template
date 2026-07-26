@@ -102,6 +102,7 @@ void peripheral_Init(void)
     haladc_Init();
     halcomp_Init();
     haltim1_Init();
+    haladc_EnableISR();
 #endif
 
     halusart_Init();

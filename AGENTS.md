@@ -5,13 +5,13 @@ Shared project instructions for AI coding agents.
 ## Build and Debug Commands
 
 ```powershell
-.\make.bat                       # Debug build (-O0)
+.\make.bat                       # Default build (-Os, debug modules on)
 .\make.bat clean                 # Clean build artifacts
 .\make.bat flash                 # Flash via OpenOCD
 .\make.bat rtt                   # RTT servers: shell 9090, waveform 9091
-.\make.bat auto                  # Clean, debug build, flash, start RTT
+.\make.bat auto                  # Clean, default build, flash, start RTT
 .\make.bat rttv                  # Open the RTT log viewer
-mingw32-make BUILD=debug-rel     # Optimized build with debug modules
+mingw32-make BUILD=debug         # Unoptimized build (-O0)
 mingw32-make BUILD=release       # Production build
 mingw32-make TARGET_CHIP=<chip>  # Select a target explicitly
 mingw32-make size                # Display ELF section sizes

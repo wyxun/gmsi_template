@@ -111,6 +111,14 @@ static int32_t pwm_setduty(void *pPriv, uint32_t wDuty)
     return 0;
 }
 
+int32_t port_mdi_MotorPwmSetDuty3(uint32_t wDutyU, uint32_t wDutyV, uint32_t wDutyW)
+{
+    LL_TIM_OC_SetCompareCH1(TIM1, wDutyU);
+    LL_TIM_OC_SetCompareCH2(TIM1, wDutyV);
+    LL_TIM_OC_SetCompareCH3(TIM1, wDutyW);
+    return 0;
+}
+
 static int32_t pwm_enable(void *pPriv, bool bEn)
 {
     (void)pPriv;

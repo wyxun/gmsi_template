@@ -187,7 +187,8 @@ static foc_result_t motor_control_commit_hf(
     const motor_transition_update_t *transition,
     foc_scalar_t angle_error, foc_scalar_t blend_factor,
     bool direct_source, bool candidate_source,
-    bool *hardware_failed)
+    bool *hardware_failed,
+    uint32_t *pwSetDutyCycles)
 {
     uintptr_t state = motor_private_enter(impl);
     bool stopping = impl->bCommandPending &&
@@ -200,8 +201,10 @@ static foc_result_t motor_control_commit_hf(
         motor_private_exit(impl, state);
         return stopping ? FOC_RESULT_BUSY : FOC_RESULT_INVALID_ARGUMENT;
     }
+    FOC_HF_PROFILE_STAGE_BEGIN(tSetDutyStart);
     foc_result_t result = foc_hal_SetDuty(&impl->tHal.tPwm,
         work->tDuty.qU, work->tDuty.qV, work->tDuty.qW);
+    FOC_HF_PROFILE_STAGE_END(tSetDutyStart, *pwSetDutyCycles);
     *hardware_failed = result != FOC_RESULT_OK;
     if (result == FOC_RESULT_OK) {
         impl->tRt.tThetaE = angle;
@@ -319,8 +322,23 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
                                  FOC_RESULT_INVALID_ARGUMENT;
     }
     ptImpl = motor_private(ptMotor);
+    uint32_t wSetDutyCycles = 0;    /* commit 内 SetDuty 子段（PROFILE=0 时保留实参占位） */
+#if FOC_HF_PROFILE
+    uint32_t wTotalCycles = 0;
+    uint32_t wSampleCurrentCycles = 0;
+    uint32_t wClarkeCycles = 0;
+    uint32_t wParkCycles = 0;
+    uint32_t wIparkCycles = 0;
+    uint32_t wModulateCycles = 0;
+    uint32_t wCommitCycles = 0;
+    uint32_t wEntryCycles = 0;
+    uint32_t wPositionCycles = 0;
+    uint32_t wPiCycles = 0;
+    uint32_t wValidFlags = 0;
+#endif
     eResult = motor_control_begin_step(ptImpl, true);
     if (eResult != FOC_RESULT_OK) return eResult;
+    FOC_HF_PROFILE_STAGE_BEGIN(tEntryStart);
     s = motor_private_enter(ptImpl);
     if (ptImpl->tRt.eRunState != MOTOR_STATE_STARTING &&
         ptImpl->tRt.eRunState != MOTOR_STATE_RUNNING) {
@@ -329,7 +347,11 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
         return FOC_RESULT_INVALID_ARGUMENT;
     }
     ptControl = &ptImpl->tControl;
-    work = *ptControl;
+    work.eMode = ptControl->eMode;
+    work.tVoltageAlphaBeta = ptControl->tVoltageAlphaBeta;
+    work.tConfig = ptControl->tConfig;
+    work.qSpeedReference = ptControl->qSpeedReference;
+    work.qPositionReference = ptControl->qPositionReference;
     mode = ptControl->eMode;
     voltage_ref = ptControl->tVoltageReference;
     current_ref = ptControl->tCurrentReference;
@@ -362,19 +384,13 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
         position_timestamp = ++ptImpl->wPositionSampleTimestamp;
     }
     motor_private_exit(ptImpl, s);
-#if FOC_HF_PROFILE
-    uint32_t wTotalCycles = 0;
-    uint32_t wSampleCurrentCycles = 0;
-    uint32_t wClarkeCycles = 0;
-    uint32_t wParkCycles = 0;
-    uint32_t wIparkCycles = 0;
-    uint32_t wModulateCycles = 0;
-    uint32_t wCommitCycles = 0;
-    uint32_t wValidFlags = 0;
-
-    FOC_HF_PROFILE_TOTAL_BEGIN(tTotalStart);
+    FOC_HF_PROFILE_STAGE_END(tEntryStart, wEntryCycles);
+#if FOC_HF_PROFILE_LEVEL >= 2
+    wValidFlags |= MOTOR_HF_PROFILE_VALID_ENTRY;
 #endif
+    FOC_HF_PROFILE_TOTAL_BEGIN(tTotalStart);
 
+    /* ==== 1. 电流采样与重建（ADC → 三相电流 pu） ==== */
     FOC_HF_PROFILE_STAGE_BEGIN(tSampleStart);
     eResult = motor_private_SampleCurrent(ptMotor);
     FOC_HF_PROFILE_STAGE_END(tSampleStart, wSampleCurrentCycles);
@@ -386,6 +402,7 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
         goto publish_exit;
     }
 
+    /* ==== 2. Clarke 变换：三相电流 iU/iV/iW → αβ 坐标系 ==== */
     FOC_HF_PROFILE_STAGE_BEGIN(tClarkeStart);
     eResult = foc_clarke(ptImpl->tCurrent.qIu,
                          ptImpl->tCurrent.qIv,
@@ -398,6 +415,12 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     if (eResult != FOC_RESULT_OK) {
         goto fail;
     }
+
+    /* ==== 3. 位置源采样：获取当前电角度/速度 ==== */
+    /* 启动阶段（开环源→目标源切换）与非启动阶段的处理不同：
+     *   启动中：开环源和目标源同时运行，角度/速度暂用开环值
+     *   运行中：直接走目标源，用其输出的电角度和速度 */
+    FOC_HF_PROFILE_STAGE_BEGIN(tPositionStart);
     foc_position_output_t output = {0};
     foc_position_input_t input = {
         .tCurrent = current_alpha_beta,
@@ -452,6 +475,12 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
             speed = output.qElectricalSpeed;
         }
     }
+
+    /* ==== 4. 源切换管理：资格判定与混合过渡 ==== */
+    /* QUALIFY_SOURCE 阶段：评估目标源是否稳定且符合误差阈值，
+     * 连续合格达样本数要求后进入 BLEND_ANGLE 阶段。
+     * BLEND_ANGLE 阶段：在开环源角度和候选源角度之间线性插值，
+     * 完成混合后进入 COMPLETE，此后不再走切换路径 */
     if (transition_required &&
         startup_phase == MOTOR_STARTUP_QUALIFY_SOURCE) {
         if (motor_control_candidate_qualified(
@@ -533,9 +562,16 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
                 output.qMechanicalSpeed);
         }
     }
+
+    /* ==== 5. 三角函数：准备 Park / IPark 共用的 sin(θ) cos(θ) ==== */
+    FOC_HF_PROFILE_STAGE_END(tPositionStart, wPositionCycles);
+#if FOC_HF_PROFILE_LEVEL >= 2
+    wValidFlags |= MOTOR_HF_PROFILE_VALID_POSITION;
+#endif
     foc_scalar_t qSinTheta, qCosTheta;
     foc_angle_sincos(angle, &qSinTheta, &qCosTheta);
 
+    /* ==== 6. Park 变换：αβ 电流 → dq 旋转坐标系 ==== */
     FOC_HF_PROFILE_STAGE_BEGIN(tParkStart);
     eResult = foc_park_cached(&current_alpha_beta,
                                qSinTheta,
@@ -548,6 +584,11 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     if (eResult != FOC_RESULT_OK) {
         goto fail;
     }
+
+    /* ==== 7. 电流环 PI 控制 ==== */
+    /* 电压开环模式下直接使用预设电压参考值，跳过 DQ PI；
+     * 电流/速度/位置模式下执行 D 轴和 Q 轴 PI 调节 */
+    FOC_HF_PROFILE_STAGE_BEGIN(tPiStart);
     if (mode == MOTOR_CONTROL_VOLTAGE_OPEN_LOOP) {
         work.tVoltage = voltage_ref;
     } else {
@@ -558,7 +599,12 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
             work.tConfig.tIqController.pContext,
             current_ref.qQ, work.tCurrent.qQ);
     }
+    FOC_HF_PROFILE_STAGE_END(tPiStart, wPiCycles);
+#if FOC_HF_PROFILE_LEVEL >= 2
+    wValidFlags |= MOTOR_HF_PROFILE_VALID_PI;
+#endif
 
+    /* ==== 8. 逆 Park 变换：dq 电压 → αβ 坐标系 ==== */
     FOC_HF_PROFILE_STAGE_BEGIN(tIparkStart);
     eResult = foc_ipark_cached(&work.tVoltage,
                                qSinTheta,
@@ -572,6 +618,7 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
         goto fail;
     }
 
+    /* ==== 9. 调制（αβ → 三相占空比） ==== */
     FOC_HF_PROFILE_STAGE_BEGIN(tModulateStart);
     eResult = motor_control_modulate(&work);
     FOC_HF_PROFILE_STAGE_END(tModulateStart, wModulateCycles);
@@ -583,14 +630,16 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     }
     bool hardware_failed = false;
 
+    /* ==== 10. 提交：写 PWM 占空比 + 回写运行时状态 ==== */
     FOC_HF_PROFILE_STAGE_BEGIN(tCommitStart);
     eResult = motor_control_commit_hf(
         ptImpl, &work, angle, speed, &output, &transition,
         angle_error, blend_factor, direct_source, candidate_source,
-        &hardware_failed);
+        &hardware_failed, &wSetDutyCycles);
     FOC_HF_PROFILE_STAGE_END(tCommitStart, wCommitCycles);
 #if FOC_HF_PROFILE_LEVEL >= 2
-    wValidFlags |= MOTOR_HF_PROFILE_VALID_COMMIT;
+    wValidFlags |= MOTOR_HF_PROFILE_VALID_COMMIT |
+                   MOTOR_HF_PROFILE_VALID_SETDUTY;
 #endif
     if (hardware_failed) goto hardware_fail;
     goto publish_exit;
@@ -620,6 +669,10 @@ publish_exit:
     ptImpl->tProfileSnapshot.wIparkCycles = wIparkCycles;
     ptImpl->tProfileSnapshot.wModulateCycles = wModulateCycles;
     ptImpl->tProfileSnapshot.wCommitCycles = wCommitCycles;
+    ptImpl->tProfileSnapshot.wEntryCycles = wEntryCycles;
+    ptImpl->tProfileSnapshot.wPositionCycles = wPositionCycles;
+    ptImpl->tProfileSnapshot.wPiCycles = wPiCycles;
+    ptImpl->tProfileSnapshot.wSetDutyCycles = wSetDutyCycles;
     ptImpl->tProfileSnapshot.wValidFlags = wValidFlags;
     ptImpl->tProfileSnapshot.eResult = eResult;
 #endif

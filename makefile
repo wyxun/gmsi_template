@@ -63,8 +63,8 @@ endif
 # ------------------------------------------------------------------------------
 MODUS_ROOT = modus
 
-# Build mode: BUILD=debug (default) | BUILD=debug-rel | BUILD=release
-BUILD ?= debug
+# Build mode: BUILD=debug | BUILD=debug-rel (default) | BUILD=release
+BUILD ?= debug-rel
 
 MODUS_ENABLE ?= 1
 
@@ -85,6 +85,7 @@ ifeq ($(BUILD),release)
     MSTORAGE_ENABLE  = 0
     MBLINFO_ENABLE   = 0
     MODUS_USE_LOG    = 0
+    C_DEFS += -DFOC_HF_PROFILE=0 -DFOC_HF_PROFILE_LEVEL=0
 else ifeq ($(BUILD),debug-rel)
     # Release-close debugging: same -Os, but debug modules on
     OPT = -Os

@@ -31,9 +31,18 @@
 #define HALADC_INJ_V        1U  /* ADC2_IN3  (PA6, OPAMP2 out) */
 #define HALADC_INJ_W        1U  /* ADC1_IN12 (PB1, OPAMP3 out) */
 
+#include "stm32g4xx_ll_adc.h"
+
 void haladc_Init(void);
+void haladc_EnableISR(void);
 void haladc_StartRegular(void);
 uint32_t haladc_GetRegular(uint32_t wChannel);
-uint32_t haladc_GetInjected(uint32_t wAdc, uint32_t wRank);
+
+static inline uint32_t haladc_GetInjected(uint32_t wAdc, uint32_t wRank)
+{
+    ADC_TypeDef *inst = (wAdc == HALADC_ADC1) ? ADC1 : ADC2;
+    if (wRank == 0U) return LL_ADC_INJ_ReadConversionData12(inst, LL_ADC_INJ_RANK_1);
+    else             return LL_ADC_INJ_ReadConversionData12(inst, LL_ADC_INJ_RANK_2);
+}
 
 #endif /* __HALADC_H__ */

@@ -26,13 +26,16 @@ void halcomp_Init(void)
     for (volatile uint32_t i = 0; i < SystemCoreClock / 1000U; i++) {}
     LL_COMP_Enable(COMP1);
 
-    /* ---- COMP2 ---- */
-    init.InputMinus = LL_COMP_INPUT_MINUS_DAC3_CH2;
+    /* ---- COMP2: PA7(+) vs DAC3_CH2(-) ---- */
+    init.InputPlus            = LL_COMP_INPUT_PLUS_IO2;
+    init.InputMinus           = LL_COMP_INPUT_MINUS_DAC3_CH2;
     LL_COMP_Init(COMP2, &init);
     for (volatile uint32_t i = 0; i < SystemCoreClock / 1000U; i++) {}
     LL_COMP_Enable(COMP2);
 
-    /* ---- COMP4 ---- */
+    /* ---- COMP4: PB0(+) vs DAC3_CH2(-) ---- */
+    init.InputPlus            = LL_COMP_INPUT_PLUS_IO1;
+    init.InputMinus           = LL_COMP_INPUT_MINUS_DAC3_CH2;
     LL_COMP_Init(COMP4, &init);
     for (volatile uint32_t i = 0; i < SystemCoreClock / 1000U; i++) {}
     LL_COMP_Enable(COMP4);

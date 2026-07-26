@@ -29,14 +29,14 @@ taskkill /F /IM openocd-at32.exe /T 2>nul
 if not "%2"=="" set %2
 echo [INFO] Starting Full Auto Build, Flash and Debug sequence...
 "%MAKE_EXE%" clean
-"%MAKE_EXE%" BUILD=debug
+"%MAKE_EXE%" BUILD=debug-rel
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Build failed.
     pause
     exit /b %ERRORLEVEL%
 )
 
-"%MAKE_EXE%" flash BUILD=debug
+"%MAKE_EXE%" flash BUILD=debug-rel
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Flashing failed.
     pause
@@ -45,7 +45,7 @@ if %ERRORLEVEL% neq 0 (
 
 echo [INFO] Launching RTT Server in background (no popup)...
 :: Use start /b for background execution without a new window
-start /b "" "%MAKE_EXE%" rtt BUILD=debug > openocd_rtt.log 2>&1
+start /b "" "%MAKE_EXE%" rtt BUILD=debug-rel > openocd_rtt.log 2>&1
 
 echo [INFO] Waiting for Server to initialize...
 ping 127.0.0.1 -n 4 > nul

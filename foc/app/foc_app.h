@@ -17,24 +17,44 @@
 #include "motor_types.h"
 
 typedef struct {
-    motor_handle_t *ptMotor;
+    motor_handle_t *ptMotor;    /**< 电机句柄指针 */
 } foc_app_cfg_t;
 
 typedef struct foc_app_s {
-    modus_base_t    *ptBase;
-    uint32_t        wLastHeartbeatTick;
-    uint32_t        wLastButtonTick;
-    bool            bLastButtonState;
-    motor_handle_t *ptMotor;
+    modus_base_t    *ptBase;                /**< MODUS 基类 */
+    uint32_t        wLastHeartbeatTick;     /**< 上次心跳 tick */
+    uint32_t        wLastButtonTick;        /**< 上次按键 tick */
+    bool            bLastButtonState;       /**< 上次按键状态 */
+    motor_handle_t *ptMotor;                /**< 电机句柄 */
 } foc_app_t;
 
+/**
+ * @brief  初始化 FOC 应用层实例
+ * @param  wObjectAddr    应用对象地址（uintptr_t 转换）
+ * @param  wObjectCfgAddr 应用配置地址
+ * @return                FOC_RESULT_OK 或错误码
+ */
 int foc_app_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr);
+/**
+ * @brief  运行 FOC 应用状态机（主循环调度）
+ * @param  ptThis  应用实例指针
+ * @return         fsm_rt_t 状态机运行结果
+ */
 fsm_rt_t foc_app_RunFSM(foc_app_t *ptThis);
+/**
+ * @brief  启动 FOC 应用
+ * @param  ptThis  应用实例指针
+ */
 void foc_app_Start(foc_app_t *ptThis);
+/**
+ * @brief  停止 FOC 应用
+ * @param  ptThis  应用实例指针
+ */
 void foc_app_Stop(foc_app_t *ptThis);
 
-/* 高频控制入口：仅由目标侧 ADC 抢占转换完成中断（TMR1 CH4 触发，
- * 20 kHz）调用，不得从主循环或低频调度调用。 */
+/**
+ * @brief  高频控制 ISR 入口（20 kHz，由 ADC 转换完成中断触发）
+ */
 void foc_app_HighFrequencyISR(void);
 
 extern void phase_testA(void);

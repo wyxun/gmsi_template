@@ -65,7 +65,7 @@ void phase_testB(motor_handle_t *ptMotor)
 #else /* FOC_ENABLE_DIAGNOSTIC == 0 */
 
 void phase_testA(void) {}
-void phase_testB(motor_handle_t *ptMotor)
+void phase_testB(motor_handle_t *ptMotor)               
 {
     /* 量产构建：固定占空比旁路已禁用。 */
     (void)ptMotor;

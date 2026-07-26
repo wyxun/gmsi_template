@@ -14,6 +14,7 @@
 
 #include "foc_config.h"
 #include "haladc.h"
+#include "port_mdi.h"
 #include "mdi/mdi.h"
 #include "stm32g4xx_ll_adc.h"
 
@@ -76,7 +77,6 @@ static foc_result_t mdi_pwm_set_duty(void *pContext,
 {
     foc_mdi_motor_context_t *ptContext =
         (foc_mdi_motor_context_t *)pContext;
-    int32_t nResult;
 
     if (ptContext == NULL || ptContext->ptHardware->ptMotorU == NULL ||
         ptContext->ptHardware->ptMotorV == NULL ||
@@ -84,24 +84,16 @@ static foc_result_t mdi_pwm_set_duty(void *pContext,
         return FOC_RESULT_INVALID_ARGUMENT;
     }
 #if FOC_USE_FPU_HARDWARE
-    nResult = MDI_Write(ptContext->ptHardware->ptMotorU,
-                        (uint32_t)(qDutyU * ptContext->wPwmPeriod));
-    nResult |= MDI_Write(ptContext->ptHardware->ptMotorV,
-                         (uint32_t)(qDutyV * ptContext->wPwmPeriod));
-    nResult |= MDI_Write(ptContext->ptHardware->ptMotorW,
-                         (uint32_t)(qDutyW * ptContext->wPwmPeriod));
+    uint32_t wU = (uint32_t)(qDutyU * (q_type)ptContext->wPwmPeriod);
+    uint32_t wV = (uint32_t)(qDutyV * (q_type)ptContext->wPwmPeriod);
+    uint32_t wW = (uint32_t)(qDutyW * (q_type)ptContext->wPwmPeriod);
 #else
-    nResult = MDI_Write(
-        ptContext->ptHardware->ptMotorU,
-        (uint32_t)((qDutyU * ptContext->wPwmPeriod) >> Q_SHIFT));
-    nResult |= MDI_Write(
-        ptContext->ptHardware->ptMotorV,
-        (uint32_t)((qDutyV * ptContext->wPwmPeriod) >> Q_SHIFT));
-    nResult |= MDI_Write(
-        ptContext->ptHardware->ptMotorW,
-        (uint32_t)((qDutyW * ptContext->wPwmPeriod) >> Q_SHIFT));
+    uint32_t wU = (uint32_t)((qDutyU * ptContext->wPwmPeriod) >> Q_SHIFT);
+    uint32_t wV = (uint32_t)((qDutyV * ptContext->wPwmPeriod) >> Q_SHIFT);
+    uint32_t wW = (uint32_t)((qDutyW * ptContext->wPwmPeriod) >> Q_SHIFT);
 #endif
-    return nResult == 0 ? FOC_RESULT_OK : FOC_RESULT_INVALID_ARGUMENT;
+    port_mdi_MotorPwmSetDuty3(wU, wV, wW);
+    return FOC_RESULT_OK;
 }
 
 static foc_result_t mdi_pwm_enable(void *pContext, bool bEnable)

@@ -11,10 +11,19 @@ def main():
         f.write('#include "foc_trig.h"\n\n')
         f.write("#if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_LUT)\n")
         f.write("const float s_afSinQuarter[513] = {\n")
-        for i in range(size + 1):
-            angle_rad = (i / size) * (math.pi / 2.0)
-            val = math.sin(angle_rad)
-            f.write(f"    {val:.9f}f,\n")
+        cols = 8
+        for i in range(0, size + 1, cols):
+            line_vals = []
+            for j in range(cols):
+                idx = i + j
+                if idx <= size:
+                    angle_rad = (idx / size) * (math.pi / 2.0)
+                    val = math.sin(angle_rad)
+                    line_vals.append(f"{val:.9f}f")
+            line = ", ".join(line_vals)
+            if i + cols <= size:
+                line += ","
+            f.write(f"      {line}\n")
         f.write("};\n\n")
         
         # 写入插值算法
