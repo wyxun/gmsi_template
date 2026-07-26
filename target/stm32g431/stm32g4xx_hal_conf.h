@@ -31,6 +31,7 @@ extern "C" {
 #define HAL_DAC_MODULE_ENABLED
 #define HAL_OPAMP_MODULE_ENABLED
 #define HAL_TIM_MODULE_ENABLED
+#define HAL_I2C_MODULE_ENABLED
 
 /* Callback selection */
 #define USE_HAL_ADC_REGISTER_CALLBACKS        0U
@@ -120,6 +121,9 @@ extern "C" {
 #endif
 #ifdef HAL_TIM_MODULE_ENABLED
 #include "stm32g4xx_hal_tim.h"
+#endif
+#ifdef HAL_I2C_MODULE_ENABLED
+#include "stm32g4xx_hal_i2c.h"
 #endif
 
 #ifdef __cplusplus

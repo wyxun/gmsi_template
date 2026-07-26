@@ -132,6 +132,7 @@ PERIF_LIB_SOURCES = \
 
 PERIPHERAL_SOURCES = $(wildcard peripheral/*.c)
 PERIPHERAL_SOURCES += $(wildcard peripheral/$(TARGET_CHIP)/*.c)
+PERIPHERAL_SOURCES += $(wildcard peripheral/driver/*.c)
 
 
 # FOC framework — defined by foc/foc.mk (included from target.mk).
@@ -216,6 +217,7 @@ C_INCLUDES = \
     -I$(LIB_PERF_DIR) \
     -Iperipheral \
     -Iperipheral/$(TARGET_CHIP) \
+    -Iperipheral/driver \
     -Iclass \
     $(FOC_INCLUDES)
 

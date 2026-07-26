@@ -50,6 +50,8 @@ HAL_SOURCES = \
     $(HAL_SRC)/stm32g4xx_hal_dma_ex.c \
     $(HAL_SRC)/stm32g4xx_hal_exti.c \
     $(HAL_SRC)/stm32g4xx_hal_fdcan.c \
+    $(HAL_SRC)/stm32g4xx_hal_i2c.c \
+    $(HAL_SRC)/stm32g4xx_hal_i2c_ex.c \
     $(HAL_SRC)/stm32g4xx_hal_uart.c \
     $(HAL_SRC)/stm32g4xx_hal_uart_ex.c \
     $(HAL_SRC)/stm32g4xx_hal_usart.c \

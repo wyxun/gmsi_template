@@ -25,6 +25,11 @@
 #include "perfc_port.h"
 #include "motor/motor_private.h"
 
+#if defined(MDI_HW_HAS_I2C_ENCODER)
+#include "foc_encoder.h"
+#include "as5600.h"
+#endif
+
 
 /* 控制周期（归一化秒）：
  * 高频 — TMR1 CH4 在中心对齐 TWO_WAY_1 模式下仅向下计数时产生一次比较
@@ -103,6 +108,35 @@ static motor_run_config_t s_tMotorRunConfig = {
         .qQ = FOC_SCALAR(FOC_APP_VOLTAGE_REF_Q),
     },
 };
+
+#if defined(MDI_HW_HAS_I2C_ENCODER)
+/* AS5600 编码器位置源（stm32g431: I2C1 PB7/PB8）。
+ * 1 kHz foc_app_Clock 里 as5600_Update() 阻塞采样并缓存；
+ * 20 kHz fnStep 经回调只读缓存（无阻塞），观测器负责速度外插。 */
+static as5600_t s_tAs5600;
+static foc_encoder_t s_tEncoder;
+static foc_encoder_source_adapter_t s_tEncoderAdapter;
+static foc_position_source_if_t s_tEncoderSourceIf;
+static bool s_bEncoderReady;
+
+static bool foc_app_ReadEncoderSample(void *pContext,
+                                      uint16_t *phwRawAngle,
+                                      uint32_t *pwSequence,
+                                      bool *pbMagnetOk)
+{
+    as5600_sample_t tSample;
+
+    (void)pContext;
+    as5600_GetSample(&s_tAs5600, &tSample);
+    if (!tSample.bValid) {
+        return false;
+    }
+    *phwRawAngle = tSample.hwRawAngle;
+    *pwSequence  = tSample.wSequence;
+    *pbMagnetOk  = tSample.bMagnetOk;
+    return true;
+}
+#endif /* MDI_HW_HAS_I2C_ENCODER */
 
 static modus_base_cfg_t s_tFocAppBaseCfg = {
     .wId     = FOC_APP,
@@ -294,6 +328,7 @@ static int foc_app_Run(uintptr_t wObjectAddr)
 #if FOC_HF_PROFILE
             motor_hf_profile_snapshot_t tProf = {0};
             (void)motor_GetHighFrequencyProfileSnapshot(ptThis->ptMotor, &tProf);
+            /* 完整版 heartbeat（子模块周期数 + 三相电流），按需恢复：
             MLOGF(T, "[Heartbeat] motor: %s, seq: %lu, total: %lu, entry: %lu, sample: %lu, clarke: %lu, pos: %lu, park: %lu, pi: %lu, ipark: %lu, mod: %lu, commit: %lu, setduty: %lu, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f\r\n",
                   foc_app_StateName(tSnapshot.eRunState),
                   (unsigned long)tProf.wSampleSequence,
@@ -312,6 +347,13 @@ static int foc_app_Run(uintptr_t wObjectAddr)
                   (double)foc_to_float(tSnapshot.tPhaseCurrent.qIu),
                   (double)foc_to_float(tSnapshot.tPhaseCurrent.qIv),
                   (double)foc_to_float(tSnapshot.tPhaseCurrent.qIw));
+            */
+            /* 精简版：只留总周期数与角度 */
+            MLOGF(T, "[Heartbeat] motor: %s, seq: %lu, total: %lu, angle: %.4f\r\n",
+                  foc_app_StateName(tSnapshot.eRunState),
+                  (unsigned long)tProf.wSampleSequence,
+                  (unsigned long)tProf.wTotalCycles,
+                  (double)foc_angle_to_turns(tSnapshot.tActiveAngle));
 #else
             MLOGF(T, "[Heartbeat] motor: %s, Iq: %.4f, Id: %.4f, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f, offset: %lu/%lu/%lu\r\n",
                   foc_app_StateName(tSnapshot.eRunState),
@@ -341,6 +383,11 @@ static int foc_app_Clock(uintptr_t wObjectAddr)
     if (ptThis->ptMotor != NULL) {
         (void)motor_LowFrequencyStep(ptThis->ptMotor);
     }
+#if defined(MDI_HW_HAS_I2C_ENCODER)
+    if (s_bEncoderReady) {
+        (void)as5600_Update(&s_tAs5600);
+    }
+#endif
     phase_test_waveform_step();
 
     return MODUS_SUCCESS;
@@ -408,6 +455,28 @@ int foc_app_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
     }
     s_ptMotorISR = ptThis->ptMotor;
 
+#if defined(MDI_HW_HAS_I2C_ENCODER)
+    {
+        foc_encoder_params_t tEncoderParams;
+
+        foc_encoder_DefaultParams(&tEncoderParams);
+        s_bEncoderReady =
+            (as5600_Init(&s_tAs5600, HW.ptI2c1) == 0) &&
+            (foc_encoder_Init(&s_tEncoder, &tEncoderParams) == FOC_RESULT_OK) &&
+            (foc_encoder_source_Init(&s_tEncoderAdapter, &s_tEncoder,
+                                     NULL,
+                                     foc_app_ReadEncoderSample) ==
+                 FOC_RESULT_OK);
+        if (s_bEncoderReady) {
+            s_tEncoderSourceIf =
+                foc_encoder_PositionSourceInterface(&s_tEncoderAdapter);
+            MLOG(I, "[FOC] AS5600 encoder source ready\r\n");
+        } else {
+            MLOG(W, "[FOC] AS5600 encoder unavailable, open-loop only\r\n");
+        }
+    }
+#endif
+
     phase_test_waveform_init();
 
     phase_testA();
@@ -445,6 +514,26 @@ static void cmd_motor(const char *args)
         s_tMotorRunConfig.tVoltageReference.qD = FOC_ZERO;
         s_tMotorRunConfig.tVoltageReference.qQ = FOC_SCALAR(FOC_APP_VOLTAGE_REF_Q);
         foc_app_Start(&tFocApp);
+    } else if (strncmp(args, "enc", 3) == 0) {
+#if defined(MDI_HW_HAS_I2C_ENCODER)
+        /* 有感启动：初始终端源同源（AS5600 绝对编码器）→ 直接闭环，
+           控制模式仍为电压开环（Vq 励磁，角度来自编码器）。 */
+        if (!s_bEncoderReady) {
+            MLOG(E, "Encoder not ready, use 'motor start' instead\r\n");
+            return;
+        }
+        s_tMotorRunConfig.eControlMode = MOTOR_CONTROL_VOLTAGE_OPEN_LOOP;
+        s_tMotorRunConfig.ptInitialPositionSource = &s_tEncoderSourceIf;
+        s_tMotorRunConfig.ptTargetPositionSource = &s_tEncoderSourceIf;
+        s_tMotorRunConfig.qInitialAngle = FOC_ZERO;
+        s_tMotorRunConfig.qOpenLoopSpeed = FOC_SCALAR(FOC_APP_OPEN_LOOP_SPEED);
+        s_tMotorRunConfig.qAcceleration = FOC_SCALAR(FOC_APP_OPEN_LOOP_ACCEL);
+        s_tMotorRunConfig.tVoltageReference.qD = FOC_ZERO;
+        s_tMotorRunConfig.tVoltageReference.qQ = FOC_SCALAR(FOC_APP_VOLTAGE_REF_Q);
+        foc_app_Start(&tFocApp);
+#else
+        MLOG(E, "No I2C encoder on this target\r\n");
+#endif
     } else if (strncmp(args, "stop", 4) == 0) {
         foc_app_Stop(&tFocApp);
     } else if (strncmp(args, "clear", 5) == 0) {
@@ -507,7 +596,33 @@ static void cmd_motor(const char *args)
               (unsigned long)tSnapshot.tCurrentCalibration.wOffsetW,
               (int)tSnapshot.tCurrentCalibration.bIsCalibrated);
     } else {
-        MLOG(I, "Usage: motor <start|stop|clear|vq <x>|pid <p> <i>|status>\r\n");
+        MLOG(I, "Usage: motor <start|enc|stop|clear|vq <x>|pid <p> <i>|status>\r\n");
     }
 }
-MODUS_SHELL_CMD(motor, cmd_motor, "Control FOC Motor (start/stop/clear/vq/pid/status)");
+MODUS_SHELL_CMD(motor, cmd_motor, "Control FOC Motor (start/enc/stop/clear/vq/pid/status)");
+
+#if defined(MDI_HW_HAS_I2C_ENCODER)
+static void cmd_encoder(const char *args)
+{
+    as5600_sample_t tSample;
+
+    (void)args;
+    if (!s_bEncoderReady) {
+        MLOG(E, "Encoder not ready\r\n");
+        return;
+    }
+    as5600_GetSample(&s_tAs5600, &tSample);
+    MLOGF(I, "AS5600: raw=%u (%.2f deg), seq=%lu, valid=%d\r\n",
+          (unsigned int)tSample.hwRawAngle,
+          (double)tSample.hwRawAngle * 360.0 / 4096.0,
+          (unsigned long)tSample.wSequence,
+          (int)tSample.bValid);
+    MLOGF(I, "  status=0x%02X: MD=%d(检测) ML=%d(过弱) MH=%d(过强) => %s\r\n",
+          (unsigned int)tSample.chStatus,
+          (tSample.chStatus & AS5600_STATUS_MD) ? 1 : 0,
+          (tSample.chStatus & AS5600_STATUS_ML) ? 1 : 0,
+          (tSample.chStatus & AS5600_STATUS_MH) ? 1 : 0,
+          tSample.bMagnetOk ? "ok" : "bad");
+}
+MODUS_SHELL_CMD(encoder, cmd_encoder, "Show AS5600 raw angle / magnet status");
+#endif

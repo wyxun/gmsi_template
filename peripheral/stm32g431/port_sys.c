@@ -13,6 +13,7 @@
 #include "halcomp.h"
 #include "haltim1.h"
 #include "halusart.h"
+#include "hali2c.h"
 #include "halfdcan.h"
 #include "halledgpio.h"
 #include "halcordic.h"
@@ -108,6 +109,7 @@ void peripheral_Init(void)
     halusart_Init();
 
 #if !defined(GRBLHAL_ENABLE) || !GRBLHAL_ENABLE
+    hali2c_Init();
     halfdcan_Init();
     halledgpio_Init();
 #endif

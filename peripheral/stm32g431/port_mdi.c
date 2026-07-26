@@ -1,12 +1,13 @@
 /**
- * @file   port_MDI.c
- * @brief  STM32G431 MDI 缁旑垰褰?閳?绾兛娆㈤幎鍊熻杽鐎圭偘绶ラ崠?
+ * @file   port_mdi.c
+ * @brief  STM32G431 MDI 硬件池适配层（虚表绑定实现）
  */
 
 #include "mdi_hw.h"
 #include "stm32g4xx_hal.h"
 #include "port_mdi.h"
 #include "halusart.h"
+#include "hali2c.h"
 #include "haltim1.h"
 #include "haladc.h"
 #include "halledgpio.h"
@@ -42,7 +43,7 @@ static int32_t gpiog_toggle(void *pPriv)
     return 0;
 }
 
-/* LED 閳?PC6 */
+/* LED — PC6 */
 static void *s_apvLedPriv[] = { GPIOC, (void *)(uintptr_t)GPIO_PIN_6 };
 static mdi_gpio_t s_tGpioLed = {
     .pPriv   = s_apvLedPriv,
@@ -51,7 +52,7 @@ static mdi_gpio_t s_tGpioLed = {
     .fnToggle = gpiog_toggle,
 };
 
-/* COMP1 閳?PA1 (input only) */
+/* COMP1 — PA1 (input only) */
 static void *s_apvComp1Priv[] = { GPIOA, (void *)(uintptr_t)GPIO_PIN_1 };
 static mdi_gpio_t s_tGpioComp1 = {
     .pPriv   = s_apvComp1Priv,
@@ -59,7 +60,7 @@ static mdi_gpio_t s_tGpioComp1 = {
     .fnGet   = gpiog_get,
 };
 
-/* COMP2 閳?PA7 (input only) */
+/* COMP2 — PA7 (input only) */
 static void *s_apvComp2Priv[] = { GPIOA, (void *)(uintptr_t)GPIO_PIN_7 };
 static mdi_gpio_t s_tGpioComp2 = {
     .pPriv   = s_apvComp2Priv,
@@ -67,7 +68,7 @@ static mdi_gpio_t s_tGpioComp2 = {
     .fnGet   = gpiog_get,
 };
 
-/* COMP4 閳?PB0 (input only) */
+/* COMP4 — PB0 (input only) */
 static void *s_apvComp4Priv[] = { GPIOB, (void *)(uintptr_t)GPIO_PIN_0 };
 static mdi_gpio_t s_tGpioComp4 = {
     .pPriv   = s_apvComp4Priv,
@@ -99,7 +100,7 @@ static mdi_adc_t s_tAdcTemp = { .pPriv = (void *)HALADC_REG_TEMPERATURE, .fnRead
 static mdi_adc_t s_tAdcPot  = { .pPriv = (void *)HALADC_REG_POTENTIOMETER, .fnRead = adc_read };
 
 /* --------------------------------------------------------------------------
- *  MDI PWM wrappers 閳?TIM1 motor phases via haltim1_SetDuty
+ *  MDI PWM wrappers — TIM1 motor phases via haltim1_SetDuty
  * -------------------------------------------------------------------------- */
 
 static int32_t pwm_setduty(void *pPriv, uint32_t wDuty)
@@ -132,7 +133,7 @@ static mdi_pwm_t s_tPwmV = { .pPriv = (void *)2U, .fnSetDuty = pwm_setduty, .fnE
 static mdi_pwm_t s_tPwmW = { .pPriv = (void *)3U, .fnSetDuty = pwm_setduty, .fnEnable = pwm_enable };
 
 /* --------------------------------------------------------------------------
- *  MDI Stream 閳?USART2 debug serial
+ *  MDI Stream — USART2 debug serial
  * -------------------------------------------------------------------------- */
 
 static int32_t uart_write(void *pPriv, const uint8_t *pchData, uint32_t wLen)
@@ -179,19 +180,52 @@ static mdi_stream_t s_tStreamSerial = {
 };
 
 /* --------------------------------------------------------------------------
- *  閸忋劌鐪涵顑挎鐠у嫭绨Ч?
+ *  MDI IIC — I2C1, AS5600 encoder at 0x36 (7-bit)
+ *  mdi_iic_t 无设备地址参数，pPriv 绑定从机地址（HAL 8 位格式）。
+ *  读寄存器 = fnWrite(reg) + fnRead(buf, len) 两次独立事务（中间有 STOP，
+ *  AS5600 支持该时序；若实测需要 repeated-start，在此处合并事务即可）。
+ * -------------------------------------------------------------------------- */
+
+#define PORT_MDI_I2C1_AS5600_ADDR   (0x36U << 1)   /* HAL 8-bit address */
+
+static int32_t iic_write(void *pPriv, const uint8_t *pchData, uint32_t wLen)
+{
+    return hali2c_Write((uint8_t)(uintptr_t)pPriv, pchData, (uint16_t)wLen);
+}
+
+static int32_t iic_read(void *pPriv, uint8_t *pchBuf, uint32_t wLen)
+{
+    return hali2c_Read((uint8_t)(uintptr_t)pPriv, pchBuf, (uint16_t)wLen);
+}
+
+static int32_t iic_isbusy(void *pPriv)
+{
+    (void)pPriv;
+    return hali2c_IsBusy() ? 1 : 0;
+}
+
+static mdi_iic_t s_tI2c1As5600 = {
+    .pPriv    = (void *)(uintptr_t)PORT_MDI_I2C1_AS5600_ADDR,
+    .fnWrite  = iic_write,
+    .fnRead   = iic_read,
+    .fnIsBusy = iic_isbusy,
+};
+
+/* --------------------------------------------------------------------------
+ *  全局硬件资源池实例
  * -------------------------------------------------------------------------- */
 
 const mdi_hardware_t HW = {
-    .ptLedStatus  = &s_tGpioLed,
-    .ptCompU      = &s_tGpioComp1,
-    .ptCompV      = &s_tGpioComp2,
-    .ptCompW      = &s_tGpioComp4,
-    .ptAdcBusV    = &s_tAdcBusV,
-    .ptAdcTemp    = &s_tAdcTemp,
-    .ptAdcPot     = &s_tAdcPot,
-    .ptMotorU     = &s_tPwmU,
-    .ptMotorV     = &s_tPwmV,
-    .ptMotorW     = &s_tPwmW,
-    .ptSerial       = &s_tStreamSerial,
+    .ptLedStatus = &s_tGpioLed,
+    .ptCompU     = &s_tGpioComp1,
+    .ptCompV     = &s_tGpioComp2,
+    .ptCompW     = &s_tGpioComp4,
+    .ptAdcBusV   = &s_tAdcBusV,
+    .ptAdcTemp   = &s_tAdcTemp,
+    .ptAdcPot    = &s_tAdcPot,
+    .ptMotorU    = &s_tPwmU,
+    .ptMotorV    = &s_tPwmV,
+    .ptMotorW    = &s_tPwmW,
+    .ptSerial    = &s_tStreamSerial,
+    .ptI2c1      = &s_tI2c1As5600,
 };

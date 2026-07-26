@@ -36,6 +36,7 @@ Use `.\tools\aitrace.exe` as the single AI-facing debugging entry point.
 src/                  Application entry
 class/                Business objects
 peripheral/<chip>/    MDI hardware adaptation
+peripheral/driver/    Chip-agnostic device drivers (e.g. AS5600 encoder)
 foc/                  STM32G4 motor control
 target/<chip>/        Target build and OpenOCD configuration
 vendor/               Vendor libraries and submodules
