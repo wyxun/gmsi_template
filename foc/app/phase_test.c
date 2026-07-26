@@ -92,67 +92,72 @@ void phase_testC(foc_app_t *ptApp)
  * ------------------------------------------------------------------------- */
 #if MWAVEFORM_ENABLE
 #include "mdebug/mwaveform.h"
+#include "mshell.h"
+#include <stdio.h>
 
-static uint8_t s_chDutyU, s_chDutyV, s_chDutyW;
-static uint8_t s_chIu, s_chIv, s_chIw;
-static uint8_t s_chIqRef, s_chIq;
+/* Throughput stress test: up to WVTEST_MAX extra sawtooth channels pushed
+ * at the 1 kHz Step rate to find the loss-free transport ceiling.
+ * Channel count is set at runtime via shell `wvtest <k>` (0 = off). */
+#define WVTEST_MAX   (MWAVEFORM_MAX_CHANNELS - 2)
+
+static uint8_t s_chAngle;
+static uint8_t s_chSin50;
+static uint8_t s_achTest[WVTEST_MAX];
+static volatile uint8_t s_chTestCount = 0;
 
 void phase_test_waveform_init(void)
 {
     mwaveform.Init(NULL);
-    /* s_chDutyU = mwaveform.AddChannel("DutyU", 1000.0f); */
-    /* s_chDutyV = mwaveform.AddChannel("DutyV", 1000.0f); */
-    /* s_chDutyW = mwaveform.AddChannel("DutyW", 1000.0f); */
-    /* s_chIu    = mwaveform.AddChannel("Iu", 1000.0f);    */
-    /* s_chIv    = mwaveform.AddChannel("Iv", 1000.0f);    */
-    /* s_chIw    = mwaveform.AddChannel("Iw", 1000.0f);    */
-    s_chIqRef = mwaveform.AddChannel("IqRef", 1000.0f);
-    s_chIq    = mwaveform.AddChannel("Iq", 1000.0f);
+    s_chAngle = mwaveform.AddChannel("Angle", 1000.0f);
+    s_chSin50 = mwaveform.AddChannel("Sin50Hz", 1000.0f);
+    for (uint8_t i = 0; i < WVTEST_MAX; i++) {
+        char achName[8];
+        snprintf(achName, sizeof(achName), "T%u", (unsigned)i);
+        s_achTest[i] = mwaveform.AddChannel(achName, 1.0f);
+    }
     mwaveform.Start();
-    MLOG(I, "[Waveform] FOC App Dynamic Monitoring started (IqRef + Iq)\r\n");
+    MLOG(I, "[Waveform] FOC App Dynamic Monitoring started (Angle + Sin50Hz)\r\n");
 }
 
 void phase_test_waveform_step(void)
 {
-    extern foc_app_t tFocApp;
-    motor_snapshot_t tSnapshot;
+    static foc_angle_t s_tAngle = { 0 };
 
-#if 1
-    if (tFocApp.ptMotor == NULL ||
-        motor_GetSnapshot(tFocApp.ptMotor, &tSnapshot) != FOC_RESULT_OK) {
-        return;
+    /* Stress-test channels: sawtooth, independent of motor state. */
+    if (s_chTestCount != 0) {
+        static int16_t s_hwRamp = 0;
+        s_hwRamp += 8;
+        for (uint8_t i = 0; i < s_chTestCount; i++) {
+            mwaveform.PushRaw(s_achTest[i], s_hwRamp);
+        }
     }
 
-    /* Push SVPWM Duties from the coherent motor snapshot */
-    /* mwaveform.Push(s_chDutyU, _D(tSnapshot.tDuty.qU)); */
-    /* mwaveform.Push(s_chDutyV, _D(tSnapshot.tDuty.qV)); */
-    /* mwaveform.Push(s_chDutyW, _D(tSnapshot.tDuty.qW)); */
+    /* 1 kHz step rate, 50 Hz signal -> 0.05 turns per step */
+    s_tAngle = foc_angle_add_scalar(s_tAngle, 0.05f);
 
-    /* Push reconstructed phase currents */
-    /* mwaveform.Push(s_chIu, _D(tSnapshot.tPhaseCurrent.qIu)); */
-    /* mwaveform.Push(s_chIv, _D(tSnapshot.tPhaseCurrent.qIv)); */
-    /* mwaveform.Push(s_chIw, _D(tSnapshot.tPhaseCurrent.qIw)); */
-
-    /* Push Iq Reference and Real Iq Feedback */
-    mwaveform.Push(s_chIqRef, _D(tSnapshot.tCurrentReference.qQ));
-    mwaveform.Push(s_chIq, _D(tSnapshot.tCurrent.qQ));
-#else
-    /* TEMP DEBUG: fixed test pattern to verify the waveform data path.
-     * DutyU/V/W = 0.1/0.2/0.3 (constant), Iu = ramping counter. */
-    static float s_fRamp = -1.0f;
-    s_fRamp += 0.001f;
-    if (s_fRamp > 1.0f) {
-        s_fRamp = -1.0f;
-    }
-    mwaveform.Push(s_chDutyU, 0.1f);
-    mwaveform.Push(s_chDutyV, 0.2f);
-    mwaveform.Push(s_chDutyW, 0.3f);
-    mwaveform.Push(s_chIu, s_fRamp);
-    mwaveform.Push(s_chIv, -s_fRamp);
-    mwaveform.Push(s_chIw, 0.5f);
-#endif
+    /* Push 50Hz Angle (0.0 ~ 1.0 pu normalized from BAM32) and corresponding 50Hz Sin wave */
+    mwaveform.Push(s_chAngle, foc_angle_to_turns(s_tAngle));
+    mwaveform.Push(s_chSin50, _D(foc_angle_sin(s_tAngle)));
     /* mwaveform.Step() is called automatically via modus_Clock() */
 }
+
+/* wvtest <k> — push k sawtooth test channels (0..WVTEST_MAX) at 1 kHz. */
+static void cmd_wvtest(const char *args)
+{
+    uint32_t wK = 0;
+    const char *p = args;
+    while (*p >= '0' && *p <= '9') {
+        wK = wK * 10u + (uint32_t)(*p++ - '0');
+    }
+    if (wK > WVTEST_MAX) {
+        wK = WVTEST_MAX;
+    }
+    s_chTestCount = (uint8_t)wK;
+    MLOGF(I, "wvtest: %lu test ch, frame %lu B @1kHz\r\n",
+          (unsigned long)wK, (unsigned long)(10 + 2 * wK));
+}
+
+MODUS_SHELL_CMD(wvtest, cmd_wvtest, "Waveform throughput stress test <0-14>");
 
 #else /* MWAVEFORM_ENABLE == 0 */
 

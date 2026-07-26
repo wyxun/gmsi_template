@@ -301,7 +301,7 @@ clean:
 ifeq ($(OS),Windows_NT)
     OPENOCD_BIN     ?= $(SW_ROOT)/msys64/mingw64/bin/openocd.exe
     OPENOCD_SCRIPTS ?= $(SW_ROOT)/msys64/mingw64/share/openocd/scripts
-    OPENOCD_CMD ?= $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "adapter speed 1000" -c "tcl_port 0"
+    OPENOCD_CMD ?= $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "adapter speed 8000" -c "tcl_port 0"
 else
     OPENOCD_BIN = openocd
     OPENOCD_CMD = $(OPENOCD_BIN) -f target/$(TARGET_CHIP)/openocd.cfg
@@ -333,7 +333,10 @@ else
     RTT_ADDR = $(shell $(NM) $(BUILD_DIR)/$(TARGET).elf 2>/dev/null | awk '/_SEGGER_RTT$$/ {print "0x"$$1}')
 endif
 
-RTT_CMD ?= -c "init" -c "rtt setup $(RTT_ADDR) 0xa8 \"SEGGER RTT\"" -c "rtt start" -c "rtt server start 9090 0" -c "rtt server start 9091 1"
+# 10 ms polling: OpenOCD reads at most 1024 B per poll, so the default 100 ms
+# caps RTT throughput at ~10 KB/s. 10 ms raises the ceiling to ~100 KB/s,
+# required for loss-free 1 kHz multi-channel mwaveform streaming.
+RTT_CMD ?= -c "init" -c "rtt setup $(RTT_ADDR) 0xa8 \"SEGGER RTT\"" -c "rtt start" -c "rtt polling_interval 10" -c "rtt server start 9090 0" -c "rtt server start 9091 1"
 
 rtt-addr: $(BUILD_DIR)/$(TARGET).elf
 	@echo "RTT CB address: $(RTT_ADDR)"
