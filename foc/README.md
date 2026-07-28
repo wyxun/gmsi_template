@@ -368,13 +368,48 @@ typedef struct {
 } motor_run_config_t;
 ```
 
-| 初始源 | 目标源 | 语义 |
-|---|---|---|
-| NULL | NULL | 持续使用内部开环角度发生器 |
-| 非空 | NULL | 直接使用传感器/观测器闭环 |
-| NULL | 非空 | 开环拖动，资格判定后平滑切入目标源 |
-| 同一指针 | 同一指针 | 直接闭环，不执行切换 |
-| 两个不同非空源 | — | 第一版拒绝 |
+#### 1. 位置源接口契约（输入与输出）
+
+位置源由底层通过 `foc_position_source_if_t` 接口实现：
+- **输入 (`foc_position_input_t`)**：20 kHz 中断传入相电流 $(I_\alpha, I_\beta)$、相电压 $(V_\alpha, V_\beta)$、控制周期 $T_s$ 与采样时间戳。
+- **输出 (`foc_position_output_t`)**：写回计算出的电角度 $\theta_e$、电角速度 $\omega_e$、机械角度/速度（物理编码器专用）、置信度与有效性标志。
+
+#### 2. 初始源与目标源组合规则表
+
+| `ptInitialPositionSource` (初始源) | `ptTargetPositionSource` (目标源) | 工作机制 | 典型应用场景 |
+| :--- | :--- | :--- | :--- |
+| **`NULL`** | **`NULL`** | **纯开环发生器**<br>始终使用内核内置的开环发生器，按速度/加速度积分算角度。 | 静态锁角、硬件初试、开环 V/f 强拖、开环角度+电流闭环测试（如 `motor_verify current`）。 |
+| **`编码器 / Hall / HFI`** | **`NULL`** 或与初始源相同 | **直接闭环**<br>启动即直接使用该源闭环，不执行源切换流程。 | 有物理编码器/Hall 方案，或零速即可提取角度的 HFI（高频注入）。 |
+| **`NULL`** | **`SMO 滑模 / NLFO`** | **开环强拖 $\rightarrow$ 中高速观测器平滑切入**<br>启动时用开环强拖加速，当滑模置信度与转速达标后自动平滑切入。 | **最经典的无感 FOC 方案（SMO / NLFO）**。 |
+| **`HFI 高频注入`** | **`SMO 滑模 / NLFO`** | **低速 HFI $\rightarrow$ 中高速 SMO 切换**<br>静止/低速用 HFI 提取角度，达到基速后平滑切入 CPU 耗时更低、高转速更稳的 SMO。 | **高级双源无感 FOC 方案**。 |
+
+#### 3. 平滑切换机制 (Qualification & Blend)
+
+当设置了不同的目标源时，框架在 20 kHz 高频内核中会自动执行两阶段接管：
+1. **资格判定 (`QUALIFY_SOURCE`)**：目标源置信度 $\ge 80\%$、转速达到切入门限、且角度误差在安全范围内时，连续满足 $N$ 拍（`hwTransitionQualificationSamples`）才允许切入。
+2. **角度平滑混合 (`BLEND_ANGLE`)**：在 $M$ 拍内（`hwTransitionBlendSamples`），调用 `foc_position_Blend()` 按比例平滑过渡电角度 $\theta_e$，消除机械与电流冲击。
+
+#### 4. 常用代码配置示例
+
+```c
+/* 范例 A：经典无感 FOC（开环强拖 -> SMO 滑模接管） */
+static motor_run_config_t tRunConfigSmo = {
+    .eControlMode = MOTOR_CONTROL_SPEED,
+    .ptInitialPositionSource = NULL,             /* 初始开环强拖 */
+    .ptTargetPositionSource  = &g_tSmoSource,    /* 目标源：SMO 滑模观测器 */
+    .qOpenLoopSpeed = FOC_SCALAR(1.0f),          /* 强拖加速到 1 Hz 满足观测量 */
+    .qAcceleration  = FOC_SCALAR(5.0f),
+    .qSpeedReference = FOC_SCALAR(10.0f),        /* 目标闭环转速 10 Hz */
+};
+
+/* 范例 B：物理编码器直接闭环（无需切换） */
+static motor_run_config_t tRunConfigEncoder = {
+    .eControlMode = MOTOR_CONTROL_SPEED,
+    .ptInitialPositionSource = &g_tEncoderSource, /* 直接使用编码器 */
+    .ptTargetPositionSource  = &g_tEncoderSource,
+    .qSpeedReference = FOC_SCALAR(5.0f),
+};
+```
 
 ### 6.7 故障与返回值
 
