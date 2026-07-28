@@ -12,7 +12,8 @@ CFLAGS += -I../../foc/experimental \
           -DFOC_ENABLE_EXPERIMENTAL_NSD=$(FOC_EXPERIMENTAL_NSD) \
           -DFOC_ENABLE_EXPERIMENTAL_IDENTIFY=$(FOC_EXPERIMENTAL_IDENTIFY)
 STRICT_ALIAS_CFLAGS ?=
-CFLAGS += $(STRICT_ALIAS_CFLAGS)
+EXTRA_CFLAGS ?=
+CFLAGS += $(STRICT_ALIAS_CFLAGS) $(EXTRA_CFLAGS)
 TEST_SRCS = test_foc.c test_numeric.c test_transform.c \
             test_modulation.c test_control.c test_motor.c \
             test_motor_encapsulation.c test_motor_fsm.c test_observer.c \
@@ -31,7 +32,7 @@ FOC_SRCS = ../../foc/math/foc_numeric.c ../../foc/math/foc_angle.c \
            ../../foc/control/foc_sta.c ../../foc/control/foc_dob.c \
            ../../foc/hal/foc_hal.c \
            ../../foc/motor/motor.c ../../foc/motor/motor_fsm.c \
-           ../../foc/motor/motor_control.c \
+           ../../foc/motor/motor_control.c ../../foc/motor/motor_hf.c \
            ../../foc/motor/motor_position.c \
            ../../foc/observer/foc_hall.c ../../foc/observer/foc_smo.c \
            ../../foc/observer/foc_nlfo.c \

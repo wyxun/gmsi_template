@@ -79,8 +79,6 @@ typedef struct {
 } motor_params_t;
 
 typedef struct {
-    foc_angle_t         tThetaE;            /**< 当前电角度（BAM32） */
-    q_type              qOmegaE;            /**< 当前电角速度（pu） */
     q_type              qVbus;              /**< 当前母线电压（pu） */
     uint32_t            wFaults;            /**< 故障标志位，按 motor_fault_e 组合 */
     motor_state_e       eRunState;          /**< 当前运行状态 */
@@ -132,9 +130,9 @@ typedef struct {
 
 /* Per-instance RAM and public ABI capacity. motor_private.h enforces the limit. */
 #if FOC_HF_PROFILE
-#define MOTOR_HANDLE_STORAGE_SIZE 832U
+#define MOTOR_HANDLE_STORAGE_SIZE 960U
 #else
-#define MOTOR_HANDLE_STORAGE_SIZE 768U
+#define MOTOR_HANDLE_STORAGE_SIZE 896U
 #endif
 
 typedef union motor_handle_u {

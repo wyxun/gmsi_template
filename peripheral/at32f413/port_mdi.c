@@ -110,6 +110,16 @@ static int32_t pwm_setduty(void *pPriv, uint32_t wDuty)
     return 0;
 }
 
+int32_t port_mdi_MotorPwmSetDuty3(uint32_t wDutyU,
+                                  uint32_t wDutyV,
+                                  uint32_t wDutyW)
+{
+    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_1, wDutyU);
+    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_2, wDutyV);
+    tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_3, wDutyW);
+    return 0;
+}
+
 static int32_t pwm_enable(void *pPriv, bool bEn)
 {
     (void)pPriv;

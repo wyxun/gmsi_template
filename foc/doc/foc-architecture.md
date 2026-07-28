@@ -198,23 +198,22 @@ IDLE → CALIBRATE → WAIT_DELAY → ENABLE
 
 控制周期必须与配置中的 `qHighFrequencyPeriod` / `qLowFrequencyPeriod` 一致。周期失配会导致转速和控制周期错误。
 
-### 7.2 高频步骤数据流
+### 7.2 高频步骤数据流（V4 Fast Path）
 
 ```text
-接管引用值（临界区原子拷贝）
-→ 电流采样与重构（fnReconstruct）
-→ 更新当前活动源 + 候选目标源
-→ 角度融合或直接选择
-→ Clarke 变换（abc → αβ）
-→ Park 变换（αβ → dq，使用 cached sin/cos）
-→ Id/Iq 电流控制器
-→ 反 Park 变换（dq → αβ，使用 cached sin/cos）
-→ 调制（αβ → 三相占空比）
-→ fnSetDuty 写入 PWM
-→ 更新诊断快照
+读取命令邮箱（tHfCommand 局部只读）
+→ 采样相电流 (plan.tIo.fnSampleCurrent)
+→ Clarke 变换 (foc_clarke)
+→ 位置源步进 (plan.fnSourceStep)
+→ cached sin/cos + Park 变换 (foc_park_cached)
+→ D/Q 电流环 PI 步进 (plan.tId.fnStep / plan.tIq.fnStep)
+→ 逆 Park 变换 (foc_ipark_cached)
+→ 已解析调制 (plan.fnModulate)
+→ 提交三相占空比 (plan.tIo.fnCommitDuty)
+→ 状态发布与延迟事件缓存 (aPendingEvents)
 ```
 
-高频函数禁止阻塞、延时、文本日志和动态内存操作。只允许运行在 STARTING / RUNNING 状态。任一阶段失败立即急停。使用非重入标志（`bHighFrequencyStepInProgress` / `bLowFrequencyStepInProgress`）防止并发重入。
+V4 Fast Path 在 `motor_Init()` 与 `motor_Start()` 绑定阶段预先校验并解析所有回调，存储在 `motor_hf_plan_t` 中。高频 ISR 直接调度缓存的回调，去除了二次服务层转发与重复校验。任何采样、计算或提交错误均走统一故障出口 `motor_hf_fault()` 触发急停。低开销的可观察事件存入 4 槽 `aPendingEvents` 数组，由低频调度 `motor_LowFrequencyStep()` 统一入事件环。
 
 ### 7.3 引用值原子性
 

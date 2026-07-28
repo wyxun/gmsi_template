@@ -28,6 +28,7 @@
 #define MOTOR_PRIVATE_H
 
 #include "motor_types.h"
+#include "motor_hf_private.h"
 #include "foc_open_loop_source.h"
 
 #define MOTOR_IMPL_MAGIC 0x4D4F544FU
@@ -78,7 +79,8 @@ typedef struct {
 typedef struct MOTOR_PRIVATE_MAY_ALIAS {
     /* ===== 8-byte aligned: pointer-bearing blocks first ===== */
     foc_hal_t               tHal;              /**< HAL 接口副本（PWM + ADC 函数表 + 上下文） */
-    motor_control_t         tControl;          /**< 控制环运行时状态（控制模式、dq 电流/电压、参考值、占空比） */
+    motor_control_runtime_config_t tControlConfig; /**< 控制器绑定与调制配置（ISR 只读） */
+    motor_hf_plan_t         tHfPlan;           /**< 高频执行计划（Init 填 tIo，启动期解析其余） */
     /* Internal default PID instances if custom controllers are not provided. */
     foc_pid_t               tIdPid;            /**< 默认 D 轴 PID（电流环） */
     foc_pid_t               tIqPid;            /**< 默认 Q 轴 PID（电流环） */
@@ -89,8 +91,9 @@ typedef struct MOTOR_PRIVATE_MAY_ALIAS {
     motor_time_if_t         tTime;             /**< 时间接口（获取毫秒时间戳） */
     motor_sync_if_t         tSync;             /**< 同步接口（中断保护 enter/exit） */
     /* 4-byte block. */
-    motor_state_t           tRt;               /**< 运行时状态（电角度、电速度、母线电压、故障、运行态） */
-    phase_current_handle_t  tCurrent;          /**< 电流采样句柄（Clarke 变换的输入） */
+    motor_hf_command_t      tHfCommand;        /**< 高频命令邮箱（控制模式 + 各环参考值） */
+    motor_hf_state_t        tHfState;          /**< 高频运行时量（电流/电压/duty/角度/速度/位置输出） */
+    motor_state_t           tRt;               /**< 运行时状态（母线电压、故障、运行态） */
     foc_position_config_t   tPositionConfig;   /**< 位置配置（极对数、零位偏移、方向） */
     foc_angle_t             tMechanicalAngle;  /**< 当前机械角度（电角度 / 极对数） */
     foc_scalar_t            qMechanicalSpeed;  /**< 当前机械速度（电速度 / 极对数） */
@@ -234,4 +237,17 @@ foc_result_t motor_private_SampleCurrent(motor_handle_t *);
 void motor_private_AppendEvent(motor_impl_t *, motor_event_type_e,
                                motor_state_e, motor_state_e,
                                uint8_t, uint16_t);
+
+static inline void motor_private_DrainPendingEvents(motor_impl_t *ptImpl)
+{
+    uint8_t count = ptImpl->tHfState.chPendingCount;
+    for (uint8_t i = 0U; i < count; i++) {
+        motor_hf_pending_event_t *ev = &ptImpl->tHfState.aPendingEvents[i];
+        motor_private_AppendEvent(ptImpl, (motor_event_type_e)ev->chType,
+                                  ptImpl->tRt.eRunState, ptImpl->tRt.eRunState,
+                                  (motor_position_role_e)ev->chRole,
+                                  ev->hwPayload);
+    }
+    ptImpl->tHfState.chPendingCount = 0U;
+}
 #endif /* MOTOR_PRIVATE_H */

@@ -53,6 +53,7 @@ static motor_config_t fake_config(fake_encapsulation_hw_t *ptHw)
     tConfig.tHal.tPwm.fnEmergencyStop = fake_stop;
     tConfig.tHal.tAdc.pContext = ptHw;
     tConfig.tHal.tAdc.fnReconstruct = fake_reconstruct;
+    tConfig.tHal.tHfIo = test_hf_io(ptHw);
     return tConfig;
 }
 
@@ -67,6 +68,9 @@ int test_motor_encapsulation(void)
     motor_handle_t tMotorB;
     motor_snapshot_t tSnapshotA;
     motor_snapshot_t tSnapshotB;
+
+    /* 私有实现必须始终装得进公共句柄存储（布局调整后持续执行）。 */
+    TEST_CHECK(motor_TestGetImplementationSize() <= MOTOR_HANDLE_STORAGE_SIZE);
 
     TEST_CHECK(motor_Init(&tMotorA, &tConfigA) == FOC_RESULT_OK);
     TEST_CHECK(motor_Init(&tMotorB, &tConfigB) == FOC_RESULT_OK);

@@ -4,6 +4,44 @@
 #include <math.h>
 #include <stdio.h>
 
+#include "foc_hal.h"
+
+/* 共用的高频 Fast Path 测试桩：motor_Init 要求有效的 tHfIo。 */
+static inline foc_result_t test_hf_sample_ok(void *pContext,
+                                             phase_current_handle_t *ptCurrent)
+{
+    (void)pContext;
+    ptCurrent->qIu = FOC_ZERO;
+    ptCurrent->qIv = FOC_ZERO;
+    ptCurrent->qIw = FOC_ZERO;
+    return FOC_RESULT_OK;
+}
+
+static inline foc_result_t test_hf_commit_ok(void *pContext,
+                                             const foc_duty_abc_t *ptDuty)
+{
+    (void)pContext;
+    (void)ptDuty;
+    return FOC_RESULT_OK;
+}
+
+static inline void test_hf_stop_ok(void *pContext)
+{
+    (void)pContext;
+}
+
+static inline foc_hf_io_if_t test_hf_io(void *pContext)
+{
+    foc_hf_io_if_t tIo = {
+        .wAbiVersion = FOC_HF_IO_ABI_VERSION,
+        .pContext = pContext,
+        .fnSampleCurrent = test_hf_sample_ok,
+        .fnCommitDuty = test_hf_commit_ok,
+        .fnEmergencyStop = test_hf_stop_ok,
+    };
+    return tIo;
+}
+
 #define TEST_CHECK(condition)                                             \
     do {                                                                  \
         if (!(condition)) {                                               \

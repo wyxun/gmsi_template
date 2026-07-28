@@ -76,6 +76,34 @@ static foc_result_t fake_reconstruct(void *pContext,
     return FOC_RESULT_OK;
 }
 
+static foc_result_t fake_hf_sample(void *pContext, phase_current_handle_t *ptCurrent)
+{
+    return fake_reconstruct(pContext, ptCurrent);
+}
+
+static foc_result_t fake_hf_commit(void *pContext, const foc_duty_abc_t *ptDuty)
+{
+    fake_motor_hw_t *ptHw = (fake_motor_hw_t *)pContext;
+    if (ptDuty == NULL) return FOC_RESULT_NULL;
+    return fake_set_duty(ptHw, ptDuty->qU, ptDuty->qV, ptDuty->qW);
+}
+
+static void fake_hf_stop(void *pContext)
+{
+    fake_stop(pContext);
+}
+
+static foc_hf_io_if_t fake_hf_io(fake_motor_hw_t *ptHw)
+{
+    return (foc_hf_io_if_t){
+        .wAbiVersion = FOC_HF_IO_ABI_VERSION,
+        .pContext = ptHw,
+        .fnSampleCurrent = fake_hf_sample,
+        .fnCommitDuty = fake_hf_commit,
+        .fnEmergencyStop = fake_hf_stop,
+    };
+}
+
 static motor_config_t fake_config(fake_motor_hw_t *ptHw)
 {
     motor_config_t tConfig = {0};
@@ -93,7 +121,70 @@ static motor_config_t fake_config(fake_motor_hw_t *ptHw)
     tConfig.tHal.tAdc.pContext = ptHw;
     tConfig.tHal.tAdc.fnOffsetCalib = fake_calibrate;
     tConfig.tHal.tAdc.fnReconstruct = fake_reconstruct;
+    tConfig.tHal.tHfIo = fake_hf_io(ptHw);
     return tConfig;
+}
+
+static foc_result_t hf_sample_ok(void *context,
+                                 phase_current_handle_t *current)
+{
+    uint32_t *calls = context;
+    (*calls)++;
+    current->qIu = FOC_ZERO;
+    current->qIv = FOC_ZERO;
+    current->qIw = FOC_ZERO;
+    return FOC_RESULT_OK;
+}
+
+static foc_result_t hf_commit_ok(void *context,
+                                 const foc_duty_abc_t *duty)
+{
+    uint32_t *calls = context;
+    (void)duty;
+    (*calls)++;
+    return FOC_RESULT_OK;
+}
+
+static void hf_stop_ok(void *context)
+{
+    uint32_t *calls = context;
+    (*calls)++;
+}
+
+static int test_hf_io_validation(void)
+{
+    int nFailures = 0;
+    foc_hal_t hal = {0};
+    uint32_t calls = 0U;
+
+    TEST_CHECK(foc_hal_ValidateHighFrequency(NULL) == FOC_RESULT_NULL);
+    TEST_CHECK(foc_hal_ValidateHighFrequency(&hal) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    hal.tHfIo = (foc_hf_io_if_t){
+        .wAbiVersion = FOC_HF_IO_ABI_VERSION - 1U,
+        .pContext = &calls,
+        .fnSampleCurrent = hf_sample_ok,
+        .fnCommitDuty = hf_commit_ok,
+        .fnEmergencyStop = hf_stop_ok,
+    };
+    TEST_CHECK(foc_hal_ValidateHighFrequency(&hal) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    hal.tHfIo.wAbiVersion = FOC_HF_IO_ABI_VERSION;
+    hal.tHfIo.fnEmergencyStop = NULL;
+    TEST_CHECK(foc_hal_ValidateHighFrequency(&hal) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    hal.tHfIo.fnEmergencyStop = hf_stop_ok;
+    TEST_CHECK(foc_hal_ValidateHighFrequency(&hal) == FOC_RESULT_OK);
+
+    phase_current_handle_t tCurrent = {0};
+    foc_duty_abc_t tDuty = {0};
+    TEST_CHECK(hal.tHfIo.fnSampleCurrent(hal.tHfIo.pContext,
+                                         &tCurrent) == FOC_RESULT_OK);
+    TEST_CHECK(hal.tHfIo.fnCommitDuty(hal.tHfIo.pContext,
+                                      &tDuty) == FOC_RESULT_OK);
+    hal.tHfIo.fnEmergencyStop(hal.tHfIo.pContext);
+    TEST_CHECK(calls == 3U);
+    return nFailures;
 }
 
 int test_motor(void)
@@ -351,5 +442,6 @@ int test_motor(void)
 #endif
     }
 
+    nFailures += test_hf_io_validation();
     return nFailures;
 }

@@ -1,12 +1,16 @@
 #include "test_common.h"
 
 #include "motor.h"
+#include "motor_control.h"
 
 typedef struct {
     unsigned enable_calls;
     unsigned stop_calls;
     unsigned duty_calls;
     unsigned sample_calls;
+    unsigned commit_calls;
+    foc_result_t sample_result;
+    foc_result_t commit_result;
     bool enabled;
     uint32_t now_ms;
     foc_duty_abc_t duty;
@@ -79,12 +83,33 @@ static foc_result_t sample(void *context,
     current->qIv = FOC_SCALAR(-0.1f);
     current->qIw = FOC_ZERO;
     hw->sample_calls++;
-    return FOC_RESULT_OK;
+    return hw->sample_result;
+}
+
+static foc_result_t hf_commit(void *context, const foc_duty_abc_t *duty)
+{
+    runtime_hw_t *hw = context;
+    hw->commit_calls++;
+    if (duty) {
+        set_duty(hw, duty->qU, duty->qV, duty->qW);
+    }
+    return hw->commit_result;
 }
 
 static uint32_t now_ms(void *context)
 {
     return ((runtime_hw_t *)context)->now_ms;
+}
+
+static foc_hf_io_if_t runtime_hf_io(runtime_hw_t *hw)
+{
+    return (foc_hf_io_if_t){
+        .wAbiVersion = FOC_HF_IO_ABI_VERSION,
+        .pContext = hw,
+        .fnSampleCurrent = sample,
+        .fnCommitDuty = hf_commit,
+        .fnEmergencyStop = emergency,
+    };
 }
 
 static foc_scalar_t controller_step(void *context, foc_scalar_t reference,
@@ -184,6 +209,7 @@ static motor_config_t runtime_config(runtime_hw_t *hw,
     config.tHal.tAdc.pContext = hw;
     config.tHal.tAdc.fnOffsetCalib = calibrate;
     config.tHal.tAdc.fnReconstruct = sample;
+    config.tHal.tHfIo = runtime_hf_io(hw);
     config.tTime = (motor_time_if_t){hw, now_ms};
     for (unsigned i = 0; i < 4U; i++) {
         bindings[i]->pContext = &controllers[i];
@@ -720,9 +746,139 @@ static int test_transition_events(void)
         TEST_CHECK(atEvents[3].wCurrentValue == MOTOR_STARTUP_COMPLETE);
         for (unsigned uIndex = 1U; uIndex < 4U; uIndex++) {
             TEST_CHECK(atEvents[uIndex].wSequence ==
-                       atEvents[uIndex - 1U].wSequence + 1U);
+                        atEvents[uIndex - 1U].wSequence + 1U);
         }
     }
+    return nFailures;
+}
+
+static int test_start_rejects_invalid_hf_plan(void)
+{
+    int nFailures = 0;
+    runtime_hw_t hw = {0};
+    runtime_controller_t controllers[4] = {0};
+    motor_config_t config = runtime_config(&hw, controllers);
+    motor_handle_t motor;
+    motor_run_config_t run = {
+        .eControlMode = MOTOR_CONTROL_CURRENT,
+        .qOpenLoopSpeed = FOC_SCALAR(0.1f),
+        .qAcceleration = FOC_SCALAR(0.5f),
+    };
+    motor_snapshot_t snapshot;
+
+    /* 模拟无效的控制器步进回调 */
+    config.tControl.tIdController.fnStep = NULL;
+    TEST_CHECK(motor_Init(&motor, &config) == FOC_RESULT_OK);
+
+    /* 无效的高频执行计划应在 motor_Start 阶段直接被拒绝，且不能触发 PWM 使能 */
+    TEST_CHECK(motor_Start(&motor, &run) == FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(hw.enable_calls == 0U);
+    TEST_CHECK(!hw.enabled);
+
+    TEST_CHECK(motor_GetSnapshot(&motor, &snapshot) == FOC_RESULT_OK);
+    TEST_CHECK(snapshot.eRunState == MOTOR_STATE_IDLE);
+
+    /* 恢复有效配置，重新初始化并启动 */
+    config.tControl.tIdController.fnStep = controller_step;
+    TEST_CHECK(motor_Init(&motor, &config) == FOC_RESULT_OK);
+    runtime_source_t src = valid_source();
+    foc_position_source_if_t src_if = (foc_position_source_if_t){
+        .pContext = &src,
+        .fnStep = source_step,
+    };
+    run.ptInitialPositionSource = &src_if;
+    TEST_CHECK(motor_Start(&motor, &run) == FOC_RESULT_OK);
+
+    return nFailures;
+}
+
+static int test_hf_step_call_counts_and_faults(void)
+{
+    int nFailures = 0;
+    runtime_hw_t hw = {
+        .sample_result = FOC_RESULT_OK,
+        .commit_result = FOC_RESULT_OK,
+    };
+    runtime_controller_t controllers[4] = {0};
+    motor_config_t config = runtime_config(&hw, controllers);
+    motor_handle_t motor;
+    motor_run_config_t run = {
+        .eControlMode = MOTOR_CONTROL_VOLTAGE_OPEN_LOOP,
+        .qOpenLoopSpeed = FOC_SCALAR(0.1f),
+        .qAcceleration = FOC_SCALAR(0.5f),
+    };
+
+    TEST_CHECK(motor_Init(&motor, &config) == FOC_RESULT_OK);
+    TEST_CHECK(start_enabled(&motor, &run, false));
+
+    TEST_CHECK(motor_HighFrequencyStep(&motor) == FOC_RESULT_OK);
+    TEST_CHECK(hw.sample_calls == 1U && hw.commit_calls == 1U);
+
+    hw.sample_result = FOC_RESULT_INVALID_ARGUMENT;
+    TEST_CHECK(motor_HighFrequencyStep(&motor) == FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(hw.commit_calls == 1U && hw.stop_calls == 1U);
+
+    TEST_CHECK(motor_ClearFault(&motor) == FOC_RESULT_OK);
+    TEST_CHECK(start_enabled(&motor, &run, false));
+    hw.sample_result = FOC_RESULT_OK;
+    hw.commit_result = FOC_RESULT_INVALID_ARGUMENT;
+    TEST_CHECK(motor_HighFrequencyStep(&motor) == FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(hw.stop_calls == 2U);
+
+    return nFailures;
+}
+
+static int test_event_latency_and_profile_visibility(void)
+{
+    int nFailures = 0;
+    runtime_hw_t hw = {
+        .sample_result = FOC_RESULT_OK,
+        .commit_result = FOC_RESULT_OK,
+    };
+    runtime_controller_t controllers[4] = {0};
+    motor_config_t config = runtime_config(&hw, controllers);
+    motor_handle_t motor;
+    motor_run_config_t run = {
+        .eControlMode = MOTOR_CONTROL_VOLTAGE_OPEN_LOOP,
+        .qOpenLoopSpeed = FOC_SCALAR(0.1f),
+        .qAcceleration = FOC_SCALAR(0.5f),
+    };
+    runtime_source_t src = valid_source();
+    foc_position_source_if_t src_if = (foc_position_source_if_t){
+        .pContext = &src,
+        .fnStep = source_step,
+    };
+    run.ptInitialPositionSource = &src_if;
+
+    TEST_CHECK(motor_Init(&motor, &config) == FOC_RESULT_OK);
+    TEST_CHECK(start_enabled(&motor, &run, false));
+
+    TEST_CHECK(motor_HighFrequencyStep(&motor) == FOC_RESULT_OK);
+
+    TEST_CHECK(motor_LowFrequencyStep(&motor) == FOC_RESULT_OK);
+
+    motor_event_t event;
+    bool found_validity_event = false;
+    while (motor_DebugReadEvent(&motor, &event)) {
+        if (event.eType == MOTOR_EVENT_SOURCE_VALIDITY_CHANGED) {
+            found_validity_event = true;
+            break;
+        }
+    }
+    TEST_CHECK(found_validity_event);
+
+#if FOC_HF_PROFILE
+    motor_hf_profile_snapshot_t snapshot;
+    TEST_CHECK(motor_GetHighFrequencyProfileSnapshot(&motor, &snapshot) == FOC_RESULT_OK);
+    uint32_t expected_flags = MOTOR_HF_PROFILE_VALID_TOTAL |
+                              MOTOR_HF_PROFILE_VALID_SAMPLE_CURRENT |
+                              MOTOR_HF_PROFILE_VALID_POSITION |
+                              MOTOR_HF_PROFILE_VALID_CLARKE |
+                              MOTOR_HF_PROFILE_VALID_COMMIT |
+                              MOTOR_HF_PROFILE_VALID_ENTRY;
+    TEST_CHECK((snapshot.wValidFlags & expected_flags) == expected_flags);
+#endif
+
     return nFailures;
 }
 
@@ -732,6 +888,9 @@ int test_motor_control_runtime(void)
 
     TEST_CHECK(motor_TestGetImplementationSize() <=
                MOTOR_HANDLE_STORAGE_SIZE);
+    nFailures += test_start_rejects_invalid_hf_plan();
+    nFailures += test_hf_step_call_counts_and_faults();
+    nFailures += test_event_latency_and_profile_visibility();
     nFailures += test_target_mode(MOTOR_CONTROL_SPEED);
     nFailures += test_target_mode(MOTOR_CONTROL_POSITION);
     nFailures += test_ramp_case(0.0f, 0.05f, 0.1f);

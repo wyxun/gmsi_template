@@ -25,4 +25,9 @@ void at32_usart_irq_handler(at32_usart_priv_t *ptPriv);
 /* Instance Wrappers */
 void at32_usart1_init(void);
 
+/* 三相预装载原子组：一次调用写完 TMR1 三个 CCR */
+int32_t port_mdi_MotorPwmSetDuty3(uint32_t wDutyU,
+                                  uint32_t wDutyV,
+                                  uint32_t wDutyW);
+
 #endif /* __PORT_MDI_H__ */

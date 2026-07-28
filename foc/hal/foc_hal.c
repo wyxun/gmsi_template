@@ -20,6 +20,22 @@ foc_result_t foc_hal_Validate(const foc_hal_t *ptHal)
     return FOC_RESULT_OK;
 }
 
+foc_result_t foc_hal_ValidateHighFrequency(const foc_hal_t *ptHal)
+{
+    const foc_hf_io_if_t *ptIo;
+
+    if (ptHal == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    ptIo = &ptHal->tHfIo;
+    if (ptIo->wAbiVersion != FOC_HF_IO_ABI_VERSION ||
+        ptIo->pContext == NULL || ptIo->fnSampleCurrent == NULL ||
+        ptIo->fnCommitDuty == NULL || ptIo->fnEmergencyStop == NULL) {
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    return FOC_RESULT_OK;
+}
+
 foc_result_t foc_hal_SetDuty(const foc_pwm_if_t *ptPwm,
                              q_type qDutyU,
                              q_type qDutyV,

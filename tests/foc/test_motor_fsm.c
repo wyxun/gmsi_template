@@ -101,6 +101,7 @@ static motor_config_t config_for(fake_fsm_hw_t *hw, uint32_t delay)
     cfg.tHal.tAdc.pContext = hw;
     cfg.tHal.tAdc.fnOffsetCalib = fake_calibrate;
     cfg.tHal.tAdc.fnReconstruct = fake_reconstruct;
+    cfg.tHal.tHfIo = test_hf_io(hw);
     cfg.tTime = (motor_time_if_t){hw, fake_now};
     cfg.tSync = (motor_sync_if_t){hw, fake_enter, fake_exit};
     cfg.wStartupDelayMs = delay;

@@ -54,7 +54,6 @@ mcoroutine_handle_t tMcoroutineFocAppHandle = {
 };
 
 static modus_base_t     s_tFocAppBase;
-static motor_handle_t  *s_ptMotorISR;   /* 高频 ISR 绑定的实例 */
 
 static int foc_app_Clock(uintptr_t wObjectAddr);
 static int foc_app_Run  (uintptr_t wObjectAddr);
@@ -247,11 +246,13 @@ void foc_app_Stop(foc_app_t *ptThis)
     }
 }
 
+extern foc_app_t tFocApp;
+
 /* 高频控制入口：仅在 ADC 抢占转换完成中断上下文中调用。 */
 void foc_app_HighFrequencyISR(void)
 {
-    if (s_ptMotorISR != NULL) {
-        (void)motor_HighFrequencyStep(s_ptMotorISR);
+    if (tFocApp.ptMotor != NULL) {
+        (void)motor_HighFrequencyStep(tFocApp.ptMotor);
     }
 }
 
@@ -453,7 +454,6 @@ int foc_app_Init(uintptr_t wObjectAddr, uintptr_t wObjectCfgAddr)
         MLOG(E, "foc_app_Init: motor init or binding failed.\r\n");
         return MODUS_EFAIL;
     }
-    s_ptMotorISR = ptThis->ptMotor;
 
 #if defined(MDI_HW_HAS_I2C_ENCODER)
     {

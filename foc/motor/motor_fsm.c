@@ -1,5 +1,6 @@
 #include "motor.h"
 #include "motor_private.h"
+#include "foc_modulation.h"
 
 static uint16_t command_payload(motor_command_e command,
                                 foc_result_t result)
@@ -21,6 +22,16 @@ static foc_result_t record_command_result(motor_impl_t *impl,
         command_payload(command, result));
     motor_private_exit(impl, state);
     return result;
+}
+
+static motor_hf_modulate_fn_t resolve_modulation(motor_modulation_e mode)
+{
+    switch (mode) {
+        case MOTOR_MODULATION_SVPWM: return foc_svpwm;
+        case MOTOR_MODULATION_SPWM: return foc_spwm;
+        case MOTOR_MODULATION_THIRD_HARMONIC: return foc_third_harmonic_spwm;
+        default: return NULL;
+    }
 }
 
 static bool tracking_controller_is_valid(
@@ -54,11 +65,11 @@ static foc_result_t validate_run(const motor_run_config_t *run)
 
 static void save_run(motor_impl_t *impl, const motor_run_config_t *run)
 {
-    impl->tControl.eMode = run->eControlMode;
-    impl->tControl.tVoltageReference = run->tVoltageReference;
-    impl->tControl.tCurrentReference = run->tCurrentReference;
-    impl->tControl.qSpeedReference = run->qSpeedReference;
-    impl->tControl.qPositionReference = run->qPositionReference;
+    impl->tHfCommand.eMode = run->eControlMode;
+    impl->tHfCommand.tVoltageReference = run->tVoltageReference;
+    impl->tHfCommand.tCurrentReference = run->tCurrentReference;
+    impl->tHfCommand.qSpeedReference = run->qSpeedReference;
+    impl->tHfCommand.qPositionReference = run->qPositionReference;
     impl->bInitialPositionSourceBound =
         run->ptInitialPositionSource != NULL;
     impl->bTargetPositionSourceBound = run->ptTargetPositionSource != NULL;
@@ -76,10 +87,18 @@ static void save_run(motor_impl_t *impl, const motor_run_config_t *run)
     else
         impl->tPositionSource = foc_open_loop_source_GetInterface(&impl->tDefaultOpenLoopSource);
 
+    impl->tHfPlan.fnModulate = resolve_modulation(impl->tControlConfig.eModulation);
+    impl->tHfPlan.tId = impl->tControlConfig.tIdController;
+    impl->tHfPlan.tIq = impl->tControlConfig.tIqController;
+    impl->tHfPlan.pSourceContext = impl->tPositionSource.pContext;
+    impl->tHfPlan.fnSourceStep = impl->tPositionSource.fnStep;
+    impl->tHfPlan.qPeriod = impl->qHighFrequencyPeriod;
+    impl->tHfPlan.tPositionConfig = impl->tPositionConfig;
+
     impl->qOpenLoopCommandSpeed = run->qOpenLoopSpeed;
     impl->wPositionSampleTimestamp = 0U;
     impl->hwTransitionSampleCount = 0U;
-    impl->tRt.tThetaE = foc_angle_from_scalar(run->qInitialAngle);
+    impl->tHfState.tElectricalAngle = foc_angle_from_scalar(run->qInitialAngle);
     impl->tCandidateAngle = (foc_angle_t){0};
     impl->qCandidateSpeed = FOC_ZERO;
     impl->qAngleError = FOC_ZERO;
@@ -100,21 +119,24 @@ foc_result_t motor_Start(motor_handle_t *motor,
     impl = motor_private(motor);
     if (result != FOC_RESULT_OK)
         return record_command_result(impl, MOTOR_COMMAND_START, result);
+    if (resolve_modulation(impl->tControlConfig.eModulation) == NULL)
+        return record_command_result(impl, MOTOR_COMMAND_START,
+                                     FOC_RESULT_INVALID_ARGUMENT);
     if (run->eControlMode >= MOTOR_CONTROL_CURRENT &&
-        (impl->tControl.tConfig.tIdController.pContext == NULL ||
-         impl->tControl.tConfig.tIdController.fnStep == NULL ||
-         impl->tControl.tConfig.tIqController.pContext == NULL ||
-         impl->tControl.tConfig.tIqController.fnStep == NULL))
+        (impl->tControlConfig.tIdController.pContext == NULL ||
+         impl->tControlConfig.tIdController.fnStep == NULL ||
+         impl->tControlConfig.tIqController.pContext == NULL ||
+         impl->tControlConfig.tIqController.fnStep == NULL))
         return record_command_result(impl, MOTOR_COMMAND_START,
                                      FOC_RESULT_INVALID_ARGUMENT);
     if (run->eControlMode >= MOTOR_CONTROL_SPEED &&
         !tracking_controller_is_valid(
-            &impl->tControl.tConfig.tSpeedController))
+            &impl->tControlConfig.tSpeedController))
         return record_command_result(impl, MOTOR_COMMAND_START,
                                      FOC_RESULT_INVALID_ARGUMENT);
     if (run->eControlMode >= MOTOR_CONTROL_POSITION &&
         !tracking_controller_is_valid(
-            &impl->tControl.tConfig.tPositionController))
+            &impl->tControlConfig.tPositionController))
         return record_command_result(impl, MOTOR_COMMAND_START,
                                      FOC_RESULT_INVALID_ARGUMENT);
     if (run->ptInitialPositionSource == NULL &&
@@ -125,13 +147,13 @@ foc_result_t motor_Start(motor_handle_t *motor,
     if (run->ptInitialPositionSource == NULL &&
         run->ptTargetPositionSource != NULL &&
         run->eControlMode >= MOTOR_CONTROL_SPEED &&
-        impl->tControl.tConfig.tSpeedController.fnTrack == NULL)
+        impl->tControlConfig.tSpeedController.fnTrack == NULL)
         return record_command_result(impl, MOTOR_COMMAND_START,
                                      FOC_RESULT_INVALID_ARGUMENT);
     if (run->ptInitialPositionSource == NULL &&
         run->ptTargetPositionSource != NULL &&
         run->eControlMode >= MOTOR_CONTROL_POSITION &&
-        impl->tControl.tConfig.tPositionController.fnTrack == NULL)
+        impl->tControlConfig.tPositionController.fnTrack == NULL)
         return record_command_result(impl, MOTOR_COMMAND_START,
                                      FOC_RESULT_INVALID_ARGUMENT);
     sync_state = motor_private_enter(impl);
@@ -426,6 +448,7 @@ fsm_rt_t motor_RunFSM(motor_handle_t *motor)
     if (!motor_private_is_initialized(motor)) return fsm_rt_err;
     impl = motor_private(motor);
     sync_state = motor_private_enter(impl);
+    motor_private_DrainPendingEvents(impl);
     if (impl->bCommandPending) {
         motor_state_e previous_state = impl->tRt.eRunState;
         cmd = impl->chPendingCommand;

@@ -9,10 +9,12 @@
 #include "foc_hal_types.h"
 #include "foc_hal_pwm.h"
 #include "foc_hal_adc.h"
+#include "foc_hf_io.h"
 
 typedef struct {
-    foc_pwm_if_t tPwm;  /**< PWM 接口 */
-    foc_adc_if_t tAdc;  /**< ADC 接口 */
+    foc_pwm_if_t tPwm;      /**< PWM 接口 */
+    foc_adc_if_t tAdc;      /**< ADC 接口 */
+    foc_hf_io_if_t tHfIo;   /**< 高频 Fast Path 接口 */
 } foc_hal_t;
 
 /**
@@ -21,6 +23,12 @@ typedef struct {
  * @return        FOC_RESULT_OK 或错误码
  */
 foc_result_t foc_hal_Validate(const foc_hal_t *ptHal);
+/**
+ * @brief  验证高频 Fast Path 接口（绑定期校验，附加于 foc_hal_Validate，非替代）
+ * @param  ptHal  HAL 指针
+ * @return        FOC_RESULT_OK 或错误码
+ */
+foc_result_t foc_hal_ValidateHighFrequency(const foc_hal_t *ptHal);
 /**
  * @brief  设置三相占空比
  * @param  ptPwm   PWM 接口指针
