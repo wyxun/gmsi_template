@@ -249,6 +249,7 @@ bool driver_init(void)
     hal.driver_cap.value = 0;
     hal.driver_cap.amass_level = 3;
     hal.driver_cap.step_pulse_delay = 1;
+    hal.driver_cap.atc = 1;
     hal.signals_cap.mask = 0;
     hal.limits_cap.bits  = 0;
     hal.home_cap         = (home_signals_t){0};

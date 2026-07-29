@@ -18,6 +18,7 @@
 #include "mshell.h"
 #include "mlog.h"
 #include "perf_counter.h"
+#include "atc_plugin.h"
 #include <string.h>
 
 // 1. Declare custom user plugins init functions here:
@@ -96,6 +97,9 @@ void my_plugin_init(void)
 {
     // 2. Call custom plugin initializers:
     // custom_safety_init();
+
+    /* Initialize ATC before registering other hooks */
+    atc_init();
 
     /* Chain on_report_options */
     s_fnPrevReportOptions  = grbl.on_report_options;

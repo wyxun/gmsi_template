@@ -140,6 +140,40 @@ void grblhal_stepper_isr(void)
     }
 }
 
+/* ---- FG pulse tracking & Alarm helpers ---- */
+static volatile uint32_t s_wFgPulseCount = 0;
+static volatile uint32_t s_wLastFgPulseTicks = 0;
+
+uint32_t grblhal_spindle_get_fg_count(void)
+{
+    return s_wFgPulseCount;
+}
+
+void grblhal_spindle_reset_fg_count(void)
+{
+    s_wFgPulseCount = 0;
+    s_wLastFgPulseTicks = grblhal_get_ticks();
+}
+
+uint32_t grblhal_spindle_get_fg_idle_time_ms(void)
+{
+    return grblhal_get_ticks() - s_wLastFgPulseTicks;
+}
+
+bool grblhal_spindle_get_alarm(void)
+{
+    return gpio_input_data_bit_read(SPINDLE_ALARM_PORT, SPINDLE_ALARM_PIN) == RESET;
+}
+
+void grblhal_spindle_fg_isr(void)
+{
+    if (exint_flag_get(EXINT_LINE_1) != RESET) {
+        s_wFgPulseCount++;
+        s_wLastFgPulseTicks = grblhal_get_ticks();
+        exint_flag_clear(EXINT_LINE_1);
+    }
+}
+
 static void dc_spindle_set_state(spindle_ptrs_t *spindle,
                                  spindle_state_t state, float rpm)
 {
@@ -147,10 +181,12 @@ static void dc_spindle_set_state(spindle_ptrs_t *spindle,
     s_tSpindleState.on = state.on;
     s_tSpindleState.ccw = state.ccw;
 
-    /* PA6 is now TMR3_CH1 PWM; on/off is encoded in the PWM duty cycle.
-       PA5 (D13) is the direction output. */
+    /* PA5 (DIR): LOW = CW, HIGH = CCW */
     gpio_bits_write(SPINDLE_DIR_PORT, SPINDLE_DIR_PIN,
                     state.on && state.ccw ? TRUE : FALSE);
+    /* PB0 (EN): HIGH = Enabled, LOW = Disabled */
+    gpio_bits_write(SPINDLE_EN_PORT, SPINDLE_EN_PIN,
+                    state.on ? TRUE : FALSE);
     pwm_spindle_update_pwm(spindle, state.on ? spindle->get_pwm(spindle, rpm) : 0);
 }
 
@@ -164,8 +200,50 @@ static bool grblhal_spindle_config(spindle_ptrs_t *spindle)
 {
     (void)spindle;
 
-    /* TMR3 clock = APB1 x 2 = 60 x 2 = 120 MHz (TMR3 is on APB1) */
+    /* Enable GPIO and TMR3 clocks */
+    crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
+    crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
+    crm_periph_clock_enable(CRM_GPIOC_PERIPH_CLOCK, TRUE);
     crm_periph_clock_enable(CRM_TMR3_PERIPH_CLOCK, TRUE);
+    crm_periph_clock_enable(CRM_IOMUX_PERIPH_CLOCK, TRUE);
+
+    gpio_init_type gpio_init_struct;
+    gpio_default_para_init(&gpio_init_struct);
+    gpio_init_struct.gpio_mode = GPIO_MODE_OUTPUT;
+    gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
+    gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+
+    /* PA5 — Spindle Direction Output */
+    gpio_init_struct.gpio_pins = SPINDLE_DIR_PIN;
+    gpio_init(SPINDLE_DIR_PORT, &gpio_init_struct);
+    gpio_bits_reset(SPINDLE_DIR_PORT, SPINDLE_DIR_PIN);
+
+    /* PB0 — Spindle Enable Output */
+    gpio_init_struct.gpio_pins = SPINDLE_EN_PIN;
+    gpio_init(SPINDLE_EN_PORT, &gpio_init_struct);
+    gpio_bits_reset(SPINDLE_EN_PORT, SPINDLE_EN_PIN);
+
+    /* PC5 — Spindle Alarm Input (Pull-up) */
+    gpio_init_struct.gpio_mode = GPIO_MODE_INPUT;
+    gpio_init_struct.gpio_pull = GPIO_PULL_UP;
+    gpio_init_struct.gpio_pins = SPINDLE_ALARM_PIN;
+    gpio_init(SPINDLE_ALARM_PORT, &gpio_init_struct);
+
+    /* PB1 — Spindle FG Pulse Input (EXTI Line 1) */
+    gpio_init_struct.gpio_pins = SPINDLE_FG_PIN;
+    gpio_init(SPINDLE_FG_PORT, &gpio_init_struct);
+
+    gpio_exint_line_config(GPIO_PORT_SOURCE_GPIOB, GPIO_PINS_SOURCE1);
+
+    exint_init_type exint_init_struct;
+    exint_default_para_init(&exint_init_struct);
+    exint_init_struct.line_mode = EXINT_LINE_INTERRUPT;
+    exint_init_struct.line_select = EXINT_LINE_1;
+    exint_init_struct.line_polarity = EXINT_TRIGGER_FALLING_EDGE;
+    exint_init_struct.line_enable = TRUE;
+    exint_init(&exint_init_struct);
+
+    nvic_irq_enable(EXINT1_IRQn, 1, 0);
 
     s_tSpindlePwmSettings = (spindle_pwm_settings_t){
         .rpm_max               = 10000.0f,
@@ -184,8 +262,6 @@ static bool grblhal_spindle_config(spindle_ptrs_t *spindle)
     spindle_precompute_pwm_values(spindle, &s_tSpindlePwm, &s_tSpindlePwmSettings, 120000000UL);
 
     tmr_reset(TMR3);
-    /* period = clock / freq counts per PWM cycle. ARR must be period-1 so that
-       the counter runs 0..period-1 (period counts) and CCR=period yields 100% duty. */
     tmr_base_init(TMR3, s_tSpindlePwm.period - 1, 0);
     tmr_cnt_dir_set(TMR3, TMR_COUNT_UP);
     tmr_clock_source_div_set(TMR3, TMR_CLOCK_DIV1);
@@ -233,8 +309,9 @@ void grblhal_emergency_stop(void)
     gpio_bits_reset(X_STEP_PORT, X_STEP_PIN);
     gpio_bits_reset(Y_STEP_PORT, Y_STEP_PIN);
     gpio_bits_reset(Z_STEP_PORT, Z_STEP_PIN);
-    gpio_bits_reset(SPINDLE_ENABLE_PORT, SPINDLE_ENABLE_PIN);
+    gpio_bits_reset(SPINDLE_EN_PORT, SPINDLE_EN_PIN);
     gpio_bits_reset(SPINDLE_DIR_PORT, SPINDLE_DIR_PIN);
     TMR3->c1dt = 0; /* Drive PWM duty to 0 (PA6 is TMR3_CH1) */
     s_tSpindleState.value = 0;
 }
+

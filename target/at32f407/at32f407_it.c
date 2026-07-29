@@ -70,7 +70,11 @@ void RTC_IRQHandler(void)                   {}
 void FLASH_IRQHandler(void)                 {}
 void CRM_IRQHandler(void)                   {}
 void EXINT0_IRQHandler(void)                {}
-void EXINT1_IRQHandler(void)                {}
+void EXINT1_IRQHandler(void)
+{
+    extern void grblhal_spindle_fg_isr(void);
+    grblhal_spindle_fg_isr();
+}
 void EXINT2_IRQHandler(void)                {}
 void EXINT3_IRQHandler(void)                {}
 void EXINT4_IRQHandler(void)                {}

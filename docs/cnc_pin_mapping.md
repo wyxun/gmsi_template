@@ -21,6 +21,8 @@ This document details the mapping between the standard Arduino CNC Shield pin no
 | **D12** | SpinEnable (Spindle) | **PA6** | TMR3_CH1 / GPIO | Digital | Output / PWM |
 | **D13** | SpinDir (Spindle Dir) | **PA5** | GPIO | Digital | Output |
 | **A5** | Probe | **PC5** | GPIO | Digital | Input (Pull-up) |
+| **PB0** | ATC Drawbar Solenoid | **PB0** | GPIO | Digital | Output |
+| **PB1** | ATC Air Blast Solenoid | **PB1** | GPIO | Digital | Output |
 | **GND** | Ground | **GND** | Ground Reference | Power | Reference |
 | **AREF** | Analog Reference | **VREF+** | VREF+ Input/Output | Analog | Reference |
 
@@ -42,4 +44,8 @@ This document details the mapping between the standard Arduino CNC Shield pin no
 
 ### 4. Probe Input (A5)
 * **Probe Pin (PC5)**: Must be configured as a digital input with an internal pull-up. The probe is active-low (triggered when connected to ground).
+
+### 5. ATC Control (PB0 ~ PB1)
+* **ATC Drawbar (PB0)**: Push-pull output. HIGH = release tool, LOW = clamp. Default state: LOW (clamped for fail-safe). Controlled by `atc_draw` shell command or automatically during M6.
+* **ATC Air Blast (PB1)**: Push-pull output. HIGH = blast air, LOW = off. Optional — enabled via `$907` bit0. Controlled by `atc_blast` shell command or automatically during M6.
 

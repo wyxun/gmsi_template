@@ -29,6 +29,7 @@ extern "C" {
 #define USB_MODULE_ENABLED
 #define ACC_MODULE_ENABLED
 #define TMR_MODULE_ENABLED
+#define EXINT_MODULE_ENABLED
 
 /* ---- Includes ------------------------------------------------------------ */
 #ifdef CRM_MODULE_ENABLED
@@ -60,6 +61,9 @@ extern "C" {
 #endif
 #ifdef TMR_MODULE_ENABLED
     #include "at32f403a_407_tmr.h"
+#endif
+#ifdef EXINT_MODULE_ENABLED
+    #include "at32f403a_407_exint.h"
 #endif
 
 #ifdef __cplusplus

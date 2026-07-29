@@ -52,17 +52,27 @@
 #define PROBE_PORT              GPIOC
 #define PROBE_PIN               GPIO_PINS_5
 
-#define SPINDLE_ENABLE_PORT     GPIOA
-#define SPINDLE_ENABLE_PIN      GPIO_PINS_6
+#define SPINDLE_PWM_PORT        GPIOA
+#define SPINDLE_PWM_PIN         GPIO_PINS_6
 #define SPINDLE_DIR_PORT        GPIOA
 #define SPINDLE_DIR_PIN         GPIO_PINS_5
-/* Note: PA6 (D12) is TMR3_CH1 PWM output; PA5 (D13) is direction GPIO.
-   The SPINDLE_ENABLE_PORT/PIN macros are retained for legacy references but
-   PA6 is now driven by the timer, not by GPIO. */
+#define SPINDLE_EN_PORT         GPIOB
+#define SPINDLE_EN_PIN          GPIO_PINS_0
+#define SPINDLE_FG_PORT         GPIOB
+#define SPINDLE_FG_PIN          GPIO_PINS_1
+#define SPINDLE_ALARM_PORT      GPIOC
+#define SPINDLE_ALARM_PIN       GPIO_PINS_5
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Spindle BLDC & FG helpers */
+uint32_t grblhal_spindle_get_fg_count(void);
+void     grblhal_spindle_reset_fg_count(void);
+uint32_t grblhal_spindle_get_fg_idle_time_ms(void);
+bool     grblhal_spindle_get_alarm(void);
+
 
 /* Stream I/O init (real — RTT) */
 void grblhal_stream_init(void);
@@ -99,5 +109,11 @@ void  grblhal_emergency_stop(void);
 #ifdef __cplusplus
 }
 #endif
+
+/* ATC I/O */
+#define ATC_DRAW_BAR_PORT       GPIOB
+#define ATC_DRAW_BAR_PIN        GPIO_PINS_0
+#define ATC_AIR_BLAST_PORT      GPIOB
+#define ATC_AIR_BLAST_PIN       GPIO_PINS_1
 
 #endif /* __GRBLHAL_DRIVER_H__ */

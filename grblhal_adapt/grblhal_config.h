@@ -89,6 +89,13 @@
 #define SETTINGS_RESTORE_BUILD_INFO     1
 #define SETTINGS_RESTORE_DRIVER_PARAMETERS 1
 
+/* ---- ATC (Automatic Tool Changer) ---- */
+#define ATC_ENABLE              1
+#define N_TOOLS                 8
+#define ATC_DEFAULT_POCKETS     8
+#define ATC_DEFAULT_POCKET_PITCH      50.0f
+#define ATC_DEFAULT_DRAW_DELAY_MS     500
+
 #ifdef __SETTINGS_C__
 #include <stdint.h>
 #include "errors.h"
