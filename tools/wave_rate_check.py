@@ -20,12 +20,24 @@ import time
 
 SYNC_H, SYNC_L = 0xAA, 0x55
 FRAME_TYPE_DESC = 0xFD
+FRAME_TYPE_META = 0xFE
+FRAME_TYPE_BATCH = 0xFC
+FRAME_TYPE_SNAPSHOT = 0xFA
 
 
 def crc8(data):
     c = 0xFF
     for b in data:
         c ^= b
+    return c
+
+
+def crc16(data):
+    c = 0xFFFF
+    for b in data:
+        c ^= b << 8
+        for _ in range(8):
+            c = ((c << 1) ^ 0x1021) & 0xFFFF if c & 0x8000 else (c << 1) & 0xFFFF
     return c
 
 
@@ -75,6 +87,44 @@ def run(host, port):
                     n_crc += 1
                     i += 1
                 continue
+            if third == FRAME_TYPE_META:
+                if i + 13 > len(buf):
+                    break
+                if crc8(buf[i + 2:i + 12]) == buf[i + 12]:
+                    i += 13
+                else:
+                    n_crc += 1
+                    i += 1
+                continue
+            if third in (FRAME_TYPE_BATCH, FRAME_TYPE_SNAPSHOT):
+                min_header = 19 if third == FRAME_TYPE_SNAPSHOT else 15
+                if i + min_header > len(buf):
+                    break
+                ch_count = buf[i + 4]
+                sample_count = int.from_bytes(buf[i + 9:i + 11], "little")
+                local_mask = max(1, (ch_count + 7) // 8)
+                off = i + min_header
+                incomplete = False
+                for _ in range(sample_count):
+                    if off + local_mask > len(buf):
+                        incomplete = True
+                        break
+                    mask = buf[off:off + local_mask]
+                    active = sum(bin(b).count("1") for b in mask)
+                    off += local_mask + 2 * active
+                if incomplete:
+                    break
+                flen = off - i + 2
+                if i + flen > len(buf):
+                    break
+                if crc16(bytes(buf[i + 2:off])) == int.from_bytes(
+                        buf[off:off + 2], "little"):
+                    n_ok += 1
+                    i += flen
+                else:
+                    n_crc += 1
+                    i += flen
+                continue
             # data frame: len = 3 + mask + 2*popcount(mask) + 1
             if i + 3 + mask_bytes > len(buf):
                 break
@@ -110,6 +160,9 @@ def run(host, port):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        print("usage: wave_rate_check.py [host] [port]")
+        sys.exit(0)
     host = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 9091
     run(host, port)

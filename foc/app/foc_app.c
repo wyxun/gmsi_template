@@ -253,6 +253,9 @@ void foc_app_HighFrequencyISR(void)
 {
     if (tFocApp.ptMotor != NULL) {
         (void)motor_HighFrequencyStep(tFocApp.ptMotor);
+#if MWAVEFORM_ENABLE
+        phase_test_waveform_hf_step(tFocApp.ptMotor);
+#endif
     }
 }
 

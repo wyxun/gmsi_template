@@ -62,5 +62,6 @@ extern void phase_testB(motor_handle_t *ptMotor);
 extern void phase_testC(struct foc_app_s *ptApp);
 extern void phase_test_waveform_init(void);
 extern void phase_test_waveform_step(void);
+extern void phase_test_waveform_hf_step(motor_handle_t *ptMotor);
 
 #endif /* __FOC_APP_H__ */

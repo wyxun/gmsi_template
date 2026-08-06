@@ -71,6 +71,7 @@ MODUS_ENABLE ?= 1
 # Module switches — default for debug; overridden by release below
 MSHELL_ENABLE    = 1
 MWAVEFORM_ENABLE = 1
+MWAVEFORM_RTT_BUFFER_SIZE = 4096
 MSTORAGE_ENABLE  = 1
 MBLINFO_ENABLE   = 1
 MODUS_USE_LOG    = 1
@@ -336,10 +337,10 @@ else
     RTT_ADDR = $(shell $(NM) $(BUILD_DIR)/$(TARGET).elf 2>/dev/null | awk '/_SEGGER_RTT$$/ {print "0x"$$1}')
 endif
 
-# 10 ms polling: OpenOCD reads at most 1024 B per poll, so the default 100 ms
-# caps RTT throughput at ~10 KB/s. 10 ms raises the ceiling to ~100 KB/s,
-# required for loss-free 1 kHz multi-channel mwaveform streaming.
-RTT_CMD ?= -c "init" -c "rtt setup $(RTT_ADDR) 0xa8 \"SEGGER RTT\"" -c "rtt start" -c "rtt polling_interval 10" -c "rtt server start 9090 0" -c "rtt server start 9091 1"
+# 1 ms polling is required for the 20 kHz waveform path. The 10 ms default
+# measured ~220 batch frames/s (~7k samples/s), while 1 ms measured ~300
+# 64-sample batch frames/s (~19k samples/s) on STM32G431 + CMSIS-DAP.
+RTT_CMD ?= -c "init" -c "rtt setup $(RTT_ADDR) 0xa8 \"SEGGER RTT\"" -c "rtt start" -c "rtt polling_interval 1" -c "rtt server start 9090 0" -c "rtt server start 9091 1"
 
 rtt-addr: $(BUILD_DIR)/$(TARGET).elf
 	@echo "RTT CB address: $(RTT_ADDR)"

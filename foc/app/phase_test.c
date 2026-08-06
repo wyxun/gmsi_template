@@ -13,6 +13,7 @@
 #include "foc/foc.h"
 #include "foc/math/foc_math_types.h"
 #include "mdebug/util_debug.h"
+#include <string.h>
 
 #if defined(FOC_ENABLE_DIAGNOSTIC) && FOC_ENABLE_DIAGNOSTIC
 #include "diagnostic/motor_diagnostic.h"
@@ -92,76 +93,93 @@ void phase_testC(foc_app_t *ptApp)
  * ------------------------------------------------------------------------- */
 #if MWAVEFORM_ENABLE
 #include "mdebug/mwaveform.h"
-#include "mshell.h"
-#include <stdio.h>
-
-/* Throughput stress test: up to WVTEST_MAX extra sawtooth channels pushed
- * at the 1 kHz Step rate to find the loss-free transport ceiling.
- * Channel count is set at runtime via shell `wvtest <k>` (0 = off). */
-#define WVTEST_MAX   (MWAVEFORM_MAX_CHANNELS - 2)
 
 static uint8_t s_chAngle;
 static uint8_t s_chSin50;
-static uint8_t s_achTest[WVTEST_MAX];
-static volatile uint8_t s_chTestCount = 0;
+static uint8_t s_chId;
+static uint8_t s_chIq;
+static uint8_t s_chMotorAngle;
+static uint8_t s_chSpeed;
+static volatile int16_t s_hwIu;
+static volatile int16_t s_hwIv;
+static volatile int16_t s_hwIw;
 
 void phase_test_waveform_init(void)
 {
     mwaveform.Init(NULL);
     s_chAngle = mwaveform.AddChannel("Angle", 1000.0f);
-    s_chSin50 = mwaveform.AddChannel("Sin50Hz", 1000.0f);
-    for (uint8_t i = 0; i < WVTEST_MAX; i++) {
-        char achName[8];
-        snprintf(achName, sizeof(achName), "T%u", (unsigned)i);
-        s_achTest[i] = mwaveform.AddChannel(achName, 1.0f);
-    }
+    s_chSin50 = mwaveform.AddChannel("TestSin", 1000.0f);
+    s_chId = mwaveform.AddChannel("Id", 1000.0f);
+    s_chIq = mwaveform.AddChannel("Iq", 1000.0f);
+    s_chMotorAngle = mwaveform.AddChannel("M_Angle", 1000.0f);
+    s_chSpeed = mwaveform.AddChannel("Speed", 1000.0f);
+    (void)mwaveform.AddVariable("Iu", 1.0f, (void *)&s_hwIu,
+                                MWAVEFORM_VAR_RAW);
+    (void)mwaveform.AddVariable("Iv", 1.0f, (void *)&s_hwIv,
+                                MWAVEFORM_VAR_RAW);
+    (void)mwaveform.AddVariable("Iw", 1.0f, (void *)&s_hwIw,
+                                MWAVEFORM_VAR_RAW);
+    mwaveform.SetRate(0);
+    (void)mwaveform.SetStreamRate(50000, 10000);
+    (void)mwaveform.SetChannelRate(s_chAngle, 1000);
+    (void)mwaveform.SetChannelRate(s_chSin50, 0);
     mwaveform.Start();
-    MLOG(I, "[Waveform] FOC App Dynamic Monitoring started (Angle + Sin50Hz)\r\n");
+    mwaveform.SetRate(0);
+    MLOG(I, "[Waveform] FOC App high-rate monitoring started\r\n");
 }
 
 void phase_test_waveform_step(void)
 {
     static foc_angle_t s_tAngle = { 0 };
 
-    /* Stress-test channels: sawtooth, independent of motor state. */
-    if (s_chTestCount != 0) {
-        static int16_t s_hwRamp = 0;
-        s_hwRamp += 8;
-        for (uint8_t i = 0; i < s_chTestCount; i++) {
-            mwaveform.PushRaw(s_achTest[i], s_hwRamp);
-        }
-    }
-
     /* 1 kHz step rate, 50 Hz signal -> 0.05 turns per step */
     s_tAngle = foc_angle_add_scalar(s_tAngle, 0.05f);
 
-    /* Push 50Hz Angle (0.0 ~ 1.0 pu normalized from BAM32) and corresponding 50Hz Sin wave */
+    /* Push 1 kHz Angle reference; TestSin is generated in the 20 kHz HF path */
     mwaveform.Push(s_chAngle, foc_angle_to_turns(s_tAngle));
-    mwaveform.Push(s_chSin50, _D(foc_angle_sin(s_tAngle)));
-    /* mwaveform.Step() is called automatically via modus_Clock() */
 }
 
-/* wvtest <k> — push k sawtooth test channels (0..WVTEST_MAX) at 1 kHz. */
-static void cmd_wvtest(const char *args)
+void phase_test_waveform_hf_step(motor_handle_t *ptMotor)
 {
-    uint32_t wK = 0;
-    const char *p = args;
-    while (*p >= '0' && *p <= '9') {
-        wK = wK * 10u + (uint32_t)(*p++ - '0');
-    }
-    if (wK > WVTEST_MAX) {
-        wK = WVTEST_MAX;
-    }
-    s_chTestCount = (uint8_t)wK;
-    MLOGF(I, "wvtest: %lu test ch, frame %lu B @1kHz\r\n",
-          (unsigned long)wK, (unsigned long)(10 + 2 * wK));
-}
+    uint32_t wRawU = 0u;
+    uint32_t wRawV = 0u;
+    uint32_t wRawW = 0u;
+    static foc_angle_t s_tTestAngle = { 0 };
 
-MODUS_SHELL_CMD(wvtest, cmd_wvtest, "Waveform throughput stress test <0-14>");
+    if (ptMotor == NULL) return;
+
+    /* 100 Hz test sine, generated at 20 kHz and sampled by the 10 kHz stream:
+     * 0.005 turns per 50 us = 100 Hz. */
+    s_tTestAngle = foc_angle_add_scalar(s_tTestAngle, 0.005f);
+    mwaveform.Push(s_chSin50, _D(foc_angle_sin(s_tTestAngle)));
+
+    if (motor_GetRawCurrent(ptMotor, &wRawU, &wRawV, &wRawW) ==
+        FOC_RESULT_OK) {
+        s_hwIu = (int16_t)(wRawU & 0xFFFFu);
+        s_hwIv = (int16_t)(wRawV & 0xFFFFu);
+        s_hwIw = (int16_t)(wRawW & 0xFFFFu);
+    }
+
+    if (mwaveform.SnapshotIsArmed()) {
+        motor_snapshot_t tSnapshot;
+        if (motor_GetSnapshot(ptMotor, &tSnapshot) == FOC_RESULT_OK) {
+            mwaveform.Push(s_chId, (float)foc_to_float(tSnapshot.tCurrent.qD));
+            mwaveform.Push(s_chIq, (float)foc_to_float(tSnapshot.tCurrent.qQ));
+            mwaveform.Push(s_chMotorAngle,
+                           (float)foc_angle_to_turns(tSnapshot.tActiveAngle));
+            mwaveform.Push(s_chSpeed,
+                           (float)foc_to_float(tSnapshot.qActiveSpeed));
+        }
+    }
+
+    mwaveform.Step();
+    mwaveform.SnapshotFeed();
+}
 
 #else /* MWAVEFORM_ENABLE == 0 */
 
 void phase_test_waveform_init(void) {}
 void phase_test_waveform_step(void) {}
+void phase_test_waveform_hf_step(motor_handle_t *ptMotor) { (void)ptMotor; }
 
 #endif /* MWAVEFORM_ENABLE */

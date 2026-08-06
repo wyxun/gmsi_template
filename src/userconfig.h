@@ -22,13 +22,24 @@
 #       define MWAVEFORM_ENABLE 0
 #   else
 #       define MWAVEFORM_ENABLE 1
+#   endif
+#endif
 
+#if MWAVEFORM_ENABLE
 /* 1 kHz FOC waveform needs headroom: small buffers wrap in tens of ms and
  * make the OpenOCD RTT read race much more likely (see mwaveform.c wedge
  * recovery). */
+#   ifndef MWAVEFORM_RTT_BUFFER_SIZE
 #       define MWAVEFORM_RTT_BUFFER_SIZE   4096
-#       define MWAVEFORM_FIFO_DEPTH        32
 #   endif
+#   define MWAVEFORM_FIFO_DEPTH        32
+#   define MWAVEFORM_MAX_CHANNELS      9
+#   define MWAVEFORM_BATCH_ENABLE      1
+#   define MWAVEFORM_BATCH_SIZE        64
+#   define MWAVEFORM_BATCH_DEPTH       128
+#   define MWAVEFORM_BATCH_FLUSH_MS    10
+#   define MWAVEFORM_SNAPSHOT_ENABLE   1
+#   define MWAVEFORM_SNAPSHOT_DEPTH    16
 #endif
 
 /*============================ TYPES =========================================*/
