@@ -75,7 +75,6 @@ void TIM1_TRG_COM_TIM17_IRQHandler(void)    {}
 void TIM1_CC_IRQHandler(void)               {}
 
 #include <math.h>
-#include "foc_hf_profile.h"
 
 
 /* ---- ADC1_2 (current sensing end-of-conversion) ---- */

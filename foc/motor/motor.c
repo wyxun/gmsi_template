@@ -424,6 +424,76 @@ foc_result_t motor_GetSnapshot(const motor_handle_t *ptMotor,
     return FOC_RESULT_OK;
 }
 
+foc_result_t motor_GetStatus(const motor_handle_t *ptMotor,
+                             motor_state_e *peState,
+                             uint32_t *pwFaults)
+{
+    const motor_impl_t *ptImpl;
+    uintptr_t wSyncState;
+
+    if (!motor_private_is_initialized(ptMotor)) {
+        return ptMotor == NULL ? FOC_RESULT_NULL :
+                                 FOC_RESULT_INVALID_ARGUMENT;
+    }
+    if (peState == NULL || pwFaults == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    ptImpl = motor_private_const(ptMotor);
+    wSyncState = motor_private_enter(ptImpl);
+    *peState = ptImpl->tRt.eRunState;
+    *pwFaults = ptImpl->tRt.wFaults;
+    motor_private_exit(ptImpl, wSyncState);
+    return FOC_RESULT_OK;
+}
+
+foc_result_t motor_GetTelemetry(const motor_handle_t *ptMotor,
+                                motor_telemetry_t *ptTelemetry)
+{
+    const motor_impl_t *ptImpl;
+    uintptr_t wSyncState;
+
+    if (!motor_private_is_initialized(ptMotor)) {
+        return ptMotor == NULL ? FOC_RESULT_NULL :
+                                 FOC_RESULT_INVALID_ARGUMENT;
+    }
+    if (ptTelemetry == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    ptImpl = motor_private_const(ptMotor);
+    wSyncState = motor_private_enter(ptImpl);
+    ptTelemetry->tCurrent = ptImpl->tHfState.tCurrent;
+    ptTelemetry->tPhaseCurrent =
+        (motor_phase_current_t){
+            ptImpl->tHfState.tPhaseCurrent.qIu,
+            ptImpl->tHfState.tPhaseCurrent.qIv,
+            ptImpl->tHfState.tPhaseCurrent.qIw,
+        };
+    ptTelemetry->tActiveAngle = ptImpl->tHfState.tElectricalAngle;
+    ptTelemetry->qActiveSpeed = ptImpl->tHfState.qElectricalSpeed;
+    motor_private_exit(ptImpl, wSyncState);
+    return FOC_RESULT_OK;
+}
+
+foc_result_t motor_GetCurrentCalibration(const motor_handle_t *ptMotor,
+                                         foc_adc_calib_t *ptCalib)
+{
+    const motor_impl_t *ptImpl;
+    uintptr_t wSyncState;
+
+    if (!motor_private_is_initialized(ptMotor)) {
+        return ptMotor == NULL ? FOC_RESULT_NULL :
+                                 FOC_RESULT_INVALID_ARGUMENT;
+    }
+    if (ptCalib == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    ptImpl = motor_private_const(ptMotor);
+    wSyncState = motor_private_enter(ptImpl);
+    *ptCalib = ptImpl->tHfState.tPhaseCurrent.tCalib;
+    motor_private_exit(ptImpl, wSyncState);
+    return FOC_RESULT_OK;
+}
+
 foc_result_t motor_GetHighFrequencyProfileSnapshot(
     const motor_handle_t *ptMotor,
     motor_hf_profile_snapshot_t *ptSnapshot)

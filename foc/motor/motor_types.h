@@ -149,6 +149,14 @@ typedef struct {
     foc_scalar_t qIw;   /**< W 相电流 */
 } motor_phase_current_t;
 
+/* Lightweight runtime telemetry subset for monitoring and waveform use. */
+typedef struct {
+    foc_dq_t tCurrent;         /**< 实际电流（dq） */
+    motor_phase_current_t tPhaseCurrent; /**< 三相电流 */
+    foc_angle_t tActiveAngle;  /**< 当前使用的位置源角度 */
+    foc_scalar_t qActiveSpeed; /**< 当前使用的位置源速度 */
+} motor_telemetry_t;
+
 typedef struct {
     uint32_t wSequence;         /**< 事件序号 */
     uint32_t wFaults;           /**< 故障标志位 */

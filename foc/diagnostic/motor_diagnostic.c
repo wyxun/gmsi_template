@@ -33,7 +33,9 @@ static bool motor_diagnostic_OverCurrent(uint32_t wRaw,
 
 foc_result_t motor_diagnostic_FixedDutyTest(motor_handle_t *ptMotor)
 {
-    motor_snapshot_t tSnapshot;
+    motor_state_e eRunState;
+    uint32_t wFaults;
+    foc_adc_calib_t tCalib;
     foc_result_t eResult;
     uint32_t wRawU = 0U;
     uint32_t wRawV = 0U;
@@ -43,14 +45,14 @@ foc_result_t motor_diagnostic_FixedDutyTest(motor_handle_t *ptMotor)
     if (ptMotor == NULL) {
         return FOC_RESULT_NULL;
     }
-    eResult = motor_GetSnapshot(ptMotor, &tSnapshot);
+    eResult = motor_GetStatus(ptMotor, &eRunState, &wFaults);
     if (eResult != FOC_RESULT_OK) {
         return eResult;
     }
-    if (tSnapshot.eRunState != MOTOR_STATE_IDLE ||
-        tSnapshot.wFaults != MOTOR_FAULT_NONE) {
+    if (eRunState != MOTOR_STATE_IDLE ||
+        wFaults != MOTOR_FAULT_NONE) {
         MLOGF(E, "[Diag] Refused: state=%d faults=0x%lX\r\n",
-              (int)tSnapshot.eRunState, (unsigned long)tSnapshot.wFaults);
+              (int)eRunState, (unsigned long)wFaults);
         return FOC_RESULT_INVALID_ARGUMENT;
     }
 
@@ -77,21 +79,21 @@ foc_result_t motor_diagnostic_FixedDutyTest(motor_handle_t *ptMotor)
 
     eResult = motor_GetRawCurrent(ptMotor, &wRawU, &wRawV, &wRawW);
     if (eResult == FOC_RESULT_OK &&
-        motor_GetSnapshot(ptMotor, &tSnapshot) == FOC_RESULT_OK) {
+        motor_GetCurrentCalibration(ptMotor, &tCalib) == FOC_RESULT_OK) {
         MLOGF(I, "[Diag] Raw: U=%lu V=%lu W=%lu | Offset: U=%lu V=%lu"
               " W=%lu Calibrated=%d\r\n",
               (unsigned long)wRawU, (unsigned long)wRawV,
               (unsigned long)wRawW,
-              (unsigned long)tSnapshot.tCurrentCalibration.wOffsetU,
-              (unsigned long)tSnapshot.tCurrentCalibration.wOffsetV,
-              (unsigned long)tSnapshot.tCurrentCalibration.wOffsetW,
-              (int)tSnapshot.tCurrentCalibration.bIsCalibrated);
+              (unsigned long)tCalib.wOffsetU,
+              (unsigned long)tCalib.wOffsetV,
+              (unsigned long)tCalib.wOffsetW,
+              (int)tCalib.bIsCalibrated);
         if (motor_diagnostic_OverCurrent(
-                wRawU, tSnapshot.tCurrentCalibration.wOffsetU) ||
+                wRawU, tCalib.wOffsetU) ||
             motor_diagnostic_OverCurrent(
-                wRawV, tSnapshot.tCurrentCalibration.wOffsetV) ||
+                wRawV, tCalib.wOffsetV) ||
             motor_diagnostic_OverCurrent(
-                wRawW, tSnapshot.tCurrentCalibration.wOffsetW)) {
+                wRawW, tCalib.wOffsetW)) {
             (void)motor_DiagnosticStopOutput(ptMotor);
             MLOG(E, "[Diag] Overcurrent limit hit, output stopped\r\n");
             return FOC_RESULT_SAFETY;

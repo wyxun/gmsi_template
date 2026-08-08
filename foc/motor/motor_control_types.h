@@ -60,17 +60,4 @@ typedef struct {
     motor_modulation_e eModulation;                     /**< 调制方式 */
 } motor_control_runtime_config_t;
 
-typedef struct {
-    motor_control_runtime_config_t tConfig;  /**< 运行时控制配置 */
-    motor_control_mode_e eMode;              /**< 当前控制模式 */
-    foc_dq_t tCurrentReference;              /**< 电流参考值 */
-    foc_dq_t tCurrent;                       /**< 实际电流反馈 */
-    foc_dq_t tVoltageReference;              /**< 电压参考值 */
-    foc_dq_t tVoltage;                       /**< 实际电压输出 */
-    foc_ab_t tVoltageAlphaBeta;              /**< αβ 电压 */
-    foc_duty_abc_t tDuty;                    /**< 三相占空比 */
-    foc_scalar_t qSpeedReference;            /**< 速度参考值 */
-    foc_scalar_t qPositionReference;         /**< 位置参考值 */
-} motor_control_t;
-
 #endif /* MOTOR_CONTROL_TYPES_H */

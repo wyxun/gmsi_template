@@ -161,14 +161,17 @@ void phase_test_waveform_hf_step(motor_handle_t *ptMotor)
     }
 
     if (mwaveform.SnapshotIsArmed()) {
-        motor_snapshot_t tSnapshot;
-        if (motor_GetSnapshot(ptMotor, &tSnapshot) == FOC_RESULT_OK) {
-            mwaveform.Push(s_chId, (float)foc_to_float(tSnapshot.tCurrent.qD));
-            mwaveform.Push(s_chIq, (float)foc_to_float(tSnapshot.tCurrent.qQ));
+        motor_telemetry_t tTelemetry;
+        if (motor_GetTelemetry(ptMotor, &tTelemetry) == FOC_RESULT_OK) {
+            mwaveform.Push(s_chId,
+                           (float)foc_to_float(tTelemetry.tCurrent.qD));
+            mwaveform.Push(s_chIq,
+                           (float)foc_to_float(tTelemetry.tCurrent.qQ));
             mwaveform.Push(s_chMotorAngle,
-                           (float)foc_angle_to_turns(tSnapshot.tActiveAngle));
+                           (float)foc_angle_to_turns(
+                               tTelemetry.tActiveAngle));
             mwaveform.Push(s_chSpeed,
-                           (float)foc_to_float(tSnapshot.qActiveSpeed));
+                           (float)foc_to_float(tTelemetry.qActiveSpeed));
         }
     }
 

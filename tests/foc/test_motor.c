@@ -198,10 +198,18 @@ int test_motor(void)
     motor_handle_t tMotorB;
     motor_snapshot_t tSnapshotA;
     motor_snapshot_t tSnapshotB;
+    motor_telemetry_t tTelemetryA;
+    foc_adc_calib_t tCalibA;
+    motor_state_e eState;
+    uint32_t wFaults;
     motor_event_t tEvent;
     motor_handle_t tUninitialized = {0};
 
     TEST_CHECK(motor_GetSnapshot(NULL, &tSnapshotA) == FOC_RESULT_NULL);
+    TEST_CHECK(motor_GetStatus(NULL, &eState, &wFaults) == FOC_RESULT_NULL);
+    TEST_CHECK(motor_GetTelemetry(NULL, &tTelemetryA) == FOC_RESULT_NULL);
+    TEST_CHECK(motor_GetCurrentCalibration(NULL, &tCalibA) ==
+               FOC_RESULT_NULL);
     TEST_CHECK(!motor_DebugReadEvent(NULL, &tEvent));
     TEST_CHECK(motor_GetRawCurrent(NULL, NULL, NULL, NULL) ==
                FOC_RESULT_NULL);
@@ -217,6 +225,12 @@ int test_motor(void)
     motor_SetSpeedReference(NULL, FOC_ONE);
     motor_SetPositionReference(NULL, FOC_ONE);
     TEST_CHECK(motor_GetSnapshot(&tUninitialized, &tSnapshotA) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(motor_GetStatus(&tUninitialized, &eState, &wFaults) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(motor_GetTelemetry(&tUninitialized, &tTelemetryA) ==
+               FOC_RESULT_INVALID_ARGUMENT);
+    TEST_CHECK(motor_GetCurrentCalibration(&tUninitialized, &tCalibA) ==
                FOC_RESULT_INVALID_ARGUMENT);
     TEST_CHECK(motor_GetRawCurrent(&tUninitialized, NULL, NULL, NULL) ==
                FOC_RESULT_INVALID_ARGUMENT);
@@ -273,6 +287,21 @@ int test_motor(void)
     TEST_CHECK(tSnapshotA.tCurrentCalibration.wOffsetW == 2048U);
     TEST_CHECK(!tSnapshotA.tCurrentCalibration.bIsCalibrated);
     TEST_CHECK(!tSnapshotA.bPwmEnabled);
+    TEST_CHECK(motor_GetStatus(&tMotorA, &eState, &wFaults) == FOC_RESULT_OK);
+    TEST_CHECK(eState == MOTOR_STATE_IDLE);
+    TEST_CHECK(wFaults == MOTOR_FAULT_NONE);
+    TEST_CHECK(motor_GetTelemetry(&tMotorA, &tTelemetryA) == FOC_RESULT_OK);
+    TEST_CHECK(tTelemetryA.tCurrent.qD == FOC_ZERO);
+    TEST_CHECK(tTelemetryA.tCurrent.qQ == FOC_ZERO);
+    TEST_CHECK(tTelemetryA.tActiveAngle.wBam32 == 0U);
+    TEST_CHECK(tTelemetryA.qActiveSpeed == FOC_ZERO);
+    TEST_CHECK(tTelemetryA.tPhaseCurrent.qIu == FOC_ZERO);
+    TEST_CHECK(motor_GetCurrentCalibration(&tMotorA, &tCalibA) ==
+               FOC_RESULT_OK);
+    TEST_CHECK(tCalibA.wOffsetU == 2048U);
+    TEST_CHECK(tCalibA.wOffsetV == 2048U);
+    TEST_CHECK(tCalibA.wOffsetW == 2048U);
+    TEST_CHECK(!tCalibA.bIsCalibrated);
 
     motor_EmergencyStop(&tMotorA, MOTOR_FAULT_HARDWARE);
     TEST_CHECK(motor_DebugReadEvent(&tMotorA, &tEvent));
@@ -291,6 +320,12 @@ int test_motor(void)
     TEST_CHECK(tSnapshotB.eRunState == MOTOR_STATE_IDLE);
     TEST_CHECK(tSnapshotB.wFaults == MOTOR_FAULT_NONE);
     TEST_CHECK(tSnapshotB.qVbus == FOC_ZERO);
+    TEST_CHECK(motor_GetStatus(&tMotorA, &eState, &wFaults) == FOC_RESULT_OK);
+    TEST_CHECK(eState == MOTOR_STATE_FAULT);
+    TEST_CHECK((wFaults & MOTOR_FAULT_HARDWARE) != 0U);
+    TEST_CHECK(motor_GetStatus(&tMotorB, &eState, &wFaults) == FOC_RESULT_OK);
+    TEST_CHECK(eState == MOTOR_STATE_IDLE);
+    TEST_CHECK(wFaults == MOTOR_FAULT_NONE);
 
     motor_Reset(&tMotorB);
     TEST_CHECK(motor_GetSnapshot(&tMotorA, &tSnapshotA) == FOC_RESULT_OK);
@@ -351,6 +386,23 @@ int test_motor(void)
                    FOC_RESULT_OK);
         TEST_CHECK(motor_GetSnapshot(&tMotorA, &tSnapshotA) == FOC_RESULT_OK);
         TEST_CHECK(motor_GetSnapshot(&tMotorB, &tSnapshotB) == FOC_RESULT_OK);
+        TEST_CHECK(motor_GetTelemetry(&tMotorA, &tTelemetryA) ==
+                   FOC_RESULT_OK);
+        TEST_CHECK(tTelemetryA.tCurrent.qD == tSnapshotA.tCurrent.qD);
+        TEST_CHECK(tTelemetryA.tCurrent.qQ == tSnapshotA.tCurrent.qQ);
+        TEST_CHECK(tTelemetryA.tActiveAngle.wBam32 ==
+                   tSnapshotA.tActiveAngle.wBam32);
+        TEST_CHECK(tTelemetryA.qActiveSpeed == tSnapshotA.qActiveSpeed);
+        TEST_CHECK(tTelemetryA.tPhaseCurrent.qIu ==
+                   tSnapshotA.tPhaseCurrent.qIu);
+        TEST_CHECK(motor_GetCurrentCalibration(&tMotorA, &tCalibA) ==
+                   FOC_RESULT_OK);
+        TEST_CHECK(tCalibA.wOffsetU ==
+                   tSnapshotA.tCurrentCalibration.wOffsetU);
+        TEST_CHECK(tCalibA.wOffsetV ==
+                   tSnapshotA.tCurrentCalibration.wOffsetV);
+        TEST_CHECK(tCalibA.wOffsetW ==
+                   tSnapshotA.tCurrentCalibration.wOffsetW);
         TEST_NEAR(foc_to_float(tSnapshotA.tVoltage.qD),
                   0.2f, 0.003f);
         TEST_NEAR(foc_to_float(tSnapshotA.tVoltage.qQ),

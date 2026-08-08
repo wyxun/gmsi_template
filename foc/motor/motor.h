@@ -71,6 +71,32 @@ void motor_EmergencyStop(motor_handle_t *ptMotor, motor_fault_e eFault);
 foc_result_t motor_GetSnapshot(const motor_handle_t *ptMotor,
                                motor_snapshot_t *ptSnapshot);
 /**
+ * @brief  获取轻量运行状态
+ * @param  ptMotor  电机句柄
+ * @param  peState  输出运行状态
+ * @param  pwFaults 输出故障标志
+ * @return          FOC_RESULT_OK 或错误码
+ */
+foc_result_t motor_GetStatus(const motor_handle_t *ptMotor,
+                             motor_state_e *peState,
+                             uint32_t *pwFaults);
+/**
+ * @brief  获取轻量运行遥测
+ * @param  ptMotor      电机句柄
+ * @param  ptTelemetry  输出电流/角度/速度
+ * @return              FOC_RESULT_OK 或错误码
+ */
+foc_result_t motor_GetTelemetry(const motor_handle_t *ptMotor,
+                                motor_telemetry_t *ptTelemetry);
+/**
+ * @brief  获取电流采样校准值
+ * @param  ptMotor 电机句柄
+ * @param  ptCalib 输出校准值
+ * @return         FOC_RESULT_OK 或错误码
+ */
+foc_result_t motor_GetCurrentCalibration(const motor_handle_t *ptMotor,
+                                         foc_adc_calib_t *ptCalib);
+/**
  * @brief  读取电机事件日志（非阻塞）
  * @param  ptMotor  电机句柄
  * @param  ptEvent  输出事件

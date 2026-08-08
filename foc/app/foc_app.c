@@ -215,14 +215,16 @@ fsm_rt_t foc_app_RunFSM(foc_app_t *ptThis)
 
 void foc_app_Start(foc_app_t *ptThis)
 {
-    motor_snapshot_t tSnapshot;
+    motor_state_e eRunState;
+    uint32_t wFaults;
     foc_result_t eResult;
 
     if (ptThis == NULL || ptThis->ptMotor == NULL) { return; }
-    if (motor_GetSnapshot(ptThis->ptMotor, &tSnapshot) == FOC_RESULT_OK &&
-        tSnapshot.wFaults != MOTOR_FAULT_NONE) {
+    if (motor_GetStatus(ptThis->ptMotor, &eRunState, &wFaults) ==
+            FOC_RESULT_OK &&
+        wFaults != MOTOR_FAULT_NONE) {
         MLOGF(W, "[FOC] Motor faults active: 0x%lX, clear first\r\n",
-              (unsigned long)tSnapshot.wFaults);
+              (unsigned long)wFaults);
         return;
     }
     eResult = motor_Start(ptThis->ptMotor, &s_tMotorRunConfig);
@@ -264,7 +266,8 @@ static void foc_app_HandleButton(foc_app_t *ptThis)
 #if defined(MDI_HW_HAS_BUTTON_START)
     uint32_t wNow = (uint32_t)get_system_ms();
     bool bCurrBtnState = (MDI_Read(HW.ptButtonStart) == MDI_GPIO_LOW);
-    motor_snapshot_t tSnapshot;
+    motor_state_e eRunState;
+    uint32_t wFaults;
 
     if (bCurrBtnState == ptThis->bLastButtonState) { return; }
     if ((uint32_t)(wNow - ptThis->wLastButtonTick) < 50U) { return; }
@@ -272,16 +275,17 @@ static void foc_app_HandleButton(foc_app_t *ptThis)
     ptThis->wLastButtonTick = wNow;
     if (!bCurrBtnState) { return; }     /* 只在按下沿动作 */
 
-    if (motor_GetSnapshot(ptThis->ptMotor, &tSnapshot) != FOC_RESULT_OK) {
+    if (motor_GetStatus(ptThis->ptMotor, &eRunState, &wFaults) !=
+        FOC_RESULT_OK) {
         return;
     }
-    if (tSnapshot.wFaults != MOTOR_FAULT_NONE) {
+    if (wFaults != MOTOR_FAULT_NONE) {
         MLOGF(I, "[Button] Faults 0x%lX, clearing...\r\n",
-              (unsigned long)tSnapshot.wFaults);
+              (unsigned long)wFaults);
         if (motor_ClearFault(ptThis->ptMotor) != FOC_RESULT_OK) {
             MLOG(W, "[Button] ClearFault rejected (PWM on?)\r\n");
         }
-    } else if (tSnapshot.eRunState == MOTOR_STATE_IDLE) {
+    } else if (eRunState == MOTOR_STATE_IDLE) {
         MLOG(I, "[Button] Press: Starting Motor...\r\n");
         foc_app_Start(ptThis);
     } else {
@@ -298,7 +302,10 @@ static int foc_app_Run(uintptr_t wObjectAddr)
     foc_app_t *ptThis = (foc_app_t *)wObjectAddr;
     uint32_t   wEvent;
     uint32_t   wNow;
-    motor_snapshot_t tSnapshot;
+    motor_state_e eRunState;
+    uint32_t wFaults;
+    motor_telemetry_t tTelemetry;
+    foc_adc_calib_t tCalib;
 
     if (ptThis == NULL) { return MODUS_EFAIL; }
 
@@ -327,8 +334,12 @@ static int foc_app_Run(uintptr_t wObjectAddr)
     wNow = (uint32_t)get_system_ms();
     if ((uint32_t)(wNow - ptThis->wLastHeartbeatTick) >= 1000U) {
         ptThis->wLastHeartbeatTick = wNow;
-        if (motor_GetSnapshot(ptThis->ptMotor, &tSnapshot) ==
-            FOC_RESULT_OK) {
+        if (motor_GetStatus(ptThis->ptMotor, &eRunState, &wFaults) ==
+                FOC_RESULT_OK &&
+            motor_GetTelemetry(ptThis->ptMotor, &tTelemetry) ==
+                FOC_RESULT_OK &&
+            motor_GetCurrentCalibration(ptThis->ptMotor, &tCalib) ==
+                FOC_RESULT_OK) {
 #if FOC_HF_PROFILE
             motor_hf_profile_snapshot_t tProf = {0};
             (void)motor_GetHighFrequencyProfileSnapshot(ptThis->ptMotor, &tProf);
@@ -354,22 +365,22 @@ static int foc_app_Run(uintptr_t wObjectAddr)
             */
             /* 精简版：只留总周期数与角度 */
             MLOGF(T, "[Heartbeat] motor: %s, seq: %lu, total: %lu, angle: %.4f\r\n",
-                  foc_app_StateName(tSnapshot.eRunState),
+                  foc_app_StateName(eRunState),
                   (unsigned long)tProf.wSampleSequence,
                   (unsigned long)tProf.wTotalCycles,
-                  (double)foc_angle_to_turns(tSnapshot.tActiveAngle));
+                  (double)foc_angle_to_turns(tTelemetry.tActiveAngle));
 #else
             MLOGF(T, "[Heartbeat] motor: %s, Iq: %.4f, Id: %.4f, angle: %.4f, Iu: %.4f, Iv: %.4f, Iw: %.4f, offset: %lu/%lu/%lu\r\n",
-                  foc_app_StateName(tSnapshot.eRunState),
-                  (double)foc_to_float(tSnapshot.tCurrent.qQ),
-                  (double)foc_to_float(tSnapshot.tCurrent.qD),
-                  (double)foc_angle_to_turns(tSnapshot.tActiveAngle),
-                  (double)foc_to_float(tSnapshot.tPhaseCurrent.qIu),
-                  (double)foc_to_float(tSnapshot.tPhaseCurrent.qIv),
-                  (double)foc_to_float(tSnapshot.tPhaseCurrent.qIw),
-                  (unsigned long)tSnapshot.tCurrentCalibration.wOffsetU,
-                  (unsigned long)tSnapshot.tCurrentCalibration.wOffsetV,
-                  (unsigned long)tSnapshot.tCurrentCalibration.wOffsetW);
+                  foc_app_StateName(eRunState),
+                  (double)foc_to_float(tTelemetry.tCurrent.qQ),
+                  (double)foc_to_float(tTelemetry.tCurrent.qD),
+                  (double)foc_angle_to_turns(tTelemetry.tActiveAngle),
+                  (double)foc_to_float(tTelemetry.tPhaseCurrent.qIu),
+                  (double)foc_to_float(tTelemetry.tPhaseCurrent.qIv),
+                  (double)foc_to_float(tTelemetry.tPhaseCurrent.qIw),
+                  (unsigned long)tCalib.wOffsetU,
+                  (unsigned long)tCalib.wOffsetV,
+                  (unsigned long)tCalib.wOffsetW);
 #endif
         }
     }
