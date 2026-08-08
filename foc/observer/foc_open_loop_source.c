@@ -7,20 +7,20 @@
 
 #include <stddef.h>
 
-static void foc_open_loop_source_ResetImpl(void *pContext)
+static void foc_open_loop_source_ResetImpl(void *pSourceContext)
 {
-    foc_open_loop_source_t *ptSource = (foc_open_loop_source_t *)pContext;
+    foc_open_loop_source_t *ptSource = (foc_open_loop_source_t *)pSourceContext;
     if (ptSource != NULL) {
         ptSource->tAngle = (foc_angle_t){0U};
         ptSource->qSpeed = FOC_ZERO;
     }
 }
 
-static foc_result_t foc_open_loop_source_StepImpl(void *pContext,
+static foc_result_t foc_open_loop_source_StepImpl(void *pSourceContext,
                                                    const foc_position_input_t *ptInput,
                                                    foc_position_output_t *ptOutput)
 {
-    foc_open_loop_source_t *ptSource = (foc_open_loop_source_t *)pContext;
+    foc_open_loop_source_t *ptSource = (foc_open_loop_source_t *)pSourceContext;
     if (ptSource == NULL || ptInput == NULL || ptOutput == NULL) {
         return FOC_RESULT_NULL;
     }
@@ -119,7 +119,7 @@ foc_result_t foc_open_loop_source_SetAngle(foc_open_loop_source_t *ptSource,
 foc_position_source_if_t foc_open_loop_source_GetInterface(foc_open_loop_source_t *ptSource)
 {
     return (foc_position_source_if_t){
-        .pContext = ptSource,
+        .pSourceContext = ptSource,
         .fnReset = foc_open_loop_source_ResetImpl,
         .fnStep = foc_open_loop_source_StepImpl,
     };

@@ -27,15 +27,15 @@ typedef struct {
 struct phase_current_handle_s;
 
 typedef struct {
-    void *pContext;                     /**< ADC 上下文 */
-    foc_result_t (*fnStartConversion)(void *pContext);  /**< 启动转换 */
-    foc_result_t (*fnOffsetCalib)(void *pContext,
+    void *pHalContext;                  /**< ADC HAL 上下文 */
+    foc_result_t (*fnStartConversion)(void *pHalContext);  /**< 启动转换 */
+    foc_result_t (*fnOffsetCalib)(void *pHalContext,
                                   foc_adc_calib_t *ptCalib);  /**< 偏移校准 */
-    foc_result_t (*fnGetRaw)(void *pContext,
+    foc_result_t (*fnGetRaw)(void *pHalContext,
                              uint32_t *pwRawU,
                              uint32_t *pwRawV,
                              uint32_t *pwRawW);  /**< 读取原始值 */
-    foc_result_t (*fnReconstruct)(void *pContext,
+    foc_result_t (*fnReconstruct)(void *pHalContext,
                                   struct phase_current_handle_s *ptHandle);  /**< 电流重建 */
 } foc_adc_if_t;
 

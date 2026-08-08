@@ -82,18 +82,17 @@ typedef struct {
     q_type              qVbus;              /**< 当前母线电压（pu） */
     uint32_t            wFaults;            /**< 故障标志位，按 motor_fault_e 组合 */
     motor_state_e       eRunState;          /**< 当前运行状态 */
-
 } motor_state_t;
 
 typedef struct {
-    void *pContext;                         /**< 时间接口上下文 */
-    uint32_t (*fnGetMilliseconds)(void *pContext); /**< 获取毫秒时间戳 */
+    void *pTimeContext;                     /**< 时间接口上下文 */
+    uint32_t (*fnGetMilliseconds)(void *pTimeContext); /**< 获取毫秒时间戳 */
 } motor_time_if_t;
 
 typedef struct {
-    void *pContext;                         /**< 同步接口上下文 */
-    uintptr_t (*fnEnter)(void *pContext);   /**< 进入临界区 */
-    void (*fnExit)(void *pContext, uintptr_t wState); /**< 退出临界区 */
+    void *pSyncContext;                     /**< 同步接口上下文 */
+    uintptr_t (*fnEnter)(void *pSyncContext);   /**< 进入临界区 */
+    void (*fnExit)(void *pSyncContext, uintptr_t wState); /**< 退出临界区 */
 } motor_sync_if_t;
 
 typedef struct {
@@ -129,7 +128,9 @@ typedef struct {
 } motor_config_t;
 
 /* Per-instance RAM and public ABI capacity. motor_private.h enforces the limit. */
-#if FOC_HF_PROFILE
+#if defined(__x86_64__) || defined(_M_X64)
+#define MOTOR_HANDLE_STORAGE_SIZE 1280U
+#elif FOC_HF_PROFILE
 #define MOTOR_HANDLE_STORAGE_SIZE 960U
 #else
 #define MOTOR_HANDLE_STORAGE_SIZE 896U
@@ -170,25 +171,6 @@ typedef struct {
     foc_result_t eResult;               /**< 关联结果码 */
 } motor_event_t;
 
-/*
- * Coherent diagnostic snapshot copied under motor_sync_if_t.
- *
- * 字段语义约定：
- *   - 角度（t*Angle）：以 foc_angle_t BAM32 格式表示的电圈数
- *   - 速度（q*Speed）：foc_scalar_t 电圈数/s（机械速度在变量名中显式标注）
- *   - 参考值/反馈（q*Reference/q*Current/q*Voltage）：pu 归一化 q_type
- *
- * 位置源角色说明：
- *   - active：当前被控制环使用的角度/速度
- *   - candidate：资格判定/混合过渡期间的目标源
- *   - open-loop：独立于候选/激活源的开环启动角度发生器
- *
- * 有效性：active/candidate 的角度/速度字段仅在对应的
- * eActiveSourceValidFlags / eCandidateSourceValidFlags 位被置位时有效。
- *
- * 安全性：此快照包含的是值拷贝，不包含指向私有存储、控制器、
- * 校准数据或 HAL 的指针，可安全在非特权上下文中读取。
- */
 typedef struct {
     motor_state_e eRunState;            /**< 运行状态 */
     uint32_t wFaults;                   /**< 故障标志 */

@@ -68,9 +68,9 @@ typedef struct {
 } foc_position_output_t;
 
 typedef struct {
-    void *pContext;                     /**< 源上下文 */
-    void (*fnReset)(void *pContext);    /**< 复位函数 */
-    foc_result_t (*fnStep)(void *pContext,
+    void *pSourceContext;               /**< 源上下文 */
+    void (*fnReset)(void *pSourceContext);    /**< 复位函数 */
+    foc_result_t (*fnStep)(void *pSourceContext,
                            const foc_position_input_t *ptInput,
                            foc_position_output_t *ptOutput); /**< 步进函数 */
 } foc_position_source_if_t;

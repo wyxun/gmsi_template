@@ -7,30 +7,30 @@
 
 #include <stddef.h>
 
-static void controller_pid_reset(void *pContext)
+static void controller_pid_reset(void *pController)
 {
-    foc_pid_Reset((foc_pid_t *)pContext);
+    foc_pid_Reset((foc_pid_t *)pController);
 }
 
-static foc_scalar_t controller_pid_step(void *pContext,
+static foc_scalar_t controller_pid_step(void *pController,
                                         foc_scalar_t qReference,
                                         foc_scalar_t qFeedback)
 {
-    return foc_pid_Step((foc_pid_t *)pContext, qReference, qFeedback);
+    return foc_pid_Step((foc_pid_t *)pController, qReference, qFeedback);
 }
 
-static void controller_pid_track(void *pContext,
+static void controller_pid_track(void *pController,
                                  foc_scalar_t qOutput,
                                  foc_scalar_t qReference,
                                  foc_scalar_t qFeedback)
 {
-    foc_pid_Track((foc_pid_t *)pContext, qOutput, qReference, qFeedback);
+    foc_pid_Track((foc_pid_t *)pController, qOutput, qReference, qFeedback);
 }
 
 foc_controller_if_t foc_controller_FromPid(foc_pid_t *ptPid)
 {
     foc_controller_if_t tController = {
-        .pContext = ptPid,
+        .pController = ptPid,
         .fnReset = controller_pid_reset,
         .fnStep = controller_pid_step,
         .fnTrack = controller_pid_track,
@@ -46,7 +46,7 @@ foc_controller_if_t foc_controller_FromPid(foc_pid_t *ptPid)
 
 bool foc_controller_IsValid(const foc_controller_if_t *ptController)
 {
-    return ptController != NULL && ptController->pContext != NULL &&
+    return ptController != NULL && ptController->pController != NULL &&
            ptController->fnStep != NULL;
 }
 
@@ -58,9 +58,9 @@ bool foc_controller_CanTrack(const foc_controller_if_t *ptController)
 
 void foc_controller_Reset(const foc_controller_if_t *ptController)
 {
-    if (ptController != NULL && ptController->pContext != NULL &&
+    if (ptController != NULL && ptController->pController != NULL &&
         ptController->fnReset != NULL) {
-        ptController->fnReset(ptController->pContext);
+        ptController->fnReset(ptController->pController);
     }
 }
 
@@ -70,7 +70,7 @@ void foc_controller_Track(const foc_controller_if_t *ptController,
                           foc_scalar_t qFeedback)
 {
     if (foc_controller_CanTrack(ptController)) {
-        ptController->fnTrack(ptController->pContext, qOutput,
+        ptController->fnTrack(ptController->pController, qOutput,
                               qReference, qFeedback);
     }
 }
@@ -82,6 +82,6 @@ foc_scalar_t foc_controller_Step(const foc_controller_if_t *ptController,
     if (!foc_controller_IsValid(ptController)) {
         return FOC_ZERO;
     }
-    return ptController->fnStep(ptController->pContext,
+    return ptController->fnStep(ptController->pController,
                                 qReference, qFeedback);
 }

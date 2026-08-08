@@ -152,17 +152,17 @@ foc_result_t foc_nlfo_Step(foc_nlfo_t *ptNlfo,
     return FOC_RESULT_OK;
 }
 
-static void nlfo_interface_reset(void *pContext)
+static void nlfo_interface_reset(void *pSourceContext)
 {
-    foc_nlfo_Reset((foc_nlfo_t *)pContext);
+    foc_nlfo_Reset((foc_nlfo_t *)pSourceContext);
 }
 
 static foc_result_t nlfo_interface_step(
-    void *pContext,
+    void *pSourceContext,
     const foc_position_input_t *ptInput,
     foc_position_output_t *ptOutput)
 {
-    foc_result_t eResult = foc_nlfo_Step((foc_nlfo_t *)pContext, ptInput,
+    foc_result_t eResult = foc_nlfo_Step((foc_nlfo_t *)pSourceContext, ptInput,
                                          ptOutput);
     if (eResult == FOC_RESULT_OK) {
         ptOutput->wTimestamp = ptInput->wTimestamp;
@@ -173,7 +173,7 @@ static foc_result_t nlfo_interface_step(
 foc_position_source_if_t foc_nlfo_PositionSourceInterface(foc_nlfo_t *ptNlfo)
 {
     foc_position_source_if_t tInterface = {
-        .pContext = ptNlfo,
+        .pSourceContext = ptNlfo,
         .fnReset = nlfo_interface_reset,
         .fnStep = nlfo_interface_step,
     };

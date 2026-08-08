@@ -11,12 +11,12 @@
 #include "foc_pid.h"
 
 typedef struct {
-    void *pContext;                                     /**< 控制器上下文 */
-    void (*fnReset)(void *pContext);                    /**< 复位函数 */
-    foc_scalar_t (*fnStep)(void *pContext,
+    void *pController;                                  /**< 控制器实例上下文 */
+    void (*fnReset)(void *pController);                 /**< 复位函数 */
+    foc_scalar_t (*fnStep)(void *pController,
                            foc_scalar_t qReference,
                            foc_scalar_t qFeedback);     /**< 步进函数 */
-    void (*fnTrack)(void *pContext,
+    void (*fnTrack)(void *pController,
                     foc_scalar_t qOutput,
                     foc_scalar_t qReference,
                     foc_scalar_t qFeedback);            /**< 跟踪函数 */

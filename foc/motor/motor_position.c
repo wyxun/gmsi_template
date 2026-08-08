@@ -46,7 +46,7 @@ bool foc_position_source_IsValid(const foc_position_source_if_t *ptSource)
 void foc_position_source_Reset(const foc_position_source_if_t *ptSource)
 {
     if (foc_position_source_IsValid(ptSource) && ptSource->fnReset != NULL) {
-        ptSource->fnReset(ptSource->pContext);
+        ptSource->fnReset(ptSource->pSourceContext);
     }
 }
 
@@ -59,7 +59,7 @@ foc_result_t foc_position_source_Step(
         ptOutput == NULL) {
         return FOC_RESULT_NULL;
     }
-    return ptSource->fnStep(ptSource->pContext, ptInput, ptOutput);
+    return ptSource->fnStep(ptSource->pSourceContext, ptInput, ptOutput);
 }
 
 foc_result_t foc_position_ApplyMechanicalConfig(

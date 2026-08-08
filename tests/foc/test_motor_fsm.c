@@ -98,7 +98,7 @@ static motor_config_t config_for(fake_fsm_hw_t *hw, uint32_t delay)
     cfg.tPosition.chDirection = 1;
     cfg.eTopology = SENSING_TOPOLOGY_3P;
     cfg.tHal.tPwm = (foc_pwm_if_t){hw, fake_set_duty, fake_enable, fake_stop};
-    cfg.tHal.tAdc.pContext = hw;
+    cfg.tHal.tAdc.pHalContext = hw;
     cfg.tHal.tAdc.fnOffsetCalib = fake_calibrate;
     cfg.tHal.tAdc.fnReconstruct = fake_reconstruct;
     cfg.tHal.tHfIo = test_hf_io(hw);

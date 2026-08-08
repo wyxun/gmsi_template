@@ -11,13 +11,13 @@
 #include "foc_math_types.h"
 
 typedef struct {
-    void *pContext;                                 /**< PWM 上下文 */
-    foc_result_t (*fnSetDuty)(void *pContext,
+    void *pHalContext;                              /**< PWM HAL 上下文 */
+    foc_result_t (*fnSetDuty)(void *pHalContext,
                               q_type qDutyU,
                               q_type qDutyV,
                               q_type qDutyW);      /**< 设置占空比 */
-    foc_result_t (*fnEnable)(void *pContext, bool bEnable); /**< 使能/禁用 */
-    void (*fnEmergencyStop)(void *pContext);        /**< 紧急停止 */
+    foc_result_t (*fnEnable)(void *pHalContext, bool bEnable); /**< 使能/禁用 */
+    void (*fnEmergencyStop)(void *pHalContext);     /**< 紧急停止 */
 } foc_pwm_if_t;
 
 #endif /* __FOC_HAL_PWM_H__ */

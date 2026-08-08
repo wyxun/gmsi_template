@@ -93,7 +93,7 @@ typedef struct MOTOR_PRIVATE_MAY_ALIAS {
     /* 4-byte block. */
     motor_hf_command_t      tHfCommand;        /**< 高频命令邮箱（控制模式 + 各环参考值） */
     motor_hf_state_t        tHfState;          /**< 高频运行时量（电流/电压/duty/角度/速度/位置输出） */
-    motor_state_t           tRt;               /**< 运行时状态（母线电压、故障、运行态） */
+    motor_state_t           tRuntime;          /**< 运行时状态（母线电压、故障、运行态） */
     foc_position_config_t   tPositionConfig;   /**< 位置配置（极对数、零位偏移、方向） */
     foc_angle_t             tMechanicalAngle;  /**< 当前机械角度（电角度 / 极对数） */
     foc_scalar_t            qMechanicalSpeed;  /**< 当前机械速度（电速度 / 极对数） */
@@ -181,7 +181,7 @@ static inline bool motor_private_is_initialized(
 static inline uintptr_t motor_private_enter(const motor_impl_t *ptImpl)
 {
     return ptImpl->tSync.fnEnter != NULL ?
-        ptImpl->tSync.fnEnter(ptImpl->tSync.pContext) : 0U;
+        ptImpl->tSync.fnEnter(ptImpl->tSync.pSyncContext) : 0U;
 }
 
 /**
@@ -193,7 +193,7 @@ static inline void motor_private_exit(const motor_impl_t *ptImpl,
                                       uintptr_t wState)
 {
     if (ptImpl->tSync.fnExit != NULL) {
-        ptImpl->tSync.fnExit(ptImpl->tSync.pContext, wState);
+        ptImpl->tSync.fnExit(ptImpl->tSync.pSyncContext, wState);
     }
 }
 
@@ -244,7 +244,7 @@ static inline void motor_private_DrainPendingEvents(motor_impl_t *ptImpl)
     for (uint8_t i = 0U; i < count; i++) {
         motor_hf_pending_event_t *ev = &ptImpl->tHfState.aPendingEvents[i];
         motor_private_AppendEvent(ptImpl, (motor_event_type_e)ev->chType,
-                                  ptImpl->tRt.eRunState, ptImpl->tRt.eRunState,
+                                  ptImpl->tRuntime.eRunState, ptImpl->tRuntime.eRunState,
                                   (motor_position_role_e)ev->chRole,
                                   ev->hwPayload);
     }

@@ -114,12 +114,12 @@ static int test_selector(void)
         },
     };
     foc_position_source_if_t tPrimaryIf = {
-        .pContext = &tPrimary,
+        .pSourceContext = &tPrimary,
         .fnReset = fake_observer_reset,
         .fnStep = fake_observer_step,
     };
     foc_position_source_if_t tTargetIf = {
-        .pContext = &tTarget,
+        .pSourceContext = &tTarget,
         .fnReset = fake_observer_reset,
         .fnStep = fake_observer_step,
     };

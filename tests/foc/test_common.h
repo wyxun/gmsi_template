@@ -34,7 +34,7 @@ static inline foc_hf_io_if_t test_hf_io(void *pContext)
 {
     foc_hf_io_if_t tIo = {
         .wAbiVersion = FOC_HF_IO_ABI_VERSION,
-        .pContext = pContext,
+        .pIoContext = pContext,
         .fnSampleCurrent = test_hf_sample_ok,
         .fnCommitDuty = test_hf_commit_ok,
         .fnEmergencyStop = test_hf_stop_ok,

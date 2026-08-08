@@ -38,8 +38,8 @@ typedef struct {
     void *pSourceContext;           /**< 位置源上下文（plan resolver 填充） */
     foc_result_t (*fnSourceStep)(void *, const foc_position_input_t *,
                                  foc_position_output_t *); /**< 位置源步进 */
-    motor_step_controller_if_t tId; /**< D 轴电流环（plan resolver 填充） */
-    motor_step_controller_if_t tIq; /**< Q 轴电流环（plan resolver 填充） */
+    foc_controller_if_t tId;        /**< D 轴电流环（plan resolver 填充） */
+    foc_controller_if_t tIq;        /**< Q 轴电流环（plan resolver 填充） */
     motor_hf_modulate_fn_t fnModulate; /**< 调制函数（plan resolver 填充） */
     foc_scalar_t qPeriod;           /**< 高频步周期（plan resolver 填充） */
     foc_position_config_t tPositionConfig; /**< 位置配置（plan resolver 填充） */

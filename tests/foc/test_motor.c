@@ -97,7 +97,7 @@ static foc_hf_io_if_t fake_hf_io(fake_motor_hw_t *ptHw)
 {
     return (foc_hf_io_if_t){
         .wAbiVersion = FOC_HF_IO_ABI_VERSION,
-        .pContext = ptHw,
+        .pIoContext = ptHw,
         .fnSampleCurrent = fake_hf_sample,
         .fnCommitDuty = fake_hf_commit,
         .fnEmergencyStop = fake_hf_stop,
@@ -114,11 +114,11 @@ static motor_config_t fake_config(fake_motor_hw_t *ptHw)
     tConfig.tPosition.chPolePairs = 4U;
     tConfig.tPosition.chDirection = 1;
     tConfig.eTopology = SENSING_TOPOLOGY_3P;
-    tConfig.tHal.tPwm.pContext = ptHw;
+    tConfig.tHal.tPwm.pHalContext = ptHw;
     tConfig.tHal.tPwm.fnSetDuty = fake_set_duty;
     tConfig.tHal.tPwm.fnEnable = fake_enable;
     tConfig.tHal.tPwm.fnEmergencyStop = fake_stop;
-    tConfig.tHal.tAdc.pContext = ptHw;
+    tConfig.tHal.tAdc.pHalContext = ptHw;
     tConfig.tHal.tAdc.fnOffsetCalib = fake_calibrate;
     tConfig.tHal.tAdc.fnReconstruct = fake_reconstruct;
     tConfig.tHal.tHfIo = fake_hf_io(ptHw);
@@ -162,7 +162,7 @@ static int test_hf_io_validation(void)
                FOC_RESULT_INVALID_ARGUMENT);
     hal.tHfIo = (foc_hf_io_if_t){
         .wAbiVersion = FOC_HF_IO_ABI_VERSION - 1U,
-        .pContext = &calls,
+        .pIoContext = &calls,
         .fnSampleCurrent = hf_sample_ok,
         .fnCommitDuty = hf_commit_ok,
         .fnEmergencyStop = hf_stop_ok,
@@ -178,11 +178,11 @@ static int test_hf_io_validation(void)
 
     phase_current_handle_t tCurrent = {0};
     foc_duty_abc_t tDuty = {0};
-    TEST_CHECK(hal.tHfIo.fnSampleCurrent(hal.tHfIo.pContext,
+    TEST_CHECK(hal.tHfIo.fnSampleCurrent(hal.tHfIo.pIoContext,
                                          &tCurrent) == FOC_RESULT_OK);
-    TEST_CHECK(hal.tHfIo.fnCommitDuty(hal.tHfIo.pContext,
+    TEST_CHECK(hal.tHfIo.fnCommitDuty(hal.tHfIo.pIoContext,
                                       &tDuty) == FOC_RESULT_OK);
-    hal.tHfIo.fnEmergencyStop(hal.tHfIo.pContext);
+    hal.tHfIo.fnEmergencyStop(hal.tHfIo.pIoContext);
     TEST_CHECK(calls == 3U);
     return nFailures;
 }
@@ -354,10 +354,10 @@ int test_motor(void)
         TEST_CHECK(foc_pid_Init(&tIdPidB, &tPidParams) == FOC_RESULT_OK);
         TEST_CHECK(foc_pid_Init(&tIqPidB, &tPidParams) == FOC_RESULT_OK);
 
-        tConfigA.tControl.tIdController = foc_controller_FromPid(&tIdPidA);
-        tConfigA.tControl.tIqController = foc_controller_FromPid(&tIqPidA);
-        tConfigB.tControl.tIdController = foc_controller_FromPid(&tIdPidB);
-        tConfigB.tControl.tIqController = foc_controller_FromPid(&tIqPidB);
+        tConfigA.tControl.tId = foc_controller_FromPid(&tIdPidA);
+        tConfigA.tControl.tIq = foc_controller_FromPid(&tIqPidA);
+        tConfigB.tControl.tId = foc_controller_FromPid(&tIdPidB);
+        tConfigB.tControl.tIq = foc_controller_FromPid(&tIqPidB);
         tHwA.qCurrent = FOC_ZERO;
         tHwB.qCurrent = FOC_ZERO;
         TEST_CHECK(motor_Init(&tMotorA, &tConfigA) == FOC_RESULT_OK);

@@ -61,12 +61,12 @@ foc_result_t foc_hal_Bind(foc_hal_t *ptHal, foc_motor_context_t *ptContext)
         return FOC_RESULT_INVALID_ARGUMENT;
     }
 
-    ptHal->tPwm.pContext         = ptContext;
+    ptHal->tPwm.pHalContext         = ptContext;
     ptHal->tPwm.fnSetDuty        = hal_pwm_set_duty;
     ptHal->tPwm.fnEnable         = hal_pwm_enable;
     ptHal->tPwm.fnEmergencyStop  = hal_pwm_emergency_stop;
 
-    ptHal->tAdc.pContext            = ptContext;
+    ptHal->tAdc.pHalContext            = ptContext;
     ptHal->tAdc.fnStartConversion  = hal_adc_start_conversion;
     ptHal->tAdc.fnOffsetCalib      = hal_adc_offset_calib;
     ptHal->tAdc.fnGetRaw           = hal_adc_get_raw;

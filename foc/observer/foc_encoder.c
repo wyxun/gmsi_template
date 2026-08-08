@@ -150,22 +150,22 @@ foc_result_t foc_encoder_Step(foc_encoder_t *ptEncoder,
     return FOC_RESULT_OK;
 }
 
-static void encoder_interface_reset(void *pContext)
+static void encoder_interface_reset(void *pSourceContext)
 {
     foc_encoder_source_adapter_t *ptAdapter =
-        (foc_encoder_source_adapter_t *)pContext;
+        (foc_encoder_source_adapter_t *)pSourceContext;
     if (ptAdapter != NULL) {
         foc_encoder_Reset(ptAdapter->ptEncoder);
     }
 }
 
 static foc_result_t encoder_interface_step(
-    void *pContext,
+    void *pSourceContext,
     const foc_position_input_t *ptInput,
     foc_position_output_t *ptOutput)
 {
     foc_encoder_source_adapter_t *ptAdapter =
-        (foc_encoder_source_adapter_t *)pContext;
+        (foc_encoder_source_adapter_t *)pSourceContext;
     uint16_t hwRawAngle = 0U;
     uint32_t wSequence  = 0U;
     bool     bMagnetOk  = false;
@@ -208,7 +208,7 @@ foc_position_source_if_t foc_encoder_PositionSourceInterface(
     foc_encoder_source_adapter_t *ptAdapter)
 {
     foc_position_source_if_t tInterface = {
-        .pContext = ptAdapter,
+        .pSourceContext = ptAdapter,
         .fnReset = encoder_interface_reset,
         .fnStep = encoder_interface_step,
     };

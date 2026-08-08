@@ -27,37 +27,19 @@ typedef struct {
     foc_pid_params_t    tIqParams;          /**< Q 轴 PID 参数 */
     foc_pid_params_t    tSpeedParams;       /**< 速度环 PID 参数 */
     foc_pid_params_t    tPositionParams;    /**< 位置环 PID 参数 */
-    foc_controller_if_t tIdController;      /**< D 轴控制器接口 */
-    foc_controller_if_t tIqController;      /**< Q 轴控制器接口 */
-    foc_controller_if_t tSpeedController;   /**< 速度环控制器接口 */
-    foc_controller_if_t tPositionController; /**< 位置环控制器接口 */
+    foc_controller_if_t tId;                /**< D 轴控制器接口 */
+    foc_controller_if_t tIq;                /**< Q 轴控制器接口 */
+    foc_controller_if_t tSpeed;             /**< 速度环控制器接口 */
+    foc_controller_if_t tPosition;          /**< 位置环控制器接口 */
     motor_modulation_e eModulation;         /**< 调制方式 */
 } motor_control_config_t;
 
 typedef struct {
-    void *pContext;                         /**< 控制器上下文 */
-    foc_scalar_t (*fnStep)(void *pContext,
-                           foc_scalar_t qReference,
-                           foc_scalar_t qFeedback);  /**< 单步控制函数 */
-} motor_step_controller_if_t;
-
-typedef struct {
-    void *pContext;                         /**< 控制器上下文 */
-    foc_scalar_t (*fnStep)(void *pContext,
-                           foc_scalar_t qReference,
-                           foc_scalar_t qFeedback);  /**< 单步控制函数 */
-    void (*fnTrack)(void *pContext,
-                    foc_scalar_t qOutput,
-                    foc_scalar_t qReference,
-                    foc_scalar_t qFeedback);         /**< 跟踪函数 */
-} motor_tracking_controller_if_t;
-
-typedef struct {
-    motor_step_controller_if_t tIdController;      /**< D 轴控制器 */
-    motor_step_controller_if_t tIqController;      /**< Q 轴控制器 */
-    motor_tracking_controller_if_t tSpeedController;   /**< 速度环控制器 */
-    motor_tracking_controller_if_t tPositionController; /**< 位置环控制器 */
-    motor_modulation_e eModulation;                     /**< 调制方式 */
+    foc_controller_if_t tId;                /**< D 轴控制器 */
+    foc_controller_if_t tIq;                /**< Q 轴控制器 */
+    foc_controller_if_t tSpeed;             /**< 速度环控制器 */
+    foc_controller_if_t tPosition;          /**< 位置环控制器 */
+    motor_modulation_e eModulation;         /**< 调制方式 */
 } motor_control_runtime_config_t;
 
 #endif /* MOTOR_CONTROL_TYPES_H */

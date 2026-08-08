@@ -35,8 +35,8 @@ static foc_result_t motor_hf_fault(motor_impl_t *impl,
 {
     uintptr_t s = motor_private_enter(impl);
     /* 1. 设置硬件故障字并切入故障状态 */
-    impl->tRt.wFaults |= (uint32_t)fault;
-    impl->tRt.eRunState = MOTOR_STATE_FAULT;
+    impl->tRuntime.wFaults |= (uint32_t)fault;
+    impl->tRuntime.eRunState = MOTOR_STATE_FAULT;
     impl->bPwmEnabled = false;
     impl->bHighFrequencyStepInProgress = false;
 
@@ -46,7 +46,7 @@ static foc_result_t motor_hf_fault(motor_impl_t *impl,
     motor_private_exit(impl, s);
 
     /* 3. 立即调用底层硬件急停回路（切断 PWM 驱动输出） */
-    impl->tHfPlan.tIo.fnEmergencyStop(impl->tHfPlan.tIo.pContext);
+    impl->tHfPlan.tIo.fnEmergencyStop(impl->tHfPlan.tIo.pIoContext);
     return result;
 }
 
@@ -174,9 +174,9 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     }
     
     /* 0.2 检查运行状态与使能位：非 STARTING/RUNNING、有故障或 PWM 禁用时拒绝执行 */
-    if ((impl->tRt.eRunState != MOTOR_STATE_STARTING &&
-         impl->tRt.eRunState != MOTOR_STATE_RUNNING) ||
-        impl->tRt.wFaults != MOTOR_FAULT_NONE ||
+    if ((impl->tRuntime.eRunState != MOTOR_STATE_STARTING &&
+         impl->tRuntime.eRunState != MOTOR_STATE_RUNNING) ||
+        impl->tRuntime.wFaults != MOTOR_FAULT_NONE ||
         !impl->bPwmEnabled) {
         motor_private_exit(impl, s);
         return FOC_RESULT_INVALID_ARGUMENT;
@@ -227,7 +227,7 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     FOC_HF_PROFILE_STAGE_BEGIN(tSampleStart);
 #endif
     /* 直接调用绑定期解析的 fnSampleCurrent 回调，读取三相 ADC 并完成零偏与归一化 */
-    result = plan->tIo.fnSampleCurrent(plan->tIo.pContext,
+    result = plan->tIo.fnSampleCurrent(plan->tIo.pIoContext,
                                        &state->tPhaseCurrent);
 #if FOC_HF_PROFILE
     FOC_HF_PROFILE_STAGE_END(tSampleStart, wSampleCurrentCycles);
@@ -268,7 +268,7 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
         foc_position_output_t open_loop_output = {0};
         foc_position_source_if_t open_loop_if =
             foc_open_loop_source_GetInterface(&impl->tDefaultOpenLoopSource);
-        result = open_loop_if.fnStep(open_loop_if.pContext,
+        result = open_loop_if.fnStep(open_loop_if.pSourceContext,
                                      &frame.tPositionInput,
                                      &open_loop_output);
         if (result != FOC_RESULT_OK) {
@@ -425,13 +425,11 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
             foc_scalar_t speed_reference = command->qSpeedReference;
             if (mode >= MOTOR_CONTROL_POSITION) {
                 speed_reference = frame.tPositionOutput.qMechanicalSpeed;
-                impl->tControlConfig.tPositionController.fnTrack(
-                    impl->tControlConfig.tPositionController.pContext,
+                foc_controller_Track(&impl->tControlConfig.tPosition,
                     speed_reference, command->qPositionReference,
                     foc_angle_to_turns(frame.tPositionOutput.tMechanicalAngle));
             }
-            impl->tControlConfig.tSpeedController.fnTrack(
-                impl->tControlConfig.tSpeedController.pContext,
+            foc_controller_Track(&impl->tControlConfig.tSpeed,
                 current_ref.qQ, speed_reference,
                 frame.tPositionOutput.qMechanicalSpeed);
         }
@@ -464,10 +462,10 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     if (mode == MOTOR_CONTROL_VOLTAGE_OPEN_LOOP) {
         frame.tVoltage = voltage_ref;
     } else {
-        frame.tVoltage.qD = plan->tId.fnStep(plan->tId.pContext,
+        frame.tVoltage.qD = plan->tId.fnStep(plan->tId.pController,
                                              current_ref.qD,
                                              frame.tCurrent.qD);
-        frame.tVoltage.qQ = plan->tIq.fnStep(plan->tIq.pContext,
+        frame.tVoltage.qQ = plan->tIq.fnStep(plan->tIq.pController,
                                              current_ref.qQ,
                                              frame.tCurrent.qQ);
     }
@@ -498,8 +496,8 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     bool stopping = impl->bCommandPending &&
                     impl->chPendingCommand == MOTOR_COMMAND_STOP;
     if (stopping ||
-        (impl->tRt.eRunState != MOTOR_STATE_STARTING &&
-         impl->tRt.eRunState != MOTOR_STATE_RUNNING)) {
+        (impl->tRuntime.eRunState != MOTOR_STATE_STARTING &&
+         impl->tRuntime.eRunState != MOTOR_STATE_RUNNING)) {
         impl->bHighFrequencyStepInProgress = false;
         motor_private_exit(impl, s);
         return FOC_RESULT_BUSY;
@@ -513,7 +511,7 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     FOC_HF_PROFILE_STAGE_BEGIN(tCommitStart);
 #endif
     /* 直接调度硬件直写回调 fnCommitDuty，一次性将三相占空比写入定时器预装载寄存器 */
-    result = plan->tIo.fnCommitDuty(plan->tIo.pContext, &frame.tDuty);
+    result = plan->tIo.fnCommitDuty(plan->tIo.pIoContext, &frame.tDuty);
 #if FOC_HF_PROFILE
     FOC_HF_PROFILE_STAGE_END(tCommitStart, wCommitCycles);
 #endif

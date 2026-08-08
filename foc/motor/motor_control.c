@@ -74,8 +74,8 @@ foc_result_t motor_LowFrequencyStep(motor_handle_t *ptMotor)
     if (begin != FOC_RESULT_OK) return begin;
     uintptr_t s = motor_private_enter(ptImpl);
     motor_private_DrainPendingEvents(ptImpl);
-    if (ptImpl->tRt.eRunState != MOTOR_STATE_RUNNING &&
-        ptImpl->tRt.eRunState != MOTOR_STATE_STARTING) {
+    if (ptImpl->tRuntime.eRunState != MOTOR_STATE_RUNNING &&
+        ptImpl->tRuntime.eRunState != MOTOR_STATE_STARTING) {
         motor_private_exit(ptImpl, s);
         motor_control_end_step(ptImpl, false);
         return FOC_RESULT_INVALID_ARGUMENT;
@@ -101,22 +101,20 @@ foc_result_t motor_LowFrequencyStep(motor_handle_t *ptMotor)
         foc_scalar_t error = foc_angle_diff(
             foc_angle_from_scalar(position_ref), mechanical_angle);
         speed_ref =
-            ptImpl->tControlConfig.tPositionController.fnStep(
-                ptImpl->tControlConfig.tPositionController.pContext,
-                error, FOC_ZERO);
+            foc_controller_Step(&ptImpl->tControlConfig.tPosition,
+                                error, FOC_ZERO);
     }
     if (mode >= MOTOR_CONTROL_SPEED) {
         if ((mechanical_valid & FOC_POSITION_VALID_MECHANICAL_SPEED) == 0U) {
             goto fail;
         }
         foc_scalar_t iq_ref =
-            ptImpl->tControlConfig.tSpeedController.fnStep(
-                ptImpl->tControlConfig.tSpeedController.pContext,
-                speed_ref, mechanical_speed);
+            foc_controller_Step(&ptImpl->tControlConfig.tSpeed,
+                                speed_ref, mechanical_speed);
         s = motor_private_enter(ptImpl);
         bool stopping = ptImpl->bCommandPending &&
                         ptImpl->chPendingCommand == MOTOR_COMMAND_STOP;
-        if (ptImpl->tRt.eRunState != MOTOR_STATE_RUNNING || stopping) {
+        if (ptImpl->tRuntime.eRunState != MOTOR_STATE_RUNNING || stopping) {
             ptImpl->bLowFrequencyStepInProgress = false;
             motor_private_exit(ptImpl, s);
             return stopping ? FOC_RESULT_BUSY : FOC_RESULT_INVALID_ARGUMENT;

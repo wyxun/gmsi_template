@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @file    foc_ladrc.c
- * @brief   Discrete LADRC with pre-scaled coefficients for fixed-point targets
+ * @brief   Linear Active Disturbance Rejection Controller implementation
  ******************************************************************************/
 
 #include "foc_ladrc.h"
@@ -13,19 +13,7 @@ foc_result_t foc_ladrc_Init(foc_ladrc_t *ptLadrc,
     if (ptLadrc == NULL || ptParams == NULL) {
         return FOC_RESULT_NULL;
     }
-    if (ptParams->qOutputMinimum >= ptParams->qOutputMaximum) {
-        return FOC_RESULT_INVALID_ARGUMENT;
-    }
-    if (!foc_gain_IsValid(&ptParams->tTrackingPosition) ||
-        !foc_gain_IsValid(&ptParams->tTrackingVelocity) ||
-        !foc_gain_IsValid(&ptParams->tTrackingIntegrator) ||
-        !foc_gain_IsValid(&ptParams->tObserverBeta1) ||
-        !foc_gain_IsValid(&ptParams->tObserverBeta2) ||
-        !foc_gain_IsValid(&ptParams->tObserverBeta3) ||
-        !foc_gain_IsValid(&ptParams->tPlantGain) ||
-        !foc_gain_IsValid(&ptParams->tKp) ||
-        !foc_gain_IsValid(&ptParams->tKd) ||
-        !foc_gain_IsValid(&ptParams->tPlantInverse)) {
+    if (ptParams->qOutputMinimum > ptParams->qOutputMaximum) {
         return FOC_RESULT_INVALID_ARGUMENT;
     }
     ptLadrc->tParams = *ptParams;
@@ -58,11 +46,12 @@ void foc_ladrc_Track(foc_ladrc_t *ptLadrc,
     ptLadrc->qTrackingVelocity = FOC_ZERO;
     ptLadrc->qObserverPosition = qFeedback;
     ptLadrc->qObserverVelocity = FOC_ZERO;
-    ptLadrc->qObserverDisturbance = FOC_ZERO;
-    ptLadrc->qOutput = foc_sat(
-        qOutput,
-        ptLadrc->tParams.qOutputMinimum,
-        ptLadrc->tParams.qOutputMaximum);
+    ptLadrc->qObserverDisturbance = foc_sub_sat(
+        foc_gain_apply(&ptLadrc->tParams.tPlantGain, qOutput),
+        FOC_ZERO);
+    ptLadrc->qOutput = foc_sat(qOutput,
+                               ptLadrc->tParams.qOutputMinimum,
+                               ptLadrc->tParams.qOutputMaximum);
 }
 
 foc_scalar_t foc_ladrc_Step(foc_ladrc_t *ptLadrc,
@@ -128,31 +117,31 @@ foc_scalar_t foc_ladrc_Step(foc_ladrc_t *ptLadrc,
     return ptLadrc->qOutput;
 }
 
-static void ladrc_interface_reset(void *pContext)
+static void ladrc_interface_reset(void *pController)
 {
-    foc_ladrc_Reset((foc_ladrc_t *)pContext);
+    foc_ladrc_Reset((foc_ladrc_t *)pController);
 }
 
-static foc_scalar_t ladrc_interface_step(void *pContext,
-                                         foc_scalar_t qReference,
-                                         foc_scalar_t qFeedback)
+static foc_scalar_t ladrc_interface_step(void *pController,
+                                          foc_scalar_t qReference,
+                                          foc_scalar_t qFeedback)
 {
-    return foc_ladrc_Step((foc_ladrc_t *)pContext, qReference, qFeedback);
+    return foc_ladrc_Step((foc_ladrc_t *)pController, qReference, qFeedback);
 }
 
-static void ladrc_interface_track(void *pContext,
-                                  foc_scalar_t qOutput,
-                                  foc_scalar_t qReference,
-                                  foc_scalar_t qFeedback)
+static void ladrc_interface_track(void *pController,
+                                   foc_scalar_t qOutput,
+                                   foc_scalar_t qReference,
+                                   foc_scalar_t qFeedback)
 {
-    foc_ladrc_Track((foc_ladrc_t *)pContext, qOutput,
+    foc_ladrc_Track((foc_ladrc_t *)pController, qOutput,
                     qReference, qFeedback);
 }
 
 foc_controller_if_t foc_ladrc_ControllerInterface(foc_ladrc_t *ptLadrc)
 {
     foc_controller_if_t tInterface = {
-        .pContext = ptLadrc,
+        .pController = ptLadrc,
         .fnReset = ladrc_interface_reset,
         .fnStep = ladrc_interface_step,
         .fnTrack = ladrc_interface_track,

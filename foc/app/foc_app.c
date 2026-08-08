@@ -71,11 +71,11 @@ static motor_config_t s_tMotorConfig = {
     },
     .eTopology = SENSING_TOPOLOGY_3P,
     .tTime = {
-        .pContext = NULL,
+        .pTimeContext = NULL,
         .fnGetMilliseconds = foc_app_GetMilliseconds,
     },
     .tSync = {
-        .pContext = NULL,
+        .pSyncContext = NULL,
         .fnEnter = foc_app_EnterCritical,
         .fnExit  = foc_app_ExitCritical,
     },

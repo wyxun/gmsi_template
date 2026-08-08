@@ -126,17 +126,17 @@ foc_result_t foc_smo_Step(foc_smo_t *ptSmo,
     return FOC_RESULT_OK;
 }
 
-static void smo_interface_reset(void *pContext)
+static void smo_interface_reset(void *pSourceContext)
 {
-    foc_smo_Reset((foc_smo_t *)pContext);
+    foc_smo_Reset((foc_smo_t *)pSourceContext);
 }
 
 static foc_result_t smo_interface_step(
-    void *pContext,
+    void *pSourceContext,
     const foc_position_input_t *ptInput,
     foc_position_output_t *ptOutput)
 {
-    foc_result_t eResult = foc_smo_Step((foc_smo_t *)pContext, ptInput,
+    foc_result_t eResult = foc_smo_Step((foc_smo_t *)pSourceContext, ptInput,
                                         ptOutput);
     if (eResult == FOC_RESULT_OK) {
         ptOutput->wTimestamp = ptInput->wTimestamp;
@@ -147,7 +147,7 @@ static foc_result_t smo_interface_step(
 foc_position_source_if_t foc_smo_PositionSourceInterface(foc_smo_t *ptSmo)
 {
     foc_position_source_if_t tInterface = {
-        .pContext = ptSmo,
+        .pSourceContext = ptSmo,
         .fnReset = smo_interface_reset,
         .fnStep = smo_interface_step,
     };

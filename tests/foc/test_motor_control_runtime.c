@@ -105,7 +105,7 @@ static foc_hf_io_if_t runtime_hf_io(runtime_hw_t *hw)
 {
     return (foc_hf_io_if_t){
         .wAbiVersion = FOC_HF_IO_ABI_VERSION,
-        .pContext = hw,
+        .pIoContext = hw,
         .fnSampleCurrent = sample,
         .fnCommitDuty = hf_commit,
         .fnEmergencyStop = emergency,
@@ -188,10 +188,10 @@ static motor_config_t runtime_config(runtime_hw_t *hw,
 {
     motor_config_t config = {0};
     foc_controller_if_t *bindings[4] = {
-        &config.tControl.tIdController,
-        &config.tControl.tIqController,
-        &config.tControl.tSpeedController,
-        &config.tControl.tPositionController,
+        &config.tControl.tId,
+        &config.tControl.tIq,
+        &config.tControl.tSpeed,
+        &config.tControl.tPosition,
     };
     config.tParams.chPolePairs = 4U;
     config.tPosition.chPolePairs = 4U;
@@ -206,13 +206,13 @@ static motor_config_t runtime_config(runtime_hw_t *hw,
     config.wTransitionTimeoutMs = 50U;
     config.eTopology = SENSING_TOPOLOGY_3P;
     config.tHal.tPwm = (foc_pwm_if_t){hw, set_duty, enable_pwm, emergency};
-    config.tHal.tAdc.pContext = hw;
+    config.tHal.tAdc.pHalContext = hw;
     config.tHal.tAdc.fnOffsetCalib = calibrate;
     config.tHal.tAdc.fnReconstruct = sample;
     config.tHal.tHfIo = runtime_hf_io(hw);
     config.tTime = (motor_time_if_t){hw, now_ms};
     for (unsigned i = 0; i < 4U; i++) {
-        bindings[i]->pContext = &controllers[i];
+        bindings[i]->pController = &controllers[i];
         bindings[i]->fnStep = controller_step;
         bindings[i]->fnTrack = controller_track;
     }
@@ -767,7 +767,7 @@ static int test_start_rejects_invalid_hf_plan(void)
     motor_snapshot_t snapshot;
 
     /* 模拟无效的控制器步进回调 */
-    config.tControl.tIdController.fnStep = NULL;
+    config.tControl.tId.fnStep = NULL;
     TEST_CHECK(motor_Init(&motor, &config) == FOC_RESULT_OK);
 
     /* 无效的高频执行计划应在 motor_Start 阶段直接被拒绝，且不能触发 PWM 使能 */
@@ -779,11 +779,11 @@ static int test_start_rejects_invalid_hf_plan(void)
     TEST_CHECK(snapshot.eRunState == MOTOR_STATE_IDLE);
 
     /* 恢复有效配置，重新初始化并启动 */
-    config.tControl.tIdController.fnStep = controller_step;
+    config.tControl.tId.fnStep = controller_step;
     TEST_CHECK(motor_Init(&motor, &config) == FOC_RESULT_OK);
     runtime_source_t src = valid_source();
     foc_position_source_if_t src_if = (foc_position_source_if_t){
-        .pContext = &src,
+        .pSourceContext = &src,
         .fnStep = source_step,
     };
     run.ptInitialPositionSource = &src_if;
@@ -845,7 +845,7 @@ static int test_event_latency_and_profile_visibility(void)
     };
     runtime_source_t src = valid_source();
     foc_position_source_if_t src_if = (foc_position_source_if_t){
-        .pContext = &src,
+        .pSourceContext = &src,
         .fnStep = source_step,
     };
     run.ptInitialPositionSource = &src_if;

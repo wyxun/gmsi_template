@@ -45,18 +45,18 @@ foc_result_t foc_hal_mdi_Bind(foc_hal_t *ptHal,
         ptContext->ptHardware == NULL || ptContext->wPwmPeriod == 0U) {
         return FOC_RESULT_INVALID_ARGUMENT;
     }
-    ptHal->tPwm.pContext = ptContext;
+    ptHal->tPwm.pHalContext = ptContext;
     ptHal->tPwm.fnSetDuty = mdi_pwm_set_duty;
     ptHal->tPwm.fnEnable = mdi_pwm_enable;
     ptHal->tPwm.fnEmergencyStop = mdi_pwm_emergency_stop;
-    ptHal->tAdc.pContext = ptContext;
+    ptHal->tAdc.pHalContext = ptContext;
     ptHal->tAdc.fnStartConversion = mdi_adc_start_conversion;
     ptHal->tAdc.fnOffsetCalib = mdi_adc_offset_calib;
     ptHal->tAdc.fnGetRaw = mdi_adc_get_raw;
     ptHal->tAdc.fnReconstruct = mdi_adc_reconstruct;
     ptHal->tHfIo = (foc_hf_io_if_t){
         .wAbiVersion = FOC_HF_IO_ABI_VERSION,
-        .pContext = ptContext,
+        .pIoContext = ptContext,
         .fnSampleCurrent = mdi_adc_reconstruct,
         .fnCommitDuty = mdi_pwm_commit_duty,
         .fnEmergencyStop = mdi_pwm_emergency_stop,

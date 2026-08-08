@@ -47,11 +47,11 @@ static motor_config_t fake_config(fake_encapsulation_hw_t *ptHw)
     tConfig.tPosition.chPolePairs = 4U;
     tConfig.tPosition.chDirection = 1;
     tConfig.eTopology = SENSING_TOPOLOGY_3P;
-    tConfig.tHal.tPwm.pContext = ptHw;
+    tConfig.tHal.tPwm.pHalContext = ptHw;
     tConfig.tHal.tPwm.fnSetDuty = fake_set_duty;
     tConfig.tHal.tPwm.fnEnable = fake_enable;
     tConfig.tHal.tPwm.fnEmergencyStop = fake_stop;
-    tConfig.tHal.tAdc.pContext = ptHw;
+    tConfig.tHal.tAdc.pHalContext = ptHw;
     tConfig.tHal.tAdc.fnReconstruct = fake_reconstruct;
     tConfig.tHal.tHfIo = test_hf_io(ptHw);
     return tConfig;

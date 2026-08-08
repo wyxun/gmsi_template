@@ -162,22 +162,22 @@ foc_result_t foc_hall_Step(foc_hall_t *ptHall,
     return FOC_RESULT_OK;
 }
 
-static void hall_interface_reset(void *pContext)
+static void hall_interface_reset(void *pSourceContext)
 {
     foc_hall_source_adapter_t *ptAdapter =
-        (foc_hall_source_adapter_t *)pContext;
+        (foc_hall_source_adapter_t *)pSourceContext;
     if (ptAdapter != NULL) {
         foc_hall_Reset(ptAdapter->ptHall);
     }
 }
 
 static foc_result_t hall_interface_step(
-    void *pContext,
+    void *pSourceContext,
     const foc_position_input_t *ptInput,
     foc_position_output_t *ptOutput)
 {
     foc_hall_source_adapter_t *ptAdapter =
-        (foc_hall_source_adapter_t *)pContext;
+        (foc_hall_source_adapter_t *)pSourceContext;
     foc_result_t eResult;
 
     if (ptAdapter == NULL || ptInput == NULL || ptOutput == NULL) {
@@ -211,7 +211,7 @@ foc_position_source_if_t foc_hall_PositionSourceInterface(
     foc_hall_source_adapter_t *ptAdapter)
 {
     foc_position_source_if_t tInterface = {
-        .pContext = ptAdapter,
+        .pSourceContext = ptAdapter,
         .fnReset = hall_interface_reset,
         .fnStep = hall_interface_step,
     };

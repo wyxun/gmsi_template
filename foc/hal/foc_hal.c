@@ -29,7 +29,7 @@ foc_result_t foc_hal_ValidateHighFrequency(const foc_hal_t *ptHal)
     }
     ptIo = &ptHal->tHfIo;
     if (ptIo->wAbiVersion != FOC_HF_IO_ABI_VERSION ||
-        ptIo->pContext == NULL || ptIo->fnSampleCurrent == NULL ||
+        ptIo->pIoContext == NULL || ptIo->fnSampleCurrent == NULL ||
         ptIo->fnCommitDuty == NULL || ptIo->fnEmergencyStop == NULL) {
         return FOC_RESULT_INVALID_ARGUMENT;
     }
@@ -49,7 +49,7 @@ foc_result_t foc_hal_SetDuty(const foc_pwm_if_t *ptPwm,
         qDutyW < FOC_ZERO || qDutyW > FOC_ONE) {
         return FOC_RESULT_OUT_OF_RANGE;
     }
-    return ptPwm->fnSetDuty(ptPwm->pContext, qDutyU, qDutyV, qDutyW);
+    return ptPwm->fnSetDuty(ptPwm->pHalContext, qDutyU, qDutyV, qDutyW);
 }
 
 foc_result_t foc_hal_Enable(const foc_pwm_if_t *ptPwm, bool bEnable)
@@ -57,13 +57,13 @@ foc_result_t foc_hal_Enable(const foc_pwm_if_t *ptPwm, bool bEnable)
     if (ptPwm == NULL || ptPwm->fnEnable == NULL) {
         return FOC_RESULT_NULL;
     }
-    return ptPwm->fnEnable(ptPwm->pContext, bEnable);
+    return ptPwm->fnEnable(ptPwm->pHalContext, bEnable);
 }
 
 void foc_hal_EmergencyStop(const foc_pwm_if_t *ptPwm)
 {
     if (ptPwm != NULL && ptPwm->fnEmergencyStop != NULL) {
-        ptPwm->fnEmergencyStop(ptPwm->pContext);
+        ptPwm->fnEmergencyStop(ptPwm->pHalContext);
     }
 }
 
@@ -76,7 +76,7 @@ foc_result_t foc_hal_CurrentCalibrate(const foc_adc_if_t *ptAdc,
     if (ptAdc->fnOffsetCalib == NULL) {
         return FOC_RESULT_INVALID_ARGUMENT;
     }
-    return ptAdc->fnOffsetCalib(ptAdc->pContext, ptCalib);
+    return ptAdc->fnOffsetCalib(ptAdc->pHalContext, ptCalib);
 }
 
 foc_result_t foc_hal_CurrentGetRaw(const foc_adc_if_t *ptAdc,
@@ -90,7 +90,7 @@ foc_result_t foc_hal_CurrentGetRaw(const foc_adc_if_t *ptAdc,
     if (ptAdc->fnGetRaw == NULL) {
         return FOC_RESULT_INVALID_ARGUMENT;
     }
-    return ptAdc->fnGetRaw(ptAdc->pContext, pwRawU, pwRawV, pwRawW);
+    return ptAdc->fnGetRaw(ptAdc->pHalContext, pwRawU, pwRawV, pwRawW);
 }
 
 foc_result_t foc_hal_CurrentReconstruct(
@@ -103,5 +103,5 @@ foc_result_t foc_hal_CurrentReconstruct(
     if (ptAdc->fnReconstruct == NULL) {
         return FOC_RESULT_INVALID_ARGUMENT;
     }
-    return ptAdc->fnReconstruct(ptAdc->pContext, ptHandle);
+    return ptAdc->fnReconstruct(ptAdc->pHalContext, ptHandle);
 }

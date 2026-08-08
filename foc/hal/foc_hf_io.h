@@ -14,14 +14,14 @@
 
 typedef struct {
     uint16_t wAbiVersion;   /**< ABI 版本，须等于 FOC_HF_IO_ABI_VERSION */
-    void *pContext;         /**< 平台上下文 */
-    foc_result_t (*fnSampleCurrent)(void *pContext,
+    void *pIoContext;       /**< 平台高频 I/O 上下文 */
+    foc_result_t (*fnSampleCurrent)(void *pIoContext,
                                     phase_current_handle_t *ptCurrent);
                                 /**< 高频电流采样 */
-    foc_result_t (*fnCommitDuty)(void *pContext,
+    foc_result_t (*fnCommitDuty)(void *pIoContext,
                                  const foc_duty_abc_t *ptDuty);
                                 /**< 提交三相占空比 */
-    void (*fnEmergencyStop)(void *pContext);    /**< 紧急停止 */
+    void (*fnEmergencyStop)(void *pIoContext);    /**< 紧急停止 */
 } foc_hf_io_if_t;
 
 #endif /* __FOC_HF_IO_H__ */
