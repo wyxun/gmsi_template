@@ -7,3 +7,4 @@
 *.map
 build
 reference
+tests/foc/*.exe
