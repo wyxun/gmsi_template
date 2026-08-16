@@ -1,3 +1,34 @@
+---
+name: aitrace
+description: MCU 调试权威流程：tools/aitrace.exe 与 OpenOCD RTT 交互（shell/wave/ocd/gdb/map/crash/serial），含侵入分级与安全守则。
+whenToUse: 需要调试固件行为、HardFault 定位、波形链路质量验收、变量/内存/寄存器检查、串口闭环联调时
+---
+
+## DSH Tool Mapping
+
+In DeepSeek Harness sessions, prefer the `aitrace_*` tools (they carry schema
+validation and built-in approval for halt/GDB commands) over hand-typing
+`aitrace.exe` in bash. Passive commands need no confirmation; `aitrace_ocd_*`
+and `aitrace_gdb_*` always prompt the engineer first.
+
+## Session Startup Environment Check
+
+When the engineer says "start debugging" (or similar), run this check before
+any debug tool call, without being asked:
+
+1. Confirm the session working directory is the modus_template repository root
+   (the nearest `.git` ancestor). If not, state where the session needs to be
+   and ask the engineer to switch.
+2. Check OpenOCD is running (e.g. process list for `openocd`). If absent, ask
+   the engineer to run `.\make.bat rtt`, or offer to start it with their
+   approval.
+3. If OpenOCD logs `CMSIS-DAP` errors, report the probe may be disconnected:
+   re-plug the probe and restart OpenOCD.
+4. When register/ELF work is planned, confirm `build/template.elf` exists and
+   the expected target chip matches (`mingw32-make size`).
+5. Summarize readiness in one line (OpenOCD ok / ELF ok / cwd ok) and start
+   the requested task.
+
 # AITrace Debug Skill
 
 This file is the project's authoritative MCU debugging procedure. Use
@@ -108,6 +139,24 @@ To maximize debugging safety and efficiency, follow the **Double-Track Debugging
 | :--- | :--- | :--- | :--- | :--- |
 | **Logic & Code Flow** | `.\make.bat` (`BUILD=debug`) | `-O0` (No optimization) | VS Code Graphical F5 (Cortex-Debug) | Precise step-by-step debug, values of local variables are 100% visible (no `<optimized out>`). |
 | **Tuning, Waveforms & Timing** | `mingw32-make BUILD=debug-rel` followed by the required flash/RTT commands | `-Oz` | `mstudio` / `aitrace` (Passive wave/shell) | Release-like code generation while retaining debug modules. |
+
+## Link to Coding Rules (embedded-coding skill)
+
+Coding rules live in the `embedded-coding` skill. When debugging points to a
+code defect, connect the finding back to the rule it violates:
+
+- HardFault / crash (crash_report, map_resolve) → check MISRA violations:
+  unchecked return values (17.7), uninitialized locals (9.1), pointer misuse.
+- Unexpected variable values (gdb print, ocd peek) → check implicit casts (10.3),
+  signed/unsigned mixing (10.4), out-of-bounds access.
+- Waveform anomalies (wave capture) → check state-machine constraints:
+  blocking delays inside states, missing timeout transitions, unprotected
+  state switches.
+- Missing/unreadable debug data → the module likely lacks observability hooks
+  (state-change mdebug prints, waveform channels); ask for them per the
+  embedded-coding observability section before continuing.
+
+After fixing a code defect found via debugging, rerun that module's TDD tests.
 
 ## FAQ & Troubleshooting
 
