@@ -45,24 +45,27 @@ aitrace.exe
 #### shell — 通过 RTT Ch0 发送命令 (TCP 9090)
 
 ```powershell
-aitrace shell help                 # 列出固件所有 shell 命令
-aitrace shell regs                 # 固件端寄存器转储
-aitrace shell peek <hex_addr>      # 被动读取内存（uint32）
-aitrace shell stack [n]            # 被动栈转储
-aitrace shell cfsr                 # 查看故障状态寄存器
-aitrace shell list                 # 列出 MODUS 对象
-aitrace shell wave drop            # 波形 FIFO 丢帧统计
-aitrace shell log -E -W -I -D      # 切换日志级别
-aitrace shell ver                  # 查看 MODUS 版本
-aitrace shell --raw <cmd>          # 不过滤固件日志行，输出原始流
+aitrace shell --raw <cmd>             # 原始流输出（不过滤固件日志）
+aitrace shell <cmd...>                # 发送命令，默认过滤 [T] 级日志行
+aitrace shell help                    # 列出固件所有 shell 命令
+aitrace shell regs                    # 固件端寄存器转储
+aitrace shell peek <hex_addr>         # 被动读取内存（uint32）
+aitrace shell stack [n]               # 被动栈转储
+aitrace shell cfsr                    # 查看故障状态寄存器
+aitrace shell list                    # 列出 MODUS 对象
+aitrace shell wave drop               # 波形 FIFO 丢帧统计
+aitrace shell log -E -W -I -D         # 切换日志级别
+aitrace shell ver                     # 查看 MODUS 版本
 ```
 
-行为说明（与旧版不同）：
+行为说明（V0.6.0.0 重构）：
 
-- **日志过滤**：固件的 TRACE 级日志（如周期心跳 `[T] [Heartbeat] ...`）
-  默认被过滤，只保留命令响应（`[I]/[W]/[E]` 级）。`--raw` 关闭过滤。
-- **自动终止**：连接后先丢弃 RTT 积压（启动横幅等），收到 shell 提示符
-  `> ` 即返回；日志持续刷屏也不会挂起（5 秒硬上限）。
+- **日志过滤**：固件的 TRACE 级日志（如周期心跳 `[T] [Heartbeat] ...`）默认被
+  过滤，只保留命令响应（`[I]/[W]/[E]` 级）。`--raw` 关闭过滤，输出原始字节流。
+- **RTT 积压排泄**：发送命令前先用 400ms 窗口排泄 RTT Ch0 积压数据（启动
+  横幅、历史日志等），避免陈旧 prompt 残留造成提前终止。
+- **自动终止**：收到 shell 提示符 `\n> ` 即返回；日志持续刷屏也不会挂起
+  （最后收到数据后 600ms 空闲超时 + 5 秒硬上限）。
 
 #### wave — 波形采集与链路统计 (TCP 9091)
 
