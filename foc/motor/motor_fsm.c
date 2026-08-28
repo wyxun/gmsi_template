@@ -47,6 +47,9 @@ static foc_result_t validate_run(const motor_run_config_t *run)
         (run->ptTargetPositionSource != NULL &&
          !foc_position_source_IsValid(run->ptTargetPositionSource)))
         return FOC_RESULT_INVALID_ARGUMENT;
+    if (run->ptObservationPositionSource != NULL &&
+        !foc_position_source_IsValid(run->ptObservationPositionSource))
+        return FOC_RESULT_INVALID_ARGUMENT;
     if (run->ptInitialPositionSource != NULL &&
         run->ptTargetPositionSource != NULL &&
         run->ptInitialPositionSource != run->ptTargetPositionSource)
@@ -82,6 +85,20 @@ static void save_run(motor_impl_t *impl, const motor_run_config_t *run)
     else
         impl->tPositionSource = foc_open_loop_source_GetInterface(&impl->tDefaultOpenLoopSource);
 
+    impl->bObservationSourceBound =
+        run->ptObservationPositionSource != NULL;
+    impl->tObservationSource = run->ptObservationPositionSource != NULL
+        ? *run->ptObservationPositionSource
+        : (foc_position_source_if_t){0};
+    impl->tHfPlan.pObservationSourceContext =
+        run->ptObservationPositionSource != NULL
+        ? run->ptObservationPositionSource->pSourceContext
+        : NULL;
+    impl->tHfPlan.fnObservationStep =
+        run->ptObservationPositionSource != NULL
+        ? run->ptObservationPositionSource->fnStep
+        : NULL;
+
     impl->tHfPlan.fnModulate = resolve_modulation(impl->tControlConfig.eModulation);
     impl->tHfPlan.tId = impl->tControlConfig.tId;
     impl->tHfPlan.tIq = impl->tControlConfig.tIq;
@@ -94,6 +111,8 @@ static void save_run(motor_impl_t *impl, const motor_run_config_t *run)
     impl->wPositionSampleTimestamp = 0U;
     impl->hwTransitionSampleCount = 0U;
     impl->tHfState.tElectricalAngle = foc_angle_from_scalar(run->qInitialAngle);
+    impl->tHfState.qElectricalSpeed = FOC_ZERO;
+    impl->qMechanicalSpeed = FOC_ZERO;
     impl->tCandidateAngle = (foc_angle_t){0};
     impl->qCandidateSpeed = FOC_ZERO;
     impl->qAngleError = FOC_ZERO;

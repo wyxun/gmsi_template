@@ -13,7 +13,7 @@
  *
  * PWM: 20 kHz center-aligned (170 MHz timer clock, no prescaler),
  * complementary outputs with dead-time, TIM1 break from COMP1/2/4.
- * CH4 compare at ARR/2 offsets ADC trigger slightly before PWM center.
+ * CH4 触发在 PWM 顶部（低边全导通区）采样。底部翻转实测无效，已还原。
  *
  * Initialization sequence and register layout match reference
  * STOPLL_FOC_2205 (same board, same 2205 gimbal motor).
@@ -31,7 +31,7 @@
 #define TIM1_PRESCALER      0U
 #define TIM1_PERIOD         4250U   /* center-aligned 20 kHz @ 170 MHz */
 #define TIM1_DEAD_TIME      64U     /* ~750 ns @ 85 MHz DTS */
-#define TIM1_HTMIN          10U     /* ADC trigger advance before PWM center */
+#define TIM1_HTMIN          10U     /* ADC 触发提前量（相对 PWM 顶部，低边导通区） */
 #define TIM1_CH4_CCR        ((TIM1_PERIOD) - (TIM1_HTMIN))
 
 static uint32_t s_wDutyU, s_wDutyV, s_wDutyW; /* cache for SetDuty */

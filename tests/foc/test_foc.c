@@ -10,6 +10,7 @@ int test_motor_fsm(void);
 int test_observer(void);
 int test_motor_position(void);
 int test_motor_control_runtime(void);
+int test_motor_observation(void);
 int test_advanced(void);
 int test_optimization(void);
 int test_experimental(void);
@@ -29,6 +30,7 @@ int main(void)
     nFailures += test_observer();
     nFailures += test_motor_position();
     nFailures += test_motor_control_runtime();
+    nFailures += test_motor_observation();
     nFailures += test_advanced();
     nFailures += test_optimization();
     nFailures += test_experimental();

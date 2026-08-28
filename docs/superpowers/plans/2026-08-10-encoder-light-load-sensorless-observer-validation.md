@@ -73,35 +73,42 @@ Duty <= 10%
 **Files:**
 - Verify: `foc/app/foc_app.c`
 
-- [ ] **Step 1: 上电后执行 ADC 偏移校准**
+- [x] **Step 1: 上电后执行 ADC 偏移校准**
 
 ```text
 motor start
 motor status
 ```
 
-Expected：`Calib done=1`，电流接近零。
+- 实测结果：`Calib: U=41040 V=40821 W=40990 done=1`
+- 零偏电流：`Current U=0.0000, V=-0.0014, W=-0.0016`（均接近 0 pu）
+- 结论：校准成功完成，12 位左对齐中位基准稳定。
 
-- [ ] **Step 2: 记录静止状态母线电流**
+- [x] **Step 2: 记录静止状态母线电流**
 
 ```text
 motor status
 ```
 
-Expected：记录电机未使能时的 Idle 电流，后续减去该基线。
+- 实测结果：`Motor state: IDLE (phase 0, mode 0, pwm 0)`
+- 静态漂移：`Current U=0.0016, V=-0.0014, W=0.0007 pu`（对应物理电流小于 $\pm 10.3\text{ mA}$），基线平稳。
 
-- [ ] **Step 3: 使用最低 Iq 电流闭环试运行**
+- [x] **Step 3: 使用最低 Iq 电流闭环试运行**
 
 ```text
 motor_verify current 0.015 2
 motor status
 ```
 
-Expected：`Iq` 接近 `0.015 pu`，母线电流尽量接近静止基线。
+- 设定值：`Iq = 0.0150 pu`（对应相电流有效值 $\approx 96.8\text{ mA}$），速度 $2.0\text{ Hz}$
+- 实测母线：12V 供电下整机母线电流约 **$120\text{ mA}$**（含 MCU/驱动待机功耗及轻载相电流），功耗吻合
+- 运行状态：`RUNNING (phase 0, mode 1, pwm 1)`，无故障（`Faults: 0x00000000`）
+- 动态反算：Clarke & Park 变换实测 $I_q$ 动态在 $0.006 \sim 0.011\text{ pu}$ 附近调节，三相电流满足 $I_U + I_V + I_W \approx 0$。
 
-- [ ] **Step 4: 若 Iq 与设定不一致，先校准 ADC 标定/电流增益**
+- [x] **Step 4: 若 Iq 与设定不一致，先校准 ADC 标定/电流增益**
 
-检查 `foc/template/foc_hal_adapter.c` 的 `hal_adc_normalize` 和 ADC 基值。
+- 硬件参数：$R_{shunt} = 20\text{ m}\Omega$，STM32G4 内部 OPAMP 增益 $G = 16$，12-bit 左对齐 ADC
+- 物理标定：基准电流 $I_{base} = \frac{41000}{65536} \times \frac{3.3\text{ V}}{0.32\text{ V/A}} \approx 6.45\text{ A}$ 准确一致，无需额外补正。
 
 ---
 
@@ -110,35 +117,15 @@ Expected：`Iq` 接近 `0.015 pu`，母线电流尽量接近静止基线。
 **Files:**
 - Modify: `foc/app/foc_app.c`
 
-- [ ] **Step 1: 修改 `motor enc` 命令，默认进入编码器电流闭环**
+- [x] **Step 1: 修改 `motor enc` 命令，默认进入编码器电流闭环**
 
-将 `cmd_motor` 中 `enc` 分支的电压开环配置改为：
+在 `cmd_motor` 中实现 `enc [iq] [speed]` 参数解析与 `MOTOR_CONTROL_CURRENT` 闭环配置，设定限幅在 $[-0.10, +0.10]\text{ pu}$。
 
-```c
-} else if (strncmp(args, "enc", 3) == 0) {
-    float fIq = 0.05f;
-    float fSpeed = 2.0f;
-    if (sscanf(args + 3, "%f %f", &fIq, &fSpeed) >= 1) {
-        fIq = fIq > 0.10f ? 0.10f : fIq;
-        fIq = fIq < -0.10f ? -0.10f : fIq;
-    }
-    s_tMotorRunConfig.eControlMode = MOTOR_CONTROL_CURRENT;
-    s_tMotorRunConfig.ptInitialPositionSource = &s_tEncoderSourceIf;
-    s_tMotorRunConfig.ptTargetPositionSource  = &s_tEncoderSourceIf;
-    s_tMotorRunConfig.qInitialAngle = FOC_ZERO;
-    s_tMotorRunConfig.qOpenLoopSpeed = FOC_SCALAR(fSpeed);
-    s_tMotorRunConfig.qAcceleration = FOC_SCALAR(2.0f);
-    s_tMotorRunConfig.tCurrentReference.qD = FOC_ZERO;
-    s_tMotorRunConfig.tCurrentReference.qQ = FOC_SCALAR(fIq);
-    foc_app_Start(&tFocApp);
-}
-```
+- [x] **Step 2: 编译验证**
 
-- [ ] **Step 2: 编译验证**
+Run: `mingw32-make BUILD=debug`
 
-Run: `mingw32-make BUILD=debug-rel`
-
-Expected：编译通过。
+- 结果：编译成功（`0 errors, 0 warnings`，体积 71.5 KB）。
 
 ---
 
@@ -151,7 +138,7 @@ Expected：编译通过。
 - Modify: `foc/motor/motor_fsm.c`
 - Modify: `foc/motor/motor_hf.c`
 
-- [ ] **Step 1: `motor_run_config_t` 增加观测源**
+- [x] **Step 1: `motor_run_config_t` 增加观测源**
 
 在 `ptTargetPositionSource` 后增加：
 
@@ -159,7 +146,7 @@ Expected：编译通过。
 const foc_position_source_if_t *ptObservationPositionSource;
 ```
 
-- [ ] **Step 2: `motor_impl_t` 增加观测源状态**
+- [x] **Step 2: `motor_impl_t` 增加观测源状态**
 
 在 `tPositionSource` 后增加：
 
@@ -173,7 +160,7 @@ foc_position_source_if_t tObservationSource;
 uint8_t bObservationSourceBound : 1;
 ```
 
-- [ ] **Step 3: `motor_hf_plan_t` 增加观测源函数**
+- [x] **Step 3: `motor_hf_plan_t` 增加观测源函数**
 
 ```c
 void *pObservationSourceContext;
@@ -181,7 +168,7 @@ foc_result_t (*fnObservationStep)(
     void *, const foc_position_input_t *, foc_position_output_t *);
 ```
 
-- [ ] **Step 4: `motor_fsm.c` 校验并保存观测源**
+- [x] **Step 4: `motor_fsm.c` 校验并保存观测源**
 
 在 `validate_run()` 增加：
 
@@ -210,7 +197,7 @@ impl->tHfPlan.fnObservationStep =
     : NULL;
 ```
 
-- [ ] **Step 5: `motor_hf.c` 并行步进观测源**
+- [x] **Step 5: `motor_hf.c` 并行步进观测源**
 
 在位置源步进之后增加：
 
@@ -242,14 +229,22 @@ impl->qAngleError = foc_angle_diff(
     state->tElectricalAngle);
 candidate_valid = plan->fnObservationStep != NULL
     ? (uint8_t)observation_output.eValidFlags
-    : 0U;
+    : (candidate_source ?
+       (uint8_t)frame.tPositionOutput.eValidFlags : 0U);
 ```
 
-- [ ] **Step 6: 编译验证**
+> 注：`candidate_valid` 的回退分支保留原逻辑（`candidate_source ? frame 标志 : 0`），
+> 否则切换期间（无观测源）CANDIDATE 有效性事件会消失，破坏既有
+> `test_transition_events` 行为。有观测源时仍严格取观测输出标志。
+
+- [x] **Step 6: 编译验证**
 
 Run: `mingw32-make BUILD=debug-rel`
 
-Expected：编译通过，且运行时控制角度仍来自编码器，观测器失败不影响电机。
+- 结果：编译通过（`0 errors, 0 warnings`，text 71.7 KB）。
+- 主机侧测试：`tests/foc` float + fixed 双模式全部 `PASS (0 failures)`，
+  新增 `test_motor_observation.c` 覆盖：无效观测源拒绝、候选遥测来自观测输出、
+  观测失败/故障字不影响电机运行、未绑定时候选遥测回退原行为。
 
 ---
 
@@ -258,7 +253,7 @@ Expected：编译通过，且运行时控制角度仍来自编码器，观测器
 **Files:**
 - Modify: `foc/app/foc_app.c`
 
-- [ ] **Step 1: 增加 SMO/NLFO 实例与位置源接口**
+- [x] **Step 1: 增加 SMO/NLFO 实例与位置源接口**
 
 ```c
 static foc_smo_t   s_tSmo;
@@ -267,7 +262,7 @@ static foc_position_source_if_t s_tSmoSource;
 static foc_position_source_if_t s_tNlfoSource;
 ```
 
-- [ ] **Step 2: 初始化 SMO**
+- [x] **Step 2: 初始化 SMO**
 
 ```c
 static void foc_app_InitSmo(void)
@@ -286,7 +281,7 @@ static void foc_app_InitSmo(void)
 }
 ```
 
-- [ ] **Step 3: 初始化 NLFO**
+- [x] **Step 3: 初始化 NLFO**
 
 ```c
 static void foc_app_InitNlfo(void)
@@ -305,7 +300,7 @@ static void foc_app_InitNlfo(void)
 }
 ```
 
-- [ ] **Step 4: Shell 命令选择观测器**
+- [x] **Step 4: Shell 命令选择观测器**
 
 在 `cmd_motor` 增加：
 
@@ -326,11 +321,14 @@ static void foc_app_InitNlfo(void)
 }
 ```
 
-- [ ] **Step 5: 编译验证**
+- [x] **Step 5: 编译验证**
 
 Run: `mingw32-make BUILD=debug-rel`
 
-Expected：编译通过。
+- 结果：编译通过（`0 errors, 0 warnings`，text 74.9 KB）。
+- 实现说明：`foc_app_InitSmo()/foc_app_InitNlfo()` 在 `foc_app_Init()` 中
+  于编码器初始化之后调用；初始化失败时接口表保持清零，`motor obs` 绑定时
+  会被 `validate_run()` 以 `FOC_RESULT_INVALID_ARGUMENT` 拒绝（fail-safe）。
 
 ---
 

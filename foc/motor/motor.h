@@ -97,6 +97,15 @@ foc_result_t motor_GetTelemetry(const motor_handle_t *ptMotor,
 foc_result_t motor_GetCurrentCalibration(const motor_handle_t *ptMotor,
                                          foc_adc_calib_t *ptCalib);
 /**
+ * @brief  设置编码器电气零位偏移（运行时生效，下一高频拍起用）
+ * @param  ptMotor           电机句柄
+ * @param  tElectricalOffset 电角度补偿偏移（BAM32，单位：圈）
+ * @return                   FOC_RESULT_OK 或错误码
+ * @note    对齐标定后调用；运行中写入会造成角度跳变，建议停机时设置。
+ */
+foc_result_t motor_SetPositionOffset(motor_handle_t *ptMotor,
+                                     foc_angle_t tElectricalOffset);
+/**
  * @brief  读取电机事件日志（非阻塞）
  * @param  ptMotor  电机句柄
  * @param  ptEvent  输出事件

@@ -90,7 +90,10 @@ foc_result_t motor_LowFrequencyStep(motor_handle_t *ptMotor)
         ptImpl->chMechanicalValidFlags;
     bool direct_source = ptImpl->bOuterLoopActive;
     motor_private_exit(ptImpl, s);
-    if (mode >= MOTOR_CONTROL_SPEED && !direct_source) {
+    /* 外环（速度/位置）只在 RUNNING 态生效：启动阶段位置源尚未被高频步
+       资格化（机械速度标志可能仍为 0），提前跑速度环会误触故障。 */
+    if (ptImpl->tRuntime.eRunState != MOTOR_STATE_RUNNING ||
+        (mode >= MOTOR_CONTROL_SPEED && !direct_source)) {
         motor_control_end_step(ptImpl, false);
         return FOC_RESULT_OK;
     }
@@ -131,6 +134,55 @@ fail:
     motor_control_end_step(ptImpl, false);
     motor_EmergencyStop(ptMotor, MOTOR_FAULT_INVALID_COMMAND);
     return FOC_RESULT_INVALID_ARGUMENT;
+}
+
+/* 并行观测源步进（由应用在非实时上下文调用，如主循环 Run）：
+   观测器计算（含 atan2）不得放在 20 kHz ISR（扰动控制时序）也不得
+   放在 1 kHz Clock（延迟 as5600 采样导致测速抖动 → 速度环震荡），
+   否则电机"只震不转"。候选角度/速度写入 tHfState.tObservationOutput，
+   高频步只读发布。 */
+foc_result_t motor_ObservationStep(motor_handle_t *ptMotor)
+{
+    motor_impl_t *ptImpl;
+
+    if (!motor_private_is_initialized(ptMotor)) {
+        return ptMotor == NULL ? FOC_RESULT_NULL :
+                                 FOC_RESULT_INVALID_ARGUMENT;
+    }
+    ptImpl = motor_private(ptMotor);
+    if (ptImpl->tHfPlan.fnObservationStep == NULL) {
+        return FOC_RESULT_OK;
+    }
+    if (ptImpl->tRuntime.eRunState != MOTOR_STATE_RUNNING) {
+        return FOC_RESULT_OK;
+    }
+    {
+        foc_ab_t tClarke;
+        if (foc_clarke(ptImpl->tHfState.tPhaseCurrent.qIu,
+                       ptImpl->tHfState.tPhaseCurrent.qIv,
+                       ptImpl->tHfState.tPhaseCurrent.qIw,
+                       &tClarke) != FOC_RESULT_OK) {
+            return FOC_RESULT_INVALID_ARGUMENT;
+        }
+        foc_position_input_t tInput = {
+            .tCurrent = tClarke,
+            .tVoltage = ptImpl->tHfState.tVoltageAlphaBeta,
+            .qSamplePeriod = ptImpl->qHighFrequencyPeriod,
+            .wTimestamp = ptImpl->wPositionSampleTimestamp,
+        };
+        foc_position_output_t tOutput = {0};
+        if (ptImpl->tHfPlan.fnObservationStep(
+                ptImpl->tHfPlan.pObservationSourceContext,
+                &tInput, &tOutput) != FOC_RESULT_OK ||
+            tOutput.wFaults != 0U) {
+            /* 观测失败不影响电机：保留上次候选输出，返回 OK */
+            return FOC_RESULT_OK;
+        }
+        uintptr_t s = motor_private_enter(ptImpl);
+        ptImpl->tHfState.tObservationOutput = tOutput;
+        motor_private_exit(ptImpl, s);
+    }
+    return FOC_RESULT_OK;
 }
 
 static foc_result_t motor_control_begin_step(motor_impl_t *impl, bool hf)

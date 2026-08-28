@@ -83,6 +83,14 @@ void motor_SetPositionReference(motor_handle_t *ptMotor,
  */
 foc_result_t motor_LowFrequencyStep(motor_handle_t *ptMotor);
 /**
+ * @brief  执行并行观测源步进（应在非实时上下文调用，如主循环）
+ * @param  ptMotor  电机句柄
+ * @return          FOC_RESULT_OK 或错误码
+ * @note    观测器计算（atan2 等）不得放入 20 kHz ISR 或 1 kHz Clock，
+ *          会扰动控制/采样时序导致电机震荡。
+ */
+foc_result_t motor_ObservationStep(motor_handle_t *ptMotor);
+/**
  * @brief  执行高频控制步（电流内环，通常在 ADC 中断中调用）
  * @param  ptMotor  电机句柄
  * @return          FOC_RESULT_OK 或错误码

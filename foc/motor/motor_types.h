@@ -99,6 +99,7 @@ typedef struct {
     motor_control_mode_e eControlMode;          /**< 控制模式（电压开环/电流/速度/位置） */
     const foc_position_source_if_t *ptInitialPositionSource;  /**< 启动阶段用的初始角度源 */
     const foc_position_source_if_t *ptTargetPositionSource;   /**< 运行后切换到的目标角度源 */
+    const foc_position_source_if_t *ptObservationPositionSource; /**< 并行观测源（只观测，不参与控制） */
     foc_scalar_t qInitialAngle;                 /**< 开环启动初始角度，单位：电圈数 */
     foc_scalar_t qOpenLoopSpeed;                /**< 开环速度，单位：电圈数/s */
     foc_scalar_t qAcceleration;                 /**< 开环加速度，单位：电圈数/s² */

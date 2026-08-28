@@ -54,11 +54,11 @@ void halopamp_Init(void)
     LL_OPAMP_SetTrimmingMode(OPAMP1, LL_OPAMP_TRIMMING_FACTORY);
     LL_OPAMP_Enable(OPAMP1);
 
-    /* OPAMP2 — V-phase */
+    /* OPAMP2 — V-phase (internal output to ADC2, 与 W 相 VOPAMP3 对称) */
     LL_OPAMP_Init(OPAMP2, &init);
     LL_OPAMP_SetPGAGain(OPAMP2, LL_OPAMP_PGA_GAIN_16_OR_MINUS_15);
     LL_OPAMP_SetInputsMuxMode(OPAMP2, LL_OPAMP_INPUT_MUX_DISABLE);
-    LL_OPAMP_SetInternalOutput(OPAMP2, LL_OPAMP_INTERNAL_OUTPUT_DISABLED);
+    LL_OPAMP_SetInternalOutput(OPAMP2, LL_OPAMP_INTERNAL_OUTPUT_ENABLED);
     LL_OPAMP_SetTrimmingMode(OPAMP2, LL_OPAMP_TRIMMING_FACTORY);
     LL_OPAMP_Enable(OPAMP2);
 

@@ -104,9 +104,11 @@ foc_result_t foc_smo_Step(foc_smo_t *ptSmo,
                         &ptSmo->tBemf.qBeta);
     qMagnitude = observer_vector_magnitude(&ptSmo->tBemf);
     bValid = qMagnitude >= ptSmo->tParams.qMinimumBemf;
+    /* 角度约定：实测 SMO 角度与编码器相差 ~180°（BEMF 极性翻转），
+       反电动势矢量角 = atan2(BEMF_α, -BEMF_β) 才能对齐转子 d 轴。 */
     tNewAngle = foc_angle_atan2(
-        foc_sub_sat(FOC_ZERO, ptSmo->tBemf.qAlpha),
-        ptSmo->tBemf.qBeta);
+        ptSmo->tBemf.qAlpha,
+        foc_sub_sat(FOC_ZERO, ptSmo->tBemf.qBeta));
     if (bValid && ptSmo->bHasAngle) {
         ptSmo->qSpeed = foc_angle_diff(tNewAngle, ptSmo->tAngle);
     }

@@ -43,6 +43,14 @@ static uint64_t s_ullSumU = 0;
 static uint64_t s_ullSumV = 0;
 static uint64_t s_ullSumW = 0;
 
+/* 电流归一化基准（实测标定）：
+ * 静态锁角 Vq=0.20 时 U 相实测 187 mA ↔ ADC 偏置差 325 counts
+ * → 1738 counts/A；约定 1 pu = 额定电流 0.8 A → 1 pu = 1390 counts。
+ * 注意：不能再用 ADC 零偏（~41000 counts）做分母，那会隐含
+ * 1 pu = 6.45 A，使电流读数偏小约 4 倍，电流环永远"以为电流不够"
+ * 而顶到电压限幅。 */
+#define FOC_MDI_CURRENT_COUNTS_PER_PU  1390U
+
 static foc_mdi_motor_context_t s_tDefaultContext = {
     .ptHardware = &HW,
     .wPwmPeriod = 4250U,
@@ -203,9 +211,6 @@ static foc_result_t mdi_adc_reconstruct(void *pContext,
     uint32_t wRawU = 0U;
     uint32_t wRawV = 0U;
     uint32_t wRawW = 0U;
-    uint32_t wBaseU;
-    uint32_t wBaseV;
-    uint32_t wBaseW;
     int32_t nDeltaU;
     int32_t nDeltaV;
     int32_t nDeltaW;
@@ -243,22 +248,28 @@ static foc_result_t mdi_adc_reconstruct(void *pContext,
         return FOC_RESULT_OK;
     }
 
-    wBaseU = ptCalib->bIsCalibrated ? ptCalib->wOffsetU : 32768U;
-    wBaseV = ptCalib->bIsCalibrated ? ptCalib->wOffsetV : 32768U;
-    wBaseW = ptCalib->bIsCalibrated ? ptCalib->wOffsetW : 32768U;
-    nDeltaU = (int32_t)wBaseU - (int32_t)wRawU;
-    nDeltaV = (int32_t)wBaseV - (int32_t)wRawV;
-    nDeltaW = (int32_t)wBaseW - (int32_t)wRawW;
+    /* 校准完成前用 32768 兜底，避免 2048 默认零偏产生虚假大电流 */
+    nDeltaU = (int32_t)(ptCalib->bIsCalibrated ? ptCalib->wOffsetU : 32768U)
+              - (int32_t)wRawU;
+    nDeltaV = (int32_t)(ptCalib->bIsCalibrated ? ptCalib->wOffsetV : 32768U)
+              - (int32_t)wRawV;
+    nDeltaW = (int32_t)(ptCalib->bIsCalibrated ? ptCalib->wOffsetW : 32768U)
+              - (int32_t)wRawW;
 
     switch (ptHandle->eTopology) {
         case SENSING_TOPOLOGY_3P:
-            ptHandle->qIu = mdi_adc_normalize(nDeltaU, wBaseU);
-            ptHandle->qIv = mdi_adc_normalize(nDeltaV, wBaseV);
-            ptHandle->qIw = mdi_adc_normalize(nDeltaW, wBaseW);
+            ptHandle->qIu = mdi_adc_normalize(
+                nDeltaU, FOC_MDI_CURRENT_COUNTS_PER_PU);
+            ptHandle->qIv = mdi_adc_normalize(
+                nDeltaV, FOC_MDI_CURRENT_COUNTS_PER_PU);
+            ptHandle->qIw = mdi_adc_normalize(
+                nDeltaW, FOC_MDI_CURRENT_COUNTS_PER_PU);
             break;
         case SENSING_TOPOLOGY_2P:
-            ptHandle->qIu = mdi_adc_normalize(nDeltaU, wBaseU);
-            ptHandle->qIv = mdi_adc_normalize(nDeltaV, wBaseV);
+            ptHandle->qIu = mdi_adc_normalize(
+                nDeltaU, FOC_MDI_CURRENT_COUNTS_PER_PU);
+            ptHandle->qIv = mdi_adc_normalize(
+                nDeltaV, FOC_MDI_CURRENT_COUNTS_PER_PU);
             ptHandle->qIw = foc_sub_sat(
                 FOC_ZERO, foc_add_sat(ptHandle->qIu, ptHandle->qIv));
             break;

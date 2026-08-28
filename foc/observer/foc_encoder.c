@@ -114,6 +114,12 @@ foc_result_t foc_encoder_Step(foc_encoder_t *ptEncoder,
             ptEncoder->bInitialized = true;
             ptEncoder->tAngle = encoder_raw_to_angle(hwRawAngle);
             ptEncoder->qSpeed = FOC_ZERO;
+        } else if ((uint32_t)(wSequence - ptEncoder->wLastSequence) > 1U) {
+            /* 采样间隙：停机/标定期间高频步未运行，本样本的增量跨越整个
+               间隙而 hwTicksSinceSample 只计了当前步，速度必然虚高。
+               只重设角度基准，不计算速度（避免启动瞬间速度尖峰）。 */
+            ptEncoder->tAngle = encoder_raw_to_angle(hwRawAngle);
+            ptEncoder->qSpeed = FOC_ZERO;
         } else {
             int16_t nDelta = (int16_t)(hwRawAngle - ptEncoder->hwRawAngle);
             foc_scalar_t qRawSpeed =
@@ -133,9 +139,9 @@ foc_result_t foc_encoder_Step(foc_encoder_t *ptEncoder,
         ptEncoder->bValid = true;
         ptEncoder->qConfidence = FOC_ONE;
     } else if (ptEncoder->bValid) {
-        /* 无新样本：按速度外插 */
-        ptEncoder->tAngle =
-            foc_angle_add_scalar(ptEncoder->tAngle, ptEncoder->qSpeed);
+        /* 无新样本：保持角度不变，不做速度外插。
+           AS5600 测速量化噪声大（低速 ±1.7 e-turn/s 量级），外插会把
+           噪声速度放大成高频角度抖动，反馈进电流环造成坐标系抖动振荡。 */
     }
 
     *ptOutput = (foc_position_output_t){
@@ -183,6 +189,19 @@ static foc_result_t encoder_interface_step(
     eResult = foc_encoder_Step(ptAdapter->ptEncoder,
                                hwRawAngle, wSequence, bMagnetOk,
                                ptOutput);
+    if (eResult == FOC_RESULT_OK) {
+        /* 单位修正：foc_encoder_Step 内部以 turn/高频tick 计算速度
+           （hwTicksSinceSample 按 20 kHz 高频步计数），下游按 turn/s
+           使用，必须除以采样周期换算，否则速度读数小 ~20000 倍。 */
+        foc_scalar_t qSpeedTurnPerSec;
+        if (foc_div_checked(ptOutput->qMechanicalSpeed,
+                            ptInput->qSamplePeriod,
+                            &qSpeedTurnPerSec) == FOC_RESULT_OK) {
+            ptOutput->qMechanicalSpeed = qSpeedTurnPerSec;
+        } else {
+            ptOutput->qMechanicalSpeed = FOC_ZERO;
+        }
+    }
     ptOutput->wTimestamp = ptInput->wTimestamp;
     return eResult;
 }

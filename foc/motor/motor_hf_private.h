@@ -38,6 +38,9 @@ typedef struct {
     void *pSourceContext;           /**< 位置源上下文（plan resolver 填充） */
     foc_result_t (*fnSourceStep)(void *, const foc_position_input_t *,
                                  foc_position_output_t *); /**< 位置源步进 */
+    void *pObservationSourceContext; /**< 并行观测源上下文（只观测不参与控制） */
+    foc_result_t (*fnObservationStep)(void *, const foc_position_input_t *,
+                                      foc_position_output_t *); /**< 并行观测源步进 */
     foc_controller_if_t tId;        /**< D 轴电流环（plan resolver 填充） */
     foc_controller_if_t tIq;        /**< Q 轴电流环（plan resolver 填充） */
     motor_hf_modulate_fn_t fnModulate; /**< 调制函数（plan resolver 填充） */
@@ -68,6 +71,7 @@ typedef struct {
     foc_angle_t tElectricalAngle;   /**< 电角度（BAM32） */
     foc_scalar_t qElectricalSpeed;  /**< 电速度（pu） */
     foc_position_output_t tPositionOutput; /**< 最近一次位置源输出 */
+    foc_position_output_t tObservationOutput; /**< 最近一次并行观测源输出（2 kHz 降频步进） */
     motor_hf_pending_event_t aPendingEvents[4]; /**< 延迟投递事件槽 */
     uint8_t chPendingCount;         /**< 待出列事件数 */
 } motor_hf_state_t;

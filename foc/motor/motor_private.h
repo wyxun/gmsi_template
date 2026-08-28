@@ -88,6 +88,7 @@ typedef struct MOTOR_PRIVATE_MAY_ALIAS {
     foc_pid_t               tPositionPid;      /**< 默认位置环 PID */
     /* One copy backs both bindings because different sources are rejected. */
     foc_position_source_if_t tPositionSource;  /**< 位置源接口表（函数指针 + 上下文，初始和目标共用） */
+    foc_position_source_if_t tObservationSource; /**< 并行观测源接口表（只观测，不参与控制） */
     motor_time_if_t         tTime;             /**< 时间接口（获取毫秒时间戳） */
     motor_sync_if_t         tSync;             /**< 同步接口（中断保护 enter/exit） */
     /* 4-byte block. */
@@ -141,6 +142,7 @@ typedef struct MOTOR_PRIVATE_MAY_ALIAS {
     uint8_t                 bPwmEnabled : 1;               /**< PWM 输出已使能 */
     uint8_t                 bInitialPositionSourceBound : 1; /**< 初始角度源已绑定 */
     uint8_t                 bTargetPositionSourceBound : 1;  /**< 目标角度源已绑定 */
+    uint8_t                 bObservationSourceBound : 1;     /**< 并行观测源已绑定 */
     uint8_t                 bOuterLoopActive : 1;           /**< 外环（速度/位置）已激活 */
     uint8_t                 bDiagnosticActive : 1;           /**< 诊断输出已激活 */
 } motor_impl_t;

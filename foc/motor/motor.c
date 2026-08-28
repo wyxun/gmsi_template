@@ -468,6 +468,30 @@ foc_result_t motor_GetCurrentCalibration(const motor_handle_t *ptMotor,
     return FOC_RESULT_OK;
 }
 
+/**
+ * @brief  设置编码器电气零位偏移（运行时生效，下一高频拍起用）
+ * @param  ptMotor           电机句柄
+ * @param  tElectricalOffset 电角度补偿偏移（BAM32，单位：圈）
+ * @return                   FOC_RESULT_OK 或错误码
+ * @note    对齐标定后调用；运行中写入会造成角度跳变，建议停机时设置。
+ */
+foc_result_t motor_SetPositionOffset(motor_handle_t *ptMotor,
+                                     foc_angle_t tElectricalOffset)
+{
+    motor_impl_t *ptImpl;
+    uintptr_t wSyncState;
+
+    if (!motor_private_is_initialized(ptMotor)) {
+        return ptMotor == NULL ? FOC_RESULT_NULL :
+                                 FOC_RESULT_INVALID_ARGUMENT;
+    }
+    ptImpl = motor_private(ptMotor);
+    wSyncState = motor_private_enter(ptImpl);
+    ptImpl->tPositionConfig.tElectricalOffset = tElectricalOffset;
+    motor_private_exit(ptImpl, wSyncState);
+    return FOC_RESULT_OK;
+}
+
 foc_result_t motor_GetHighFrequencyProfileSnapshot(
     const motor_handle_t *ptMotor,
     motor_hf_profile_snapshot_t *ptSnapshot)

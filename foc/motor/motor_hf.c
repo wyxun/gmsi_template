@@ -137,7 +137,6 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     foc_result_t result;
     uintptr_t s;
     motor_transition_update_t transition = {0};
-    foc_scalar_t angle_error = FOC_ZERO;
     foc_scalar_t blend_factor = FOC_ZERO;
 
 #if FOC_HF_PROFILE
@@ -345,6 +344,12 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
         }
     }
 
+    /* 2.3 并行观测源：已在低频步（motor_LowFrequencyStep，1 kHz）驱动。
+       观测器计算（含 atan2）不放在 20 kHz ISR 里 —— 周期性的观测
+       时序扰动会破坏 PWM 控制节奏，导致电机"只震不转"。
+       候选角度/速度由低频步写入 state->tObservationOutput，
+       本 ISR 只读发布（见阶段 7）。 */
+
     /* -------------------------------------------------------------------------
      * 阶段 3：源切换管理（资格判定与最短路径混合过渡）
      * ------------------------------------------------------------------------- */
@@ -398,8 +403,6 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
                                   FOC_RESULT_INVALID_ARGUMENT);
         }
         transition_samples++;
-        angle_error = foc_angle_diff(frame.tPositionOutput.tElectricalAngle,
-                                     transition_start_angle);
         blend_factor = motor_hf_blend_progress(transition_samples,
                                               blend_samples);
         result = foc_position_Blend(&from, &frame.tPositionOutput,
@@ -527,17 +530,25 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
     state->tElectricalAngle = angle;
     state->qElectricalSpeed = speed;
     impl->qOpenLoopCommandSpeed = speed;
-    impl->tCandidateAngle = frame.tPositionOutput.tElectricalAngle;
-    impl->qCandidateSpeed = frame.tPositionOutput.qElectricalSpeed;
-    impl->qAngleError = angle_error;
+    const foc_position_output_t *candidate =
+        plan->fnObservationStep != NULL
+        ? &state->tObservationOutput
+        : &frame.tPositionOutput;
+    impl->tCandidateAngle = candidate->tElectricalAngle;
+    impl->qCandidateSpeed = candidate->qElectricalSpeed;
+    impl->qAngleError = foc_angle_diff(
+        candidate->tElectricalAngle,
+        state->tElectricalAngle);
     impl->qBlendFactor = blend_factor;
     
     uint8_t active_valid = direct_source ?
         (uint8_t)frame.tPositionOutput.eValidFlags :
         (uint8_t)(FOC_POSITION_VALID_ELECTRICAL_ANGLE |
                   FOC_POSITION_VALID_ELECTRICAL_SPEED);
-    uint8_t candidate_valid = candidate_source ?
-        (uint8_t)frame.tPositionOutput.eValidFlags : 0U;
+    uint8_t candidate_valid = plan->fnObservationStep != NULL
+        ? (uint8_t)state->tObservationOutput.eValidFlags
+        : (candidate_source ?
+           (uint8_t)frame.tPositionOutput.eValidFlags : 0U);
 
     /* 7.2 观察性事件延迟投递：写入 aPendingEvents[4] 无锁槽位，不直接竞争事件环锁 */
     if (active_valid != impl->chActiveValidFlags) {
@@ -548,10 +559,17 @@ foc_result_t motor_HighFrequencyStep(motor_handle_t *ptMotor)
         impl->chActiveValidFlags = active_valid;
     }
     if (candidate_valid != impl->chCandidateValidFlags) {
-        motor_hf_post_event(state, MOTOR_EVENT_SOURCE_VALIDITY_CHANGED,
-                            MOTOR_POSITION_ROLE_CANDIDATE,
-                            (uint16_t)((uint16_t)impl->chCandidateValidFlags |
-                                       ((uint16_t)candidate_valid << 8)));
+        /* 绑定观测源时抑制 CANDIDATE 有效性事件：观测器在阈值边缘
+           抖动（如 SMO 低速 BEMF≈阈值）会每拍翻转刷爆事件环/RTT；
+           观测有效性只是遥测，不是切换候选，不值得发事件。 */
+        if (plan->fnObservationStep == NULL) {
+            motor_hf_post_event(state,
+                                MOTOR_EVENT_SOURCE_VALIDITY_CHANGED,
+                                MOTOR_POSITION_ROLE_CANDIDATE,
+                                (uint16_t)((uint16_t)
+                                           impl->chCandidateValidFlags |
+                                           ((uint16_t)candidate_valid << 8)));
+        }
         impl->chCandidateValidFlags = candidate_valid;
     }
     impl->tMechanicalAngle = frame.tPositionOutput.tMechanicalAngle;
