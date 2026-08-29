@@ -1,11 +1,106 @@
-/*******************************************************************************
+/****************************************************************************
  * @file    foc_core.c
  * @brief   Architecture-independent Clarke and Park transforms
- ******************************************************************************/
+ ************************************************************************** */
 
 #include "foc_core.h"
+#include "foc_modulation.h"
 
 #include <stddef.h>
+
+static bool core_mode_is_valid(foc_control_mode_e eMode)
+{
+    return eMode <= FOC_MODE_SPEED;
+}
+
+static foc_result_t core_validate_inputs(const foc_core_state_t *ptState,
+                                         const foc_core_command_t *ptCommand,
+                                         const foc_core_input_t *ptInput)
+{
+    if (ptState == NULL || ptCommand == NULL || ptInput == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    if (!ptInput->bAngleValid) {
+        return FOC_RESULT_SAFETY;
+    }
+    return core_mode_is_valid(ptCommand->eMode) ? FOC_RESULT_OK :
+                                                  FOC_RESULT_INVALID_ARGUMENT;
+}
+
+static foc_result_t core_update_current(foc_core_state_t *ptState,
+                                        const foc_core_command_t *ptCommand)
+{
+    if (ptCommand->eMode == FOC_MODE_VOLTAGE) {
+        ptState->tVoltage = ptCommand->tVoltageReference;
+        return FOC_RESULT_OK;
+    }
+    ptState->tVoltage.qD = foc_pid_Step(&ptState->tIdPi,
+                                        ptCommand->tCurrentReference.qD,
+                                        ptState->tCurrent.qD);
+    ptState->tVoltage.qQ = foc_pid_Step(&ptState->tIqPi,
+                                        ptCommand->tCurrentReference.qQ,
+                                        ptState->tCurrent.qQ);
+    return FOC_RESULT_OK;
+}
+
+void foc_core_Reset(foc_core_state_t *ptState)
+{
+    if (ptState == NULL) {
+        return;
+    }
+    foc_pid_Reset(&ptState->tIdPi);
+    foc_pid_Reset(&ptState->tIqPi);
+    ptState->tCurrentAlphaBeta = (foc_ab_t){FOC_ZERO, FOC_ZERO};
+    ptState->tCurrent = (foc_dq_t){FOC_ZERO, FOC_ZERO};
+    ptState->tVoltage = (foc_dq_t){FOC_ZERO, FOC_ZERO};
+    ptState->tVoltageAlphaBeta = (foc_ab_t){FOC_ZERO, FOC_ZERO};
+    ptState->tDuty = (foc_duty_abc_t){FOC_HALF, FOC_HALF, FOC_HALF};
+    ptState->tElectricalAngle = (foc_angle_t){0U};
+    ptState->qElectricalSpeed = FOC_ZERO;
+    ptState->qIu = FOC_ZERO;
+    ptState->qIv = FOC_ZERO;
+    ptState->qIw = FOC_ZERO;
+}
+
+foc_result_t foc_core_step(foc_core_state_t *ptState,
+                           const foc_core_command_t *ptCommand,
+                           const foc_core_input_t *ptInput)
+{
+    foc_scalar_t qSin = FOC_ZERO;
+    foc_scalar_t qCos = FOC_ZERO;
+    foc_result_t eResult;
+
+    eResult = core_validate_inputs(ptState, ptCommand, ptInput);
+    if (eResult != FOC_RESULT_OK) {
+        return eResult;
+    }
+    eResult = foc_clarke(ptInput->qIu, ptInput->qIv, ptInput->qIw,
+                         &ptState->tCurrentAlphaBeta);
+    if (eResult != FOC_RESULT_OK) {
+        return eResult;
+    }
+    ptState->qIu = ptInput->qIu;
+    ptState->qIv = ptInput->qIv;
+    ptState->qIw = ptInput->qIw;
+    ptState->tElectricalAngle = ptInput->tElectricalAngle;
+    ptState->qElectricalSpeed = ptInput->qElectricalSpeed;
+    foc_angle_sincos(ptInput->tElectricalAngle, &qSin, &qCos);
+    eResult = foc_park_cached(&ptState->tCurrentAlphaBeta, qSin, qCos,
+                              &ptState->tCurrent);
+    if (eResult != FOC_RESULT_OK) {
+        return eResult;
+    }
+    eResult = core_update_current(ptState, ptCommand);
+    if (eResult != FOC_RESULT_OK) {
+        return eResult;
+    }
+    eResult = foc_ipark_cached(&ptState->tVoltage, qSin, qCos,
+                               &ptState->tVoltageAlphaBeta);
+    if (eResult != FOC_RESULT_OK) {
+        return eResult;
+    }
+    return foc_svpwm(&ptState->tVoltageAlphaBeta, &ptState->tDuty);
+}
 
 foc_result_t foc_clarke(foc_scalar_t qIu,
                         foc_scalar_t qIv,
@@ -42,7 +137,8 @@ foc_result_t foc_park(const foc_ab_t *ptAB,
                       foc_angle_t tTheta,
                       foc_dq_t *ptDQ)
 {
-    return foc_park_cached(ptAB, foc_angle_sin(tTheta), foc_angle_cos(tTheta), ptDQ);
+    return foc_park_cached(ptAB, foc_angle_sin(tTheta),
+                           foc_angle_cos(tTheta), ptDQ);
 }
 
 foc_result_t foc_ipark_cached(const foc_dq_t *ptDQ,
@@ -64,5 +160,6 @@ foc_result_t foc_ipark(const foc_dq_t *ptDQ,
                        foc_angle_t tTheta,
                        foc_ab_t *ptAB)
 {
-    return foc_ipark_cached(ptDQ, foc_angle_sin(tTheta), foc_angle_cos(tTheta), ptAB);
+    return foc_ipark_cached(ptDQ, foc_angle_sin(tTheta),
+                            foc_angle_cos(tTheta), ptAB);
 }

@@ -10,19 +10,13 @@
 #include <stdbool.h>
 #include "foc_config.h"
 #include "foc_math_types.h"
+#include "foc_types.h"
 
 typedef enum {
     SENSING_TOPOLOGY_1P = 1,    /**< 单电阻采样 */
     SENSING_TOPOLOGY_2P = 2,    /**< 双电阻采样 */
     SENSING_TOPOLOGY_3P = 3,    /**< 三电阻采样 */
 } current_sensing_type_t;
-
-typedef struct {
-    uint32_t wOffsetU;      /**< U 相 ADC 偏移量 */
-    uint32_t wOffsetV;      /**< V 相 ADC 偏移量 */
-    uint32_t wOffsetW;      /**< W 相 ADC 偏移量 */
-    bool     bIsCalibrated; /**< 是否已完成校准 */
-} foc_adc_calib_t;
 
 struct phase_current_handle_s;
 

@@ -26,13 +26,7 @@
 #ifndef FOC_MODULATION_H
 #define FOC_MODULATION_H
 
-#include "foc_core.h"
-
-typedef struct {
-    foc_scalar_t qU;    /**< U 相占空比 */
-    foc_scalar_t qV;    /**< V 相占空比 */
-    foc_scalar_t qW;    /**< W 相占空比 */
-} foc_duty_abc_t;
+#include "foc_types.h"
 
 /**
  * @brief  SVPWM 调制，将 αβ 电压转换为三相占空比

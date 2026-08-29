@@ -1,6 +1,20 @@
 #include "halcordic.h"
 #include "stm32g4xx.h"
+#include <stdint.h>
+
+#if defined(FOC_NUMERIC_FLOAT)
 #include <math.h>
+#endif
+
+static foc_scalar_t cordic_q31_to_scalar(int32_t nValue)
+{
+#if defined(FOC_NUMERIC_FIXED)
+    int64_t llValue = (int64_t)nValue * (int64_t)FOC_Q_SCALE;
+    return (foc_scalar_t)(llValue / 2147483647LL);
+#else
+    return (foc_scalar_t)nValue * 4.6566128730773926e-10f;
+#endif
+}
 
 void hal_cordic_Init(void)
 {
@@ -9,9 +23,16 @@ void hal_cordic_Init(void)
     __DSB();
 }
 
-void hal_cordic_SinCos(foc_scalar_t qTurns, foc_scalar_t *pqSin, foc_scalar_t *pqCos)
+void hal_cordic_SinCos(foc_scalar_t qTurns,
+                       foc_scalar_t *pqSin,
+                       foc_scalar_t *pqCos)
 {
-    /* 1. Turns [0, 1) 映射到 q1.31 定点二进制角度 BAM32 */
+#if defined(FOC_NUMERIC_FIXED)
+    uint32_t wBam32 = (uint32_t)qTurns << 17U;
+
+    hal_cordic_SinCosBam32(wBam32, pqSin, pqCos);
+#else
+    /* Turns [0, 1) 映射到 q1.31 定点二进制角度 BAM32。 */
     uint32_t u32Turns = (uint32_t)(qTurns * 4294967296.0f);
     int32_t q31Angle = (int32_t)u32Turns;
 
@@ -27,12 +48,15 @@ void hal_cordic_SinCos(foc_scalar_t qTurns, foc_scalar_t *pqSin, foc_scalar_t *p
     int32_t qCos = CORDIC->RDATA;
     int32_t qSin = CORDIC->RDATA;
 
-    /* 5. 格式转换回 float */
+    /* 格式转换回 float。 */
     *pqCos = (float)qCos * 4.6566128730773926e-10f;
     *pqSin = (float)qSin * 4.6566128730773926e-10f;
+#endif
 }
 
-void hal_cordic_SinCosBam32(uint32_t wBam32, foc_scalar_t *pqSin, foc_scalar_t *pqCos)
+void hal_cordic_SinCosBam32(uint32_t wBam32,
+                            foc_scalar_t *pqSin,
+                            foc_scalar_t *pqCos)
 {
     int32_t q31Angle = (int32_t)wBam32;
 
@@ -45,12 +69,45 @@ void hal_cordic_SinCosBam32(uint32_t wBam32, foc_scalar_t *pqSin, foc_scalar_t *
     int32_t qCos = CORDIC->RDATA;
     int32_t qSin = CORDIC->RDATA;
 
-    if (pqCos != NULL) *pqCos = (float)qCos * 4.6566128730773926e-10f;
-    if (pqSin != NULL) *pqSin = (float)qSin * 4.6566128730773926e-10f;
+    if (pqCos != NULL) {
+        *pqCos = cordic_q31_to_scalar(qCos);
+    }
+    if (pqSin != NULL) {
+        *pqSin = cordic_q31_to_scalar(qSin);
+    }
 }
 
 foc_scalar_t hal_cordic_Atan2(foc_scalar_t qY, foc_scalar_t qX)
 {
+#if defined(FOC_NUMERIC_FIXED)
+    int64_t llMax;
+    int64_t llX;
+    int64_t llY;
+    int64_t llTurns;
+    int32_t nX;
+    int32_t nY;
+    int32_t nAngle;
+
+    llX = qX < 0 ? -(int64_t)qX : qX;
+    llY = qY < 0 ? -(int64_t)qY : qY;
+    llMax = llX > llY ? llX : llY;
+    if (llMax == 0) {
+        return FOC_ZERO;
+    }
+
+    nX = (int32_t)(((int64_t)qX * INT32_MAX) / llMax);
+    nY = (int32_t)(((int64_t)qY * INT32_MAX) / llMax);
+    CORDIC->CSR = (6U << CORDIC_CSR_PRECISION_Pos) |
+                  (2U << CORDIC_CSR_FUNC_Pos) | CORDIC_CSR_NARGS;
+    CORDIC->WDATA = nX;
+    CORDIC->WDATA = nY;
+    nAngle = CORDIC->RDATA;
+    llTurns = ((int64_t)nAngle * FOC_Q_SCALE) >> 32;
+    if (llTurns < 0) {
+        llTurns += FOC_ONE;
+    }
+    return (foc_scalar_t)llTurns;
+#else
     float fMax = fmaxf(fabsf(qX), fabsf(qY));
     if (fMax <= 0.0f) {
         return 0.0f;
@@ -78,4 +135,5 @@ foc_scalar_t hal_cordic_Atan2(foc_scalar_t qY, foc_scalar_t qX)
         fTurns += 1.0f;
     }
     return fTurns;
+#endif
 }

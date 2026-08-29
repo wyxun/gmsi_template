@@ -1,4 +1,4 @@
-/*******************************************************************************
+/****************************************************************************
  * @file    foc_core.h
  * @brief   Architecture-independent Clarke and Park transforms
  *
@@ -29,23 +29,45 @@
  * 传入缓存值避免重复调用 foc_angle_sincos。在 FOC 高频步中，
  * Park 和逆 Park 使用相同的 θ，因此 foc_angle_sincos 只需调用一次，
  * 两个变换都使用缓存值，节省一次三角函数开销。
- ******************************************************************************/
+ ************************************************************************** */
 
 #ifndef FOC_CORE_H
 #define FOC_CORE_H
 
-#include "foc_angle.h"
-#include "foc_numeric.h"
+#include "foc_types.h"
+#include "foc_pid.h"
 
 typedef struct {
-    foc_scalar_t qAlpha;    /**< α 轴分量 */
-    foc_scalar_t qBeta;     /**< β 轴分量 */
-} foc_ab_t;
+    foc_pid_t      tIdPi;
+    foc_pid_t      tIqPi;
+    foc_ab_t       tCurrentAlphaBeta;
+    foc_dq_t       tCurrent;
+    foc_dq_t       tVoltage;
+    foc_ab_t       tVoltageAlphaBeta;
+    foc_duty_abc_t tDuty;
+    foc_angle_t    tElectricalAngle;
+    foc_scalar_t   qElectricalSpeed;
+    foc_scalar_t   qIu;
+    foc_scalar_t   qIv;
+    foc_scalar_t   qIw;
+} foc_core_state_t;
 
-typedef struct {
-    foc_scalar_t qD;        /**< D 轴（直轴）分量 */
-    foc_scalar_t qQ;        /**< Q 轴（交轴）分量 */
-} foc_dq_t;
+/**
+ * @brief  复位核心状态和两个电流 PI
+ * @param  ptState  核心状态指针
+ */
+void foc_core_Reset(foc_core_state_t *ptState);
+
+/**
+ * @brief  执行一次无硬件依赖的 FOC 数学核心
+ * @param  ptState    核心状态
+ * @param  ptCommand  控制命令和值参考
+ * @param  ptInput    三相电流、角度和速度输入
+ * @return            FOC_RESULT_OK 或错误码
+ */
+foc_result_t foc_core_step(foc_core_state_t *ptState,
+                           const foc_core_command_t *ptCommand,
+                           const foc_core_input_t *ptInput);
 
 /**
  * @brief  Clarke 变换：三相电流 → αβ 坐标系

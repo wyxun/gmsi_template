@@ -1,18 +1,24 @@
-/*******************************************************************************
+/****************************************************************************
  * @file    foc_encoder.c
  * @brief   Absolute magnetic-encoder (e.g. AS5600) angle/speed source
  *
  * 新样本到达：12 位码差分（int16 自然回卷）/ tick 数得原始速度，低通滤波；
- * 无新样本：按速度外插。输出机械角度/机械速度有效标志，电角度折算交给
- * foc_position_ApplyMechanicalConfig()。
- ******************************************************************************/
+ * 无新样本：按速度外插（低速不插）。输出机械角度/机械速度，电角度折算
+ * 交给上层。磁铁失效或样本超时立即置无效。
+ ****************************************************************************/
 
 #include "foc_encoder.h"
 
 #include <stddef.h>
+#include <limits.h>
 #include <string.h>
 
+#if defined(FOC_NUMERIC_FLOAT)
+#include <math.h>
+#endif
+
 #define FOC_ENCODER_RESOLUTION      4096U   /* 12-bit */
+#define FOC_ENCODER_HALF_RESOLUTION 2048
 
 /* 12 位原始码 → BAM32 机械角度（4096 → 2^32 精确映射，与数值后端无关） */
 static foc_angle_t encoder_raw_to_angle(uint16_t hwRawAngle)
@@ -21,26 +27,100 @@ static foc_angle_t encoder_raw_to_angle(uint16_t hwRawAngle)
     return tAngle;
 }
 
-/* 差分原始码（±2048 回卷）与 tick 数 → turn/tick 速度 */
-static foc_scalar_t encoder_sample_speed(int16_t nDelta, uint16_t hwTicks)
+/* 差分原始码（±2048 回卷） */
+static int16_t encoder_raw_delta(uint16_t hwRawAngle,
+                                 uint16_t hwLastRawAngle)
 {
-    if (hwTicks == 0U) {
+    int32_t nDelta = (int32_t)hwRawAngle - (int32_t)hwLastRawAngle;
+
+    if (nDelta > FOC_ENCODER_HALF_RESOLUTION) {
+        nDelta -= (int32_t)FOC_ENCODER_RESOLUTION;
+    } else if (nDelta < -FOC_ENCODER_HALF_RESOLUTION) {
+        nDelta += (int32_t)FOC_ENCODER_RESOLUTION;
+    } else {
+        /* The raw difference is already in the shortest direction. */
+    }
+    return (int16_t)nDelta;
+}
+
+static foc_scalar_t encoder_sample_speed(
+    int16_t nDelta,
+    uint16_t hwTicks,
+    foc_scalar_t qHighFrequencyPeriod)
+{
+    foc_scalar_t qSpeed = FOC_ZERO;
+
+    if (hwTicks == 0U || qHighFrequencyPeriod <= FOC_ZERO) {
         return FOC_ZERO;
     }
 #if defined(FOC_NUMERIC_FLOAT)
-    return (foc_scalar_t)nDelta /
-           ((foc_scalar_t)FOC_ENCODER_RESOLUTION * (foc_scalar_t)hwTicks);
+    qSpeed = (foc_scalar_t)nDelta /
+             ((foc_scalar_t)FOC_ENCODER_RESOLUTION *
+              (foc_scalar_t)hwTicks * qHighFrequencyPeriod);
 #else
-    return (foc_scalar_t)(((int32_t)nDelta * FOC_Q_SCALE) /
-                          ((int32_t)FOC_ENCODER_RESOLUTION * (int32_t)hwTicks));
+    foc_scalar_t qTurnPerTick = (foc_scalar_t)(
+        ((int64_t)nDelta * FOC_Q_SCALE) /
+        ((int32_t)FOC_ENCODER_RESOLUTION * (int32_t)hwTicks));
+    if (foc_div_checked(qTurnPerTick, qHighFrequencyPeriod,
+                        &qSpeed) != FOC_RESULT_OK) {
+        qSpeed = FOC_ZERO;
+    }
 #endif
+    return qSpeed;
+}
+
+/* 外推门限：|机械速度 × 极对数| ≥ 1 e-turn/s 才外推，避免低速量化噪声
+   被放大成高频角度抖动（AS5600 低速 ±1.7 e-turn/s 量级） */
+static bool encoder_should_extrapolate(foc_scalar_t qSpeed,
+                                       uint8_t chPolePairs)
+{
+    if (chPolePairs == 0U) {
+        return false;
+    }
+#if defined(FOC_NUMERIC_FIXED)
+    return (int64_t)foc_abs(qSpeed) * (int64_t)chPolePairs >=
+           (int64_t)FOC_Q_SCALE;
+#else
+    return fabsf(qSpeed) * (float)chPolePairs >= 1.0f;
+#endif
+}
+
+static foc_angle_t encoder_extrapolated_angle(
+    const foc_encoder_t *ptEncoder)
+{
+    foc_scalar_t qTurns = FOC_ZERO;
+
+    if (encoder_should_extrapolate(ptEncoder->qMechanicalSpeed,
+                                   ptEncoder->tParams.chPolePairs)) {
+#if defined(FOC_NUMERIC_FIXED)
+        int64_t llTurns = (int64_t)ptEncoder->qMechanicalSpeed *
+                          (int64_t)ptEncoder->tParams.qHighFrequencyPeriod;
+        llTurns = (llTurns / FOC_Q_SCALE) *
+                  (int64_t)ptEncoder->hwTicksSinceSample;
+        if (llTurns > INT32_MAX) {
+            llTurns = INT32_MAX;
+        } else if (llTurns < INT32_MIN) {
+            llTurns = INT32_MIN;
+        } else {
+            /* The extrapolation remains representable in foc_scalar_t. */
+        }
+        qTurns = (foc_scalar_t)llTurns;
+#else
+        qTurns = ptEncoder->qMechanicalSpeed *
+                 ptEncoder->tParams.qHighFrequencyPeriod *
+                 (foc_scalar_t)ptEncoder->hwTicksSinceSample;
+#endif
+    }
+    return foc_angle_add_scalar(ptEncoder->tMechanicalAngle, qTurns);
 }
 
 void foc_encoder_DefaultParams(foc_encoder_params_t *ptParams)
 {
     if (ptParams != NULL) {
         ptParams->qSpeedFilterAlpha = FOC_SCALAR(0.25f);
-        ptParams->hwInvalidTimeout  = 4U;
+        ptParams->hwInvalidTimeout = 100U;  /* 5 ms @20 kHz */
+        ptParams->chPolePairs = 1U;
+        ptParams->qHighFrequencyPeriod = FOC_SCALAR(0.00005f);
     }
 }
 
@@ -52,7 +132,9 @@ foc_result_t foc_encoder_Init(foc_encoder_t *ptEncoder,
     }
     if (ptParams->qSpeedFilterAlpha < FOC_ZERO ||
         ptParams->qSpeedFilterAlpha > FOC_ONE ||
-        ptParams->hwInvalidTimeout == 0U) {
+        ptParams->hwInvalidTimeout == 0U ||
+        ptParams->chPolePairs == 0U ||
+        ptParams->qHighFrequencyPeriod <= FOC_ZERO) {
         return FOC_RESULT_INVALID_ARGUMENT;
     }
     memset(ptEncoder, 0, sizeof(*ptEncoder));
@@ -71,165 +153,77 @@ void foc_encoder_Reset(foc_encoder_t *ptEncoder)
     }
 }
 
-/* 无效样本处理：计数、超时置无效、上报故障 */
-static foc_result_t encoder_invalid_sample(foc_encoder_t *ptEncoder,
-                                           foc_position_output_t *ptOutput)
-{
-    if (ptEncoder->hwInvalidSamples < UINT16_MAX) {
-        ptEncoder->hwInvalidSamples++;
-    }
-    if (ptEncoder->hwInvalidSamples >=
-        ptEncoder->tParams.hwInvalidTimeout) {
-        ptEncoder->bValid = false;
-        ptEncoder->qConfidence = FOC_ZERO;
-    }
-    ptOutput->wFaults = FOC_POSITION_FAULT_INVALID_DATA;
-    return FOC_RESULT_INVALID_ARGUMENT;
-}
-
 foc_result_t foc_encoder_Step(foc_encoder_t *ptEncoder,
-                              uint16_t hwRawAngle,
-                              uint32_t wSequence,
-                              bool bMagnetOk,
-                              foc_position_output_t *ptOutput)
+                              const foc_encoder_sample_t *ptSample,
+                              foc_encoder_output_t *ptOutput)
 {
-    if (ptEncoder == NULL || ptOutput == NULL) {
+    uint16_t hwRawAngle;
+    foc_result_t eResult = FOC_RESULT_OK;
+
+    if (ptEncoder == NULL || ptSample == NULL || ptOutput == NULL) {
         return FOC_RESULT_NULL;
     }
-    *ptOutput = (foc_position_output_t){0};
 
-    hwRawAngle &= 0x0FFFU;
-    if (!bMagnetOk) {
-        return encoder_invalid_sample(ptEncoder, ptOutput);
+    hwRawAngle = (uint16_t)(ptSample->hwRawAngle & 0x0FFFU);
+    if (!ptSample->bMagnetOk) {
+        ptEncoder->bValid = false;
+        ptOutput->tMechanicalAngle = ptEncoder->tMechanicalAngle;
+        ptOutput->qMechanicalSpeed = ptEncoder->qMechanicalSpeed;
+        return FOC_RESULT_INVALID_ARGUMENT;
     }
 
     if (ptEncoder->hwTicksSinceSample < UINT16_MAX) {
         ptEncoder->hwTicksSinceSample++;
     }
 
-    if (wSequence != ptEncoder->wLastSequence) {
+    if (ptSample->wSequence != ptEncoder->wLastSequence) {
         /* 新样本 */
-        ptEncoder->hwInvalidSamples = 0U;
         if (!ptEncoder->bInitialized) {
             ptEncoder->bInitialized = true;
-            ptEncoder->tAngle = encoder_raw_to_angle(hwRawAngle);
-            ptEncoder->qSpeed = FOC_ZERO;
-        } else if ((uint32_t)(wSequence - ptEncoder->wLastSequence) > 1U) {
+            ptEncoder->tMechanicalAngle =
+                encoder_raw_to_angle(hwRawAngle);
+            ptEncoder->qMechanicalSpeed = FOC_ZERO;
+        } else if ((uint32_t)(ptSample->wSequence -
+                              ptEncoder->wLastSequence) > 1U) {
             /* 采样间隙：停机/标定期间高频步未运行，本样本的增量跨越整个
                间隙而 hwTicksSinceSample 只计了当前步，速度必然虚高。
                只重设角度基准，不计算速度（避免启动瞬间速度尖峰）。 */
-            ptEncoder->tAngle = encoder_raw_to_angle(hwRawAngle);
-            ptEncoder->qSpeed = FOC_ZERO;
+            ptEncoder->tMechanicalAngle =
+                encoder_raw_to_angle(hwRawAngle);
+            ptEncoder->qMechanicalSpeed = FOC_ZERO;
         } else {
-            int16_t nDelta = (int16_t)(hwRawAngle - ptEncoder->hwRawAngle);
+            int16_t nDelta = encoder_raw_delta(hwRawAngle,
+                                               ptEncoder->hwLastRawAngle);
             foc_scalar_t qRawSpeed =
-                encoder_sample_speed(nDelta, ptEncoder->hwTicksSinceSample);
+                encoder_sample_speed(nDelta,
+                                     ptEncoder->hwTicksSinceSample,
+                                     ptEncoder->tParams.qHighFrequencyPeriod);
             foc_scalar_t qSpeedDelta =
-                foc_sub_sat(qRawSpeed, ptEncoder->qSpeed);
+                foc_sub_sat(qRawSpeed, ptEncoder->qMechanicalSpeed);
 
-            ptEncoder->qSpeed = foc_add_sat(
-                ptEncoder->qSpeed,
-                foc_mul_pu(qSpeedDelta,
-                           ptEncoder->tParams.qSpeedFilterAlpha));
-            ptEncoder->tAngle = encoder_raw_to_angle(hwRawAngle);
+            ptEncoder->qMechanicalSpeed = foc_add_sat(
+                ptEncoder->qMechanicalSpeed,
+                foc_mul_wide(qSpeedDelta,
+                             ptEncoder->tParams.qSpeedFilterAlpha));
+            ptEncoder->tMechanicalAngle =
+                encoder_raw_to_angle(hwRawAngle);
         }
-        ptEncoder->hwRawAngle = hwRawAngle;
-        ptEncoder->wLastSequence = wSequence;
+        ptEncoder->hwLastRawAngle = hwRawAngle;
+        ptEncoder->wLastSequence = ptSample->wSequence;
         ptEncoder->hwTicksSinceSample = 0U;
         ptEncoder->bValid = true;
-        ptEncoder->qConfidence = FOC_ONE;
-    } else if (ptEncoder->bValid) {
-        /* 无新样本：保持角度不变，不做速度外插。
-           AS5600 测速量化噪声大（低速 ±1.7 e-turn/s 量级），外插会把
-           噪声速度放大成高频角度抖动，反馈进电流环造成坐标系抖动振荡。 */
+    } else if (ptEncoder->hwTicksSinceSample >
+               ptEncoder->tParams.hwInvalidTimeout) {
+        /* 样本超时：缓存停止更新，输出不再可信 */
+        ptEncoder->bValid = false;
+        eResult = FOC_RESULT_INVALID_ARGUMENT;
+    } else {
+        /* 无新样本且未超时：角度按最后滤波速度外插（低速不插） */
     }
 
-    *ptOutput = (foc_position_output_t){
-        .tMechanicalAngle = ptEncoder->tAngle,
-        .qMechanicalSpeed = ptEncoder->qSpeed,
-        .qConfidence = ptEncoder->qConfidence,
-        .eValidFlags = ptEncoder->bValid
-            ? (FOC_POSITION_VALID_MECHANICAL_ANGLE |
-               FOC_POSITION_VALID_MECHANICAL_SPEED)
-            : FOC_POSITION_VALID_NONE,
-    };
-    return FOC_RESULT_OK;
-}
-
-static void encoder_interface_reset(void *pSourceContext)
-{
-    foc_encoder_source_adapter_t *ptAdapter =
-        (foc_encoder_source_adapter_t *)pSourceContext;
-    if (ptAdapter != NULL) {
-        foc_encoder_Reset(ptAdapter->ptEncoder);
-    }
-}
-
-static foc_result_t encoder_interface_step(
-    void *pSourceContext,
-    const foc_position_input_t *ptInput,
-    foc_position_output_t *ptOutput)
-{
-    foc_encoder_source_adapter_t *ptAdapter =
-        (foc_encoder_source_adapter_t *)pSourceContext;
-    uint16_t hwRawAngle = 0U;
-    uint32_t wSequence  = 0U;
-    bool     bMagnetOk  = false;
-    foc_result_t eResult;
-
-    if (ptAdapter == NULL || ptInput == NULL || ptOutput == NULL) {
-        return FOC_RESULT_NULL;
-    }
-    if (!ptAdapter->fnReadSample(ptAdapter->pHardwareContext,
-                                 &hwRawAngle, &wSequence, &bMagnetOk)) {
-        *ptOutput = (foc_position_output_t){0};
-        ptOutput->wFaults = FOC_POSITION_FAULT_INVALID_DATA;
-        return FOC_RESULT_INVALID_ARGUMENT;
-    }
-    eResult = foc_encoder_Step(ptAdapter->ptEncoder,
-                               hwRawAngle, wSequence, bMagnetOk,
-                               ptOutput);
-    if (eResult == FOC_RESULT_OK) {
-        /* 单位修正：foc_encoder_Step 内部以 turn/高频tick 计算速度
-           （hwTicksSinceSample 按 20 kHz 高频步计数），下游按 turn/s
-           使用，必须除以采样周期换算，否则速度读数小 ~20000 倍。 */
-        foc_scalar_t qSpeedTurnPerSec;
-        if (foc_div_checked(ptOutput->qMechanicalSpeed,
-                            ptInput->qSamplePeriod,
-                            &qSpeedTurnPerSec) == FOC_RESULT_OK) {
-            ptOutput->qMechanicalSpeed = qSpeedTurnPerSec;
-        } else {
-            ptOutput->qMechanicalSpeed = FOC_ZERO;
-        }
-    }
-    ptOutput->wTimestamp = ptInput->wTimestamp;
+    ptOutput->tMechanicalAngle = ptEncoder->bValid
+        ? encoder_extrapolated_angle(ptEncoder)
+        : ptEncoder->tMechanicalAngle;
+    ptOutput->qMechanicalSpeed = ptEncoder->qMechanicalSpeed;
     return eResult;
-}
-
-foc_result_t foc_encoder_source_Init(
-    foc_encoder_source_adapter_t *ptAdapter,
-    foc_encoder_t *ptEncoder,
-    void *pHardwareContext,
-    foc_encoder_read_sample_fn_t fnReadSample)
-{
-    if (ptAdapter == NULL || ptEncoder == NULL || fnReadSample == NULL) {
-        return FOC_RESULT_NULL;
-    }
-    *ptAdapter = (foc_encoder_source_adapter_t){
-        .ptEncoder = ptEncoder,
-        .pHardwareContext = pHardwareContext,
-        .fnReadSample = fnReadSample,
-    };
-    return FOC_RESULT_OK;
-}
-
-foc_position_source_if_t foc_encoder_PositionSourceInterface(
-    foc_encoder_source_adapter_t *ptAdapter)
-{
-    foc_position_source_if_t tInterface = {
-        .pSourceContext = ptAdapter,
-        .fnReset = encoder_interface_reset,
-        .fnStep = encoder_interface_step,
-    };
-    return tInterface;
 }

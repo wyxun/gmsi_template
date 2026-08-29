@@ -1,7 +1,7 @@
-/*******************************************************************************
+/****************************************************************************
  * @file    foc_angle.c
  * @brief   Normalized electrical-angle implementation based on BAM32
- ******************************************************************************/
+ ************************************************************************** */
 
 #include "foc_angle.h"
 #include "foc_config.h"
@@ -72,7 +72,9 @@ foc_scalar_t foc_angle_diff(foc_angle_t tTarget,
 #endif
 }
 
-void foc_angle_sincos(foc_angle_t tAngle, foc_scalar_t *pqSin, foc_scalar_t *pqCos)
+void foc_angle_sincos(foc_angle_t tAngle,
+                      foc_scalar_t *pqSin,
+                      foc_scalar_t *pqCos)
 {
 #if defined(FOC_NUMERIC_FLOAT)
   #if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_CORDIC)
@@ -85,12 +87,12 @@ void foc_angle_sincos(foc_angle_t tAngle, foc_scalar_t *pqSin, foc_scalar_t *pqC
     if (pqCos != NULL) *pqCos = cosf(fTurns * FOC_TWO_PI_F);
   #endif
 #else
-  #if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_LUT)
+  #if (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_CORDIC)
+    hal_cordic_SinCosBam32(tAngle.wBam32, pqSin, pqCos);
+  #elif (FOC_TRIG_BACKEND == FOC_TRIG_BACKEND_LUT)
     lut_sincos_bam32(tAngle.wBam32, pqSin, pqCos);
   #else
-    float fTurns = (float)tAngle.wBam32 * (1.0f / 4294967296.0f);
-    if (pqSin != NULL) *pqSin = foc_from_float(sinf(fTurns * FOC_TWO_PI_F));
-    if (pqCos != NULL) *pqCos = foc_from_float(cosf(fTurns * FOC_TWO_PI_F));
+    #error "Fixed FOC requires LUT or CORDIC trigonometry"
   #endif
 #endif
 }
