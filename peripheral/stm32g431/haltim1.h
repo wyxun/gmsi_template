@@ -12,6 +12,8 @@
 void haltim1_Init(void);
 void haltim1_SetDuty(float fU, float fV, float fW);
 void haltim1_Start(void);
+/** @brief Start TIM1 CH4 ADC trigger without enabling power outputs. */
+void haltim1_StartAdcTrigger(void);
 void haltim1_Stop(void);
 
 #endif /* __HALTIM1_H__ */

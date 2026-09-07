@@ -83,4 +83,31 @@ int32_t as5600_Update(as5600_t *ptThis);
  */
 void    as5600_GetSample(const as5600_t *ptThis, as5600_sample_t *ptSample);
 
+#include "foc_sensor.h"
+#include "foc_encoder.h"
+
+/**
+ * @brief AS5600 复合位置传感器（驱动前端 + 外推观测后端）
+ */
+typedef struct {
+    as5600_t      tDriver;   /**< AS5600 硬件驱动 */
+    foc_encoder_t tObserver; /**< 20 kHz 拍内外推与滤波观测器 */
+} as5600_sensor_t;
+
+/**
+ * @brief  初始化 AS5600 复合位置传感器
+ * @param  ptSensor 复合传感器实例
+ * @param  ptIic    I2C 接口
+ * @param  ptParams 外推与滤波参数
+ * @return 0 成功, -1 失败
+ */
+int32_t as5600_sensor_Init(as5600_sensor_t *ptSensor,
+                           mdi_iic_t *ptIic,
+                           const foc_encoder_params_t *ptParams);
+
+/**
+ * @brief AS5600 复合传感器的标准操作接口表
+ */
+extern const foc_sensor_ops_t g_tAs5600SensorOps;
+
 #endif /* __AS5600_H__ */

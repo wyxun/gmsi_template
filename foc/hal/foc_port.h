@@ -1,14 +1,30 @@
 /****************************************************************************
  * @file    foc_port.h
- * @brief   Compile-time hardware port for the single FOC power stage
+ * @brief   FOC hardware port: ops-table abstraction for the power stage
  * @author  Codex
  * @date    2026-08-29
- ************************************************************************** */
+ *
+ * 这是 FOC 与硬件的唯一边界。foc 内部（app/算法）只通过 ops 表访问
+ * 硬件，不直接接触 MDI/vendor。默认实现由各芯片的 foc_port.c 提供
+ * （MDI 挂载在实现层），host 测试可注入 stub ops 完成独立验证。
+ *
+ * 设计：ops 注入（策略模式）+ -flto 内联。20 kHz 高频路径经过 ops
+ * 函数指针间接层，-flto 下内联为直接调用，成本趋零；多芯片/多传感
+ * 器适配只更换 ops 表，foc 内部零改动。
+ *
+ * 位置/速度传感器统一抽象为 foc_sensor_t（foc_sensor.h），本文件只
+ * 暴露板级默认实例 g_tFocSensor 与初始化入口 foc_port_SensorInit。
+ **************************************************************************/
 
 #ifndef FOC_PORT_H
 #define FOC_PORT_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "foc_types.h"
+#include "foc_sensor.h"
+#include "foc_encoder.h"
 
 typedef enum {
     FOC_CALIBRATION_BUSY = 0,
@@ -16,38 +32,35 @@ typedef enum {
     FOC_CALIBRATION_FAILED,
 } foc_calibration_state_e;
 
-/** @brief Initialize the port-side calibration state. */
-void foc_port_Init(void);
-/** @brief Start a new three-phase current-offset calibration. */
-void foc_port_CurrentCalibrationBegin(void);
-/**
- * @brief Accumulate one current-offset sample.
- * @param ptCalibration Output offsets and calibration status.
- * @return Current calibration state.
- */
-foc_calibration_state_e foc_port_CurrentCalibrationStep(
-    foc_adc_calib_t *ptCalibration);
-/**
- * @brief Read and normalize the three phase currents.
- * @param ptCalibration Validated current offsets.
- * @param ptInput Output core input; only phase currents are updated.
- * @return FOC_RESULT_OK or an input/safety error.
- */
-foc_result_t foc_port_CurrentSample(const foc_adc_calib_t *ptCalibration,
-                                    foc_core_input_t *ptInput);
-/**
- * @brief Write all three PWM compare registers.
- * @param ptDuty Three phase duty values in the [0, 1] range.
- * @return FOC_RESULT_OK or a hardware error.
- */
-foc_result_t foc_port_DutyCommit(const foc_duty_abc_t *ptDuty);
-/**
- * @brief Enable or disable the power-stage PWM output.
- * @param bEnable True to enable the output.
- * @return FOC_RESULT_OK or a hardware error.
- */
-foc_result_t foc_port_PwmEnable(bool bEnable);
-/** @brief Disable the power stage immediately from any context. */
-void foc_port_EmergencyStop(void);
+/* ===== PWM ops ===== */
+typedef struct {
+    /** @brief Write all three PWM compare registers. */
+    foc_result_t (*fnDutyCommit)(const foc_duty_abc_t *ptDuty);
+    /** @brief Enable or disable the power-stage PWM output. */
+    foc_result_t (*fnPwmEnable)(bool bEnable);
+    /** @brief Disable the power stage immediately from any context. */
+    void         (*fnEmergencyStop)(void);
+} foc_pwm_ops_t;
+
+/* ===== ADC ops（三相电流采样 + 零偏校准） ===== */
+typedef struct {
+    /** @brief Start a new three-phase current-offset calibration. */
+    void (*fnCalibrationBegin)(foc_adc_calib_t *ptCalibration);
+    /** @brief Accumulate one current-offset sample. */
+    foc_calibration_state_e (*fnCalibrationStep)(
+        foc_adc_calib_t *ptCalibration);
+    /** @brief Read and normalize the three phase currents. */
+    foc_result_t (*fnCurrentSample)(
+        const foc_adc_calib_t *ptCalibration,
+        foc_core_input_t *ptInput);
+} foc_adc_ops_t;
+
+/* ===== 默认实例（由各芯片 foc_port.c 提供；host 测试可注入 stub） ===== */
+extern const foc_pwm_ops_t  g_tFocPwmOps;
+extern const foc_adc_ops_t  g_tFocAdcOps;
+extern const foc_sensor_t   g_tFocSensor;
+
+/** @brief Initialize the board-level position sensor. */
+int32_t foc_port_SensorInit(const foc_encoder_params_t *ptParams);
 
 #endif /* FOC_PORT_H */

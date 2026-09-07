@@ -13,10 +13,7 @@
 #include "halfdcan.h"
 #include "mdebug_cm.h"
 #include "foc_app.h"
-
-#ifdef GRBLHAL_ENABLE
-#include "hal.h"
-#endif
+#include <math.h>
 
 /* Exported by main.c */
 extern void modus_Clock(void);
@@ -55,7 +52,6 @@ void USART1_IRQHandler(void)        { HAL_UART_IRQHandler(&huart1); }
 void USART2_IRQHandler(void)        { HAL_UART_IRQHandler(&huart2); }
 void USART3_IRQHandler(void)        { HAL_UART_IRQHandler(&huart3); }
 
-#if !defined(GRBLHAL_ENABLE) || !GRBLHAL_ENABLE
 /* ---- FDCAN ---- */
 void FDCAN1_IT0_IRQHandler(void)    { HAL_FDCAN_IRQHandler(&hfdcan1); }
 void FDCAN1_IT1_IRQHandler(void)    { HAL_FDCAN_IRQHandler(&hfdcan1); }
@@ -74,9 +70,6 @@ void TIM1_UP_TIM16_IRQHandler(void)
 void TIM1_TRG_COM_TIM17_IRQHandler(void)    {}
 void TIM1_CC_IRQHandler(void)               {}
 
-#include <math.h>
-
-
 /* ---- ADC1_2 (current sensing end-of-conversion) ---- */
 void ADC1_2_IRQHandler(void)
 {
@@ -91,7 +84,6 @@ void ADC1_2_IRQHandler(void)
         foc_app_HighFrequencyISR();
     }
 }
-#endif
 
 /* ---- Stubs ---- */
 void WWDG_IRQHandler(void)                  {}
@@ -114,15 +106,7 @@ void DMA1_Channel6_IRQHandler(void)         {}
 void USB_HP_IRQHandler(void)                {}
 void USB_LP_IRQHandler(void)                {}
 void EXTI9_5_IRQHandler(void)               {}
-#ifdef GRBLHAL_ENABLE
-void TIM2_IRQHandler(void)
-{
-    TIM2->SR = ~TIM_SR_UIF;
-    hal.stepper.interrupt_callback();
-}
-#else
 void TIM2_IRQHandler(void)                  {}
-#endif
 void TIM3_IRQHandler(void)                  {}
 void TIM4_IRQHandler(void)                  {}
 void I2C1_EV_IRQHandler(void)               {}

@@ -131,7 +131,10 @@ static void MX_ADC1_Init(void)
 
     /* ---- Calibration ---- */
     LL_ADC_StartCalibration(ADC1, LL_ADC_SINGLE_ENDED);
-    while (LL_ADC_IsCalibrationOnGoing(ADC1) != 0) {}
+    {
+        uint32_t _to = 1000000UL;
+        while ((LL_ADC_IsCalibrationOnGoing(ADC1) != 0) && --_to) {}
+    }
 
     /* Post-calibration delay (required by STM32G4 spec) */
     post_calib_delay();
@@ -200,7 +203,10 @@ static void MX_ADC2_Init(void)
 
     /* ---- Calibration ---- */
     LL_ADC_StartCalibration(ADC2, LL_ADC_SINGLE_ENDED);
-    while (LL_ADC_IsCalibrationOnGoing(ADC2) != 0) {}
+    {
+        uint32_t _to = 1000000UL;
+        while ((LL_ADC_IsCalibrationOnGoing(ADC2) != 0) && --_to) {}
+    }
 
     post_calib_delay();
 
@@ -225,6 +231,10 @@ static void MX_ADC2_Init(void)
 
 void haladc_Init(void)
 {
+    LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_ADC12);
+    LL_AHB2_GRP1_ForceReset(LL_AHB2_GRP1_PERIPH_ADC12);
+    LL_AHB2_GRP1_ReleaseReset(LL_AHB2_GRP1_PERIPH_ADC12);
+
     MX_ADC1_Init();
     MX_ADC2_Init();
 

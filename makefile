@@ -157,11 +157,6 @@ FOC_EXPERIMENTAL_IDENTIFY ?= 0
 C_DEFS += -DFOC_ENABLE_EXPERIMENTAL_NSD=$(FOC_EXPERIMENTAL_NSD)
 C_DEFS += -DFOC_ENABLE_EXPERIMENTAL_IDENTIFY=$(FOC_EXPERIMENTAL_IDENTIFY)
 
-# Hardware bring-up diagnostics (fixed-duty direct tests) are opt-in and
-# excluded from production builds. Enable with FOC_DIAGNOSTIC=1.
-FOC_DIAGNOSTIC ?= 0
-C_DEFS += -DFOC_ENABLE_DIAGNOSTIC=$(FOC_DIAGNOSTIC)
-
 # ------------------------------------------------------------------------------
 # All C sources  (chip-specific vars set by target.mk)
 # ------------------------------------------------------------------------------
@@ -305,19 +300,19 @@ clean:
 ifeq ($(OS),Windows_NT)
     OPENOCD_BIN     ?= $(SW_ROOT)/msys64/mingw64/bin/openocd.exe
     OPENOCD_SCRIPTS ?= $(SW_ROOT)/msys64/mingw64/share/openocd/scripts
-    OPENOCD_CMD ?= $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "adapter speed 8000" -c "tcl_port 0"
+    OPENOCD_CMD ?= $(OPENOCD_BIN) -s $(OPENOCD_SCRIPTS) -f target/$(TARGET_CHIP)/openocd.cfg -c "adapter speed 4000" -c "tcl_port 0"
 else
     OPENOCD_BIN = openocd
     OPENOCD_CMD = $(OPENOCD_BIN) -f target/$(TARGET_CHIP)/openocd.cfg
 endif
 
-FLASH_CMD ?= $(OPENOCD_CMD) -c "reset_config connect_assert_srst" -c "init" -c "reset halt" -c "sleep 200" -c "program $< verify" -c "reset run" -c "exit"
+FLASH_CMD ?= $(OPENOCD_CMD) -c "init" -c "reset halt" -c "sleep 200" -c "program $< verify" -c "reset run" -c "exit"
 
 flash: $(BUILD_DIR)/$(TARGET).hex
 	$(FLASH_CMD)
 
 download:
-	$(OPENOCD_CMD) -c "reset_config connect_assert_srst" -c "init" -c "reset halt" -c "sleep 200" -c "program $(BUILD_DIR)/$(TARGET).hex verify" -c "reset run" -c "exit"
+	$(OPENOCD_CMD) -c "init" -c "reset halt" -c "sleep 200" -c "program $(BUILD_DIR)/$(TARGET).hex verify" -c "reset run" -c "exit"
 
 debug-server:
 
@@ -340,7 +335,7 @@ endif
 # 1 ms polling is required for the 20 kHz waveform path. The 10 ms default
 # measured ~220 batch frames/s (~7k samples/s), while 1 ms measured ~300
 # 64-sample batch frames/s (~19k samples/s) on STM32G431 + CMSIS-DAP.
-RTT_CMD ?= -c "init" -c "rtt setup $(RTT_ADDR) 0xa8 \"SEGGER RTT\"" -c "rtt start" -c "rtt polling_interval 1" -c "rtt server start 9090 0" -c "rtt server start 9091 1"
+RTT_CMD ?= -c "init" -c "catch { resume }" -c "rtt setup $(RTT_ADDR) 0xa8 \"SEGGER RTT\"" -c "rtt start" -c "rtt polling_interval 1" -c "rtt server start 9090 0" -c "rtt server start 9091 1"
 
 rtt-addr: $(BUILD_DIR)/$(TARGET).elf
 	@echo "RTT CB address: $(RTT_ADDR)"

@@ -95,24 +95,21 @@ void peripheral_Init(void)
 {
     HAL_Init();
     SystemClock_Config();
+    halledgpio_Init();
     hal_cordic_Init();
 
-#if !defined(GRBLHAL_ENABLE) || !GRBLHAL_ENABLE
     haldac_Init();
     halopamp_Init();
     haladc_Init();
     halcomp_Init();
     haltim1_Init();
-    haladc_EnableISR();
-#endif
 
     halusart_Init();
 
-#if !defined(GRBLHAL_ENABLE) || !GRBLHAL_ENABLE
     hali2c_Init();
-    halfdcan_Init();
-    halledgpio_Init();
-#endif
+
+    extern void haladc_EnableISR(void);
+    haladc_EnableISR();
 }
 
 /* --------------------------------------------------------------------------

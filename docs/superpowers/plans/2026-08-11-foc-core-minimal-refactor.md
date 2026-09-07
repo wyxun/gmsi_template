@@ -714,13 +714,13 @@ Expected：两个后端均为 `PASS: minimal encoder (0 failures)`。
 - Rewrite: `foc/app/foc_app.c`
 - Create: `tests/foc/test_foc_minimal_lifecycle.c`
 
-- [ ] **Step 1：用 fake port 写生命周期失败测试**
+- [x] **Step 1：用 fake port 写生命周期失败测试**
 
 覆盖 §7 十条安全不变量，特别验证：未校准 START 可以进入 CALIBRATING、
 第512拍前不使能 PWM、第512拍后先提交中性 duty 再使能、校准失败和运行错误
 均先急停再进入 FAULT。
 
-- [ ] **Step 2：确认测试先失败**
+- [x] **Step 2：确认测试先失败**
 
 Run:
 
@@ -730,17 +730,17 @@ mingw32-make -C tests/foc minimal-lifecycle
 
 Expected：新 app 生命周期 API 尚不存在，编译失败。
 
-- [ ] **Step 3：实现最小 runtime 和命令处理**
+- [x] **Step 3：实现最小 runtime 和命令处理**
 
 实现 §2.3、§4 和 §7，不调用旧 motor API。保留 MODUS 对象注册、Shell 命令
 和1 kHz Clock入口，但其内部只操作 `s_tFoc`。
 
-- [ ] **Step 4：切换高频 ISR**
+- [x] **Step 4：切换高频 ISR**
 
 按 §1.3 顺序接入 port、encoder、core 和 emergency stop。所有错误返回值都
 必须检查。
 
-- [ ] **Step 5：运行全部极简 host 测试**
+- [x] **Step 5：运行全部极简 host 测试**
 
 Run:
 
@@ -750,17 +750,34 @@ mingw32-make -C tests/foc minimal
 
 Expected：core、encoder、lifecycle 全部 `0 failures`。
 
+**实施记录（2026-08-11，提交 f37f98a）：**
+- `foc_app.h` 重写为最小 API（Start/Stop/ClearFault/SetVoltageReference/
+  SetCurrentReference/SetSpeedReference/GetStatus/HighFrequencyISR），
+  `foc_status_t` 仅依赖 `foc_types.h`，不再 include modus.h。
+- `foc_app.c` 重写：唯一 `static foc_runtime_t s_tFoc`；四态
+  IDLE/CALIBRATING/RUNNING/FAULT；命令邮箱 + perfc 中断守卫；20 kHz 链路
+  port→encoder→core→port；1 kHz 速度 PI（SPEED 模式）；校准 512 拍 /
+  100 ms 超时 / 偏移非法进 FAULT；所有故障先 EmergencyStop；校准完成先
+  提交中性 duty 再使能 PWM；MODUS 注册 + 最小 `motor` Shell 命令。
+- 新增 `tests/foc/test_foc_minimal_lifecycle.c`（fake foc_port + as5600
+  stub + perfc_port_stub.h），覆盖 §7 可测不变量。
+- 实测：minimal core/encoder/lifecycle × float/fixed 全部 PASS；
+  STM32G431 float 固件 text=54124 data=516 bss=19208；
+  fixed 固件 text=53980 bss=19200；fixed+soft-float text=55144。
+  旧框架符号（motor_/foc_hal_/foc_controller_/foc_position_）已从链接
+  产物剔除（gc-sections）。
+
 ### Task 5：波形和Shell状态收敛
 
 **Files:**
 - Modify: `src/userconfig.h`
 - Modify: `foc/app/foc_app.c`
 
-- [ ] **Step 1：注册固定9路变量**
+- [x] **Step 1：注册固定9路变量**
 
 严格使用 §6 表格；不得注册第10路。检查每个 AddVariable 返回值。
 
-- [ ] **Step 2：删除Push和快照路径**
+- [x] **Step 2：删除Push和快照路径**
 
 删除 `AddChannel`、`Push`、`SnapshotFeed`、`SnapshotStart`，仅在 float
 版执行变量注册；fixed 版关闭整个波形编译路径。float 版设置：
@@ -770,10 +787,28 @@ Expected：core、encoder、lifecycle 全部 `0 failures`。
 #define MWAVEFORM_SNAPSHOT_ENABLE   0
 ```
 
-- [ ] **Step 3：实现栈上状态复制API**
+- [x] **Step 3：实现栈上状态复制API**
 
 Shell `motor status` 改用 `foc_app_GetStatus()`，一次临界区复制 §6 的
 `foc_status_t`。
+
+**实施记录（2026-08-11）：**
+- `src/userconfig.h`：`MWAVEFORM_SNAPSHOT_ENABLE 1→0`（`MAX_CHANNELS` 保持 9）。
+- `foc_app.c`：新增 `foc_app_WaveformInit()`（仅 `FOC_NUMERIC_FLOAT &&
+  MWAVEFORM_ENABLE` 编译）：`mwaveform.Init` → 9 路 `AddVariable`
+  （Iu/Iv/Iw/Id/Iq/Angle/Speed/Vd/Vq，FLOAT ×1000，Angle 绑定
+  `fElectricalAngleTurns`）→ 逐路检查返回值（`0xFF` 即停）→
+  `SetStreamRate(50000,10000)` → `Start`；ISR 末尾每拍
+  `mwaveform.Step()`；Shell `motor status` 全字段输出
+  （state 名/faults/pwm/angle/speed/Id/Iq/Vd/Vq/duty/calib），新增
+  `foc_app_StateName()`。
+- **modus 子模块 bug 修复**：`mwaveform.c` 的 `cmd_snapshot` status 分支
+  在 `MWAVEFORM_SNAPSHOT_ENABLE=0` 时引用被守卫成员
+  `hwSnapshotValidCount` 导致编译失败；加 `#if MWAVEFORM_SNAPSHOT_ENABLE`
+  守卫（子模块工作树因此变为 dirty，需用户确认是否随提交带入）。
+- 实测（clean 后全量重编）：float text=54264 bss=18208；
+  fixed text=53724 bss=18200；bss 较基线（19208/19200）各降 ~1 KB
+  （快照缓冲移除）；minimal host 测试 6 PASS 不变。
 
 ### Task 6：停止构建并删除旧框架
 
@@ -783,12 +818,12 @@ Shell `motor status` 改用 `foc_app_GetStatus()`，一次临界区复制 §6 �
 - Delete: §8 列出的旧 motor/HAL/adapter 文件
 - Delete/Rewrite: 旧 motor 相关测试
 
-- [ ] **Step 1：先收敛 FOC_SOURCES**
+- [x] **Step 1：先收敛 FOC_SOURCES**
 
 只构建 math、`foc_core.c`、`foc_pid.c`、SVPWM、encoder、app 和
 STM32G431 port。
 
-- [ ] **Step 2：构建并运行极简测试**
+- [x] **Step 2：构建并运行极简测试**
 
 ```powershell
 mingw32-make -C tests/foc clean
@@ -801,12 +836,12 @@ mingw32-make -C tests/foc minimal
 Expected：float/fixed 两个后端测试和固件构建均通过，链接结果不存在 `motor_`、`foc_hal_`、
 `foc_controller_`、`foc_position_` 符号。
 
-- [ ] **Step 3：删除不再被引用的旧文件**
+- [x] **Step 3：删除不再被引用的旧文件**
 
 用 `rg` 确认没有引用后，再删除 §8 指定文件。不得删除与极简核心仍共享的
 math、PID、SVPWM、AS5600驱动和MODUS代码。
 
-- [ ] **Step 4：检查目标和主机产物**
+- [x] **Step 4：检查目标和主机产物**
 
 ```powershell
 mingw32-make TARGET_CHIP=stm32g431 BUILD=debug-rel size
@@ -814,6 +849,24 @@ rg -n "motor_|foc_hal_|foc_controller_|foc_position_" build/template.map
 ```
 
 Expected：第一条给出新尺寸；第二条无旧框架链接符号。
+
+**实施记录（2026-08-11）：**
+- `foc/foc.mk`：FOC_SOURCES 收敛为 9 个文件（foc_numeric/foc_angle/
+  foc_trig_lut/foc_math/foc_core/foc_pid/foc_modulation/foc_encoder/
+  foc_app），wildcard 删除。
+- `foc/foc.h`：重写为极简伞头（math_types/core/pid/modulation/encoder/
+  app），不再包含 motor/hal/observer/optimization/experimental 旧头。
+- 删除：`foc/motor/` 全目录、`foc/hal/{foc_hal.c,foc_hal.h,
+  foc_hal_adc.h,foc_hal_pwm.h,foc_hf_io.h}`、
+  `peripheral/stm32g431/foc_hal_mdi_adapter.c/.h`、`foc/app/phase_test.c`、
+  旧测试（test_foc/test_motor*/test_observer/encapsulation probes）。
+  `foc/hal/foc_hal_types.h` 按 §8 清单保留。
+- `tests/foc/Makefile`：只保留 minimal-core/encoder/lifecycle 三套 target
+  （float+fixed），删除旧 float/fixed/encapsulation 目标与 TEST_SRCS/
+  FOC_SRCS 旧列表。
+- 实测：host minimal 6 PASS；float 固件 text=54264 bss=18208；
+  fixed 固件 text=53724 bss=18200；map 中无任何旧框架 `.text.*` 段
+  （foc_hal_mdi_adapter.o 已随文件删除不再编译）。
 
 ### Task 7：真机安全验证
 
@@ -857,17 +910,17 @@ Angle连续、三相和接近0、母线电流和温升在现有安全限制内�
 - Modify: `foc/doc/foc-architecture.md`
 - Modify: 本计划
 
-- [ ] **Step 1：删除旧能力声明**
+- [x] **Step 1：删除旧能力声明**
 
 文档不得继续宣称多实例、位置闭环、运行时控制器、位置源融合、无感切换、
 事件环或fixed后端属于当前固件能力。
 
-- [ ] **Step 2：记录接口和限制**
+- [x] **Step 2：记录接口和限制**
 
 写明STM32G431单电机、float、编码器、电压/电流/速度、SVPWM、四态生命周期、
 9路波形和硬件安全限制。
 
-- [ ] **Step 3：完成最终一致性检查**
+- [x] **Step 3：完成最终一致性检查**
 
 ```powershell
 rg -n "motor_handle_t|motor_impl_t|motor_hf_plan_t|MOTOR_CONTROL_POSITION" `
@@ -875,6 +928,19 @@ rg -n "motor_handle_t|motor_impl_t|motor_hf_plan_t|MOTOR_CONTROL_POSITION" `
 ```
 
 Expected：源码和当前架构文档中没有旧框架声明；参考历史文档不计入验收。
+
+**实施记录（2026-08-11）：**
+- `foc/README.md` 重写：极简单电机架构、三层数据流、四态生命周期、
+  安全不变量、编码器外推、9 路波形、构建/测试/Shell、参数整定顺序；
+  删除全部旧多实例/位置源/过渡/事件环声明。
+- `foc/doc/foc-architecture.md` 重写：分层图、数值后端/BAM32/三角后端
+  （保留仍有效章节）、四态生命周期、20 kHz 数据流、外推设计、安全
+  不变量、波形、设计决策记录；删除 plan resolver/不透明句柄/事件环/
+  位置源接口章节。
+- 一致性检查：`foc/` 源码与两份文档已无 `motor_handle_t` /
+  `motor_impl_t` / `motor_hf_plan_t` / `MOTOR_CONTROL_POSITION`（参考目录
+  `foc/experimental/foc_verify.*` 与 `foc/template/` 保留旧声明，不参与
+  构建，不计入验收）。
 
 ---
 

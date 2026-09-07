@@ -1,18 +1,29 @@
 /****************************************************************************
  * @file    foc_port.c
- * @brief   STM32G431 compile-time FOC ADC/PWM port
+ * @brief   STM32G431 FOC port: default ops-table implementations
  * @author  Codex
  * @date    2026-08-29
+ *
+ * 这是 MDI 挂载层：foc 内部只通过 ops 表访问硬件，具体 mdi/vendor
+ * 挂钩只发生在本文件。换芯片 = 换本文件提供的 ops 表。
  ************************************************************************** */
 
 #include "foc_port.h"
 
 #include <stdint.h>
 
+#include "userconfig.h"
+#include "foc_angle.h"
+#include "foc_encoder.h"
 #include "haladc.h"
+#include "haltim1.h"
 #include "mdi_hw.h"
 #include "mdi/mdi.h"
 #include "port_mdi.h"
+
+#if defined(MDI_HW_HAS_I2C_ENCODER)
+#include "as5600.h"
+#endif
 
 #define FOC_PORT_ADC_SAMPLES          512U
 #define FOC_PORT_PWM_PERIOD           4250U
@@ -20,12 +31,7 @@
 #define FOC_PORT_OFFSET_MIN         20000U
 #define FOC_PORT_OFFSET_MAX         60000U
 
-static uint32_t s_wCalibrationCount;
-static uint64_t s_ullSumU;
-static uint64_t s_ullSumV;
-static uint64_t s_ullSumW;
-static bool s_bCalibrationComplete;
-static bool s_bCalibrationFailed;
+/* ===== ADC：三相电流采样 + 零偏校准 ===== */
 
 /** @brief Read the injected ADC results for all three phases. */
 static void port_read_raw(uint32_t *pwRawU,
@@ -77,63 +83,60 @@ static bool port_offsets_are_valid(const foc_adc_calib_t *ptCalibration)
 /** @brief Finalize and validate the accumulated ADC offsets. */
 static bool port_store_calibration(foc_adc_calib_t *ptCalibration)
 {
-    ptCalibration->wOffsetU = (uint32_t)(s_ullSumU /
+    ptCalibration->wOffsetU = (uint32_t)(ptCalibration->ullSumU /
                                          FOC_PORT_ADC_SAMPLES);
-    ptCalibration->wOffsetV = (uint32_t)(s_ullSumV /
+    ptCalibration->wOffsetV = (uint32_t)(ptCalibration->ullSumV /
                                          FOC_PORT_ADC_SAMPLES);
-    ptCalibration->wOffsetW = (uint32_t)(s_ullSumW /
+    ptCalibration->wOffsetW = (uint32_t)(ptCalibration->ullSumW /
                                          FOC_PORT_ADC_SAMPLES);
     ptCalibration->bIsCalibrated = port_offsets_are_valid(ptCalibration);
-    s_bCalibrationComplete = ptCalibration->bIsCalibrated;
-    s_bCalibrationFailed = !s_bCalibrationComplete;
     return ptCalibration->bIsCalibrated;
 }
 
-void foc_port_Init(void)
+static void port_calibration_begin(foc_adc_calib_t *ptCalibration)
 {
-    foc_port_CurrentCalibrationBegin();
+    if (ptCalibration == NULL) {
+        return;
+    }
+    ptCalibration->wOffsetU = 0U;
+    ptCalibration->wOffsetV = 0U;
+    ptCalibration->wOffsetW = 0U;
+    ptCalibration->ullSumU = 0U;
+    ptCalibration->ullSumV = 0U;
+    ptCalibration->ullSumW = 0U;
+    ptCalibration->hwSampleCount = 0U;
+    ptCalibration->bIsCalibrated = false;
+    haltim1_StartAdcTrigger();
 }
 
-void foc_port_CurrentCalibrationBegin(void)
-{
-    s_wCalibrationCount = 0U;
-    s_ullSumU = 0U;
-    s_ullSumV = 0U;
-    s_ullSumW = 0U;
-    s_bCalibrationComplete = false;
-    s_bCalibrationFailed = false;
-}
-
-foc_calibration_state_e foc_port_CurrentCalibrationStep(
+static foc_calibration_state_e port_calibration_step(
     foc_adc_calib_t *ptCalibration)
 {
-    uint32_t wRawU;
-    uint32_t wRawV;
-    uint32_t wRawW;
+    uint32_t wRawU = 0U;
+    uint32_t wRawV = 0U;
+    uint32_t wRawW = 0U;
 
     if (ptCalibration == NULL) {
         return FOC_CALIBRATION_FAILED;
     }
-    if (s_bCalibrationComplete) {
+    if (ptCalibration->bIsCalibrated) {
         return FOC_CALIBRATION_COMPLETE;
     }
-    if (s_bCalibrationFailed) {
-        return FOC_CALIBRATION_FAILED;
-    }
     port_read_raw(&wRawU, &wRawV, &wRawW);
-    s_ullSumU += wRawU;
-    s_ullSumV += wRawV;
-    s_ullSumW += wRawW;
-    s_wCalibrationCount++;
-    if (s_wCalibrationCount < FOC_PORT_ADC_SAMPLES) {
+    ptCalibration->ullSumU += wRawU;
+    ptCalibration->ullSumV += wRawV;
+    ptCalibration->ullSumW += wRawW;
+    ptCalibration->hwSampleCount++;
+    if (ptCalibration->hwSampleCount < FOC_PORT_ADC_SAMPLES) {
         return FOC_CALIBRATION_BUSY;
     }
     return port_store_calibration(ptCalibration)
         ? FOC_CALIBRATION_COMPLETE : FOC_CALIBRATION_FAILED;
 }
 
-foc_result_t foc_port_CurrentSample(const foc_adc_calib_t *ptCalibration,
-                                    foc_core_input_t *ptInput)
+static foc_result_t port_current_sample(
+    const foc_adc_calib_t *ptCalibration,
+    foc_core_input_t *ptInput)
 {
     uint32_t wRawU;
     uint32_t wRawV;
@@ -155,7 +158,9 @@ foc_result_t foc_port_CurrentSample(const foc_adc_calib_t *ptCalibration,
     return FOC_RESULT_OK;
 }
 
-foc_result_t foc_port_DutyCommit(const foc_duty_abc_t *ptDuty)
+/* ===== PWM：duty 提交 / 使能 / 急停 ===== */
+
+static foc_result_t port_duty_commit(const foc_duty_abc_t *ptDuty)
 {
     if (ptDuty == NULL) {
         return FOC_RESULT_NULL;
@@ -167,7 +172,7 @@ foc_result_t foc_port_DutyCommit(const foc_duty_abc_t *ptDuty)
         ? FOC_RESULT_OK : FOC_RESULT_INVALID_ARGUMENT;
 }
 
-foc_result_t foc_port_PwmEnable(bool bEnable)
+static foc_result_t port_pwm_enable(bool bEnable)
 {
     if (HW.ptMotorU == NULL) {
         return FOC_RESULT_INVALID_ARGUMENT;
@@ -176,9 +181,51 @@ foc_result_t foc_port_PwmEnable(bool bEnable)
         ? FOC_RESULT_OK : FOC_RESULT_INVALID_ARGUMENT;
 }
 
-void foc_port_EmergencyStop(void)
+static void port_emergency_stop(void)
 {
     if (HW.ptMotorU != NULL) {
         (void)MDI_Enable(HW.ptMotorU, false);
     }
 }
+
+/* ===== 默认 ops 表 ===== */
+
+const foc_pwm_ops_t g_tFocPwmOps = {
+    .fnDutyCommit    = port_duty_commit,
+    .fnPwmEnable     = port_pwm_enable,
+    .fnEmergencyStop = port_emergency_stop,
+};
+
+const foc_adc_ops_t g_tFocAdcOps = {
+    .fnCalibrationBegin = port_calibration_begin,
+    .fnCalibrationStep  = port_calibration_step,
+    .fnCurrentSample    = port_current_sample,
+};
+
+#if defined(MDI_HW_HAS_I2C_ENCODER)
+static as5600_sensor_t s_tBoardSensor;
+
+const foc_sensor_t g_tFocSensor = {
+    .ptOps = &g_tAs5600SensorOps,
+    .pPriv = &s_tBoardSensor,
+};
+
+int32_t foc_port_SensorInit(const foc_encoder_params_t *ptParams)
+{
+    if (HW.ptI2c1 == NULL || ptParams == NULL) {
+        return -1;
+    }
+    return as5600_sensor_Init(&s_tBoardSensor, HW.ptI2c1, ptParams);
+}
+#else
+const foc_sensor_t g_tFocSensor = {
+    .ptOps = NULL,
+    .pPriv = NULL,
+};
+
+int32_t foc_port_SensorInit(const foc_encoder_params_t *ptParams)
+{
+    (void)ptParams;
+    return 0;
+}
+#endif

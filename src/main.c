@@ -60,6 +60,7 @@ int main(void)
 #if MODUS_ENABLE
     #if MSHELL_ENABLE || !defined(__NO_USE_LOG__)
         debug_transport_init();
+        MLOGF(I, "Booting MODUS Template...\r\n");
     #endif
     modus_Init(&s_tModus);
     #if USERCONFIG_MSHELL_ON_SERIAL && MSHELL_ENABLE
@@ -67,12 +68,7 @@ int main(void)
     #endif
 #endif
 
-#if defined(GRBLHAL_ENABLE)
-    /* Direct grblHAL handover (contains its own infinite blocking loop) */
-    extern int grbl_enter(void);
-    grbl_enter();
-#elif MODUS_ENABLE
-    /* MODUS cooperative scheduler main loop */
+#if MODUS_ENABLE
     while (1) {
         modus_Run();
     }

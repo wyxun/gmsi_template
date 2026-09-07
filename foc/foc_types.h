@@ -28,6 +28,10 @@ typedef struct {
     uint32_t wOffsetU;      /**< U 相 ADC 偏移量 */
     uint32_t wOffsetV;      /**< V 相 ADC 偏移量 */
     uint32_t wOffsetW;      /**< W 相 ADC 偏移量 */
+    uint64_t ullSumU;       /**< U 相校准累加值 */
+    uint64_t ullSumV;       /**< V 相校准累加值 */
+    uint64_t ullSumW;       /**< W 相校准累加值 */
+    uint16_t hwSampleCount; /**< 当前采样点数计数 */
     bool     bIsCalibrated; /**< 是否已完成校准 */
 } foc_adc_calib_t;
 

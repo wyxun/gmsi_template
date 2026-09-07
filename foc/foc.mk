@@ -1,10 +1,14 @@
 # =============================================================================
-# Modus FOC — source and include configuration
+# Modus FOC — source and include configuration (minimal single-motor build)
 #
 # Include this from target/<chip>/target.mk for chips that support FOC.
 # Chips that do not support FOC skip the include; FOC_SOURCES stays empty
 # (guarded by "FOC_SOURCES ?=" in the top-level makefile) and the FOC
 # include paths default to nothing.
+#
+# 极简构建：只编译纯数学核心 + PID + SVPWM + 编码器 + 应用 + 三角函数。
+# 旧多实例框架（motor/、foc_hal*.c 等）不再进入构建；未参与构建的高级
+# 算法源码保留在仓库作参考（计划 §8），不进入 FOC_SOURCES。
 # =============================================================================
 
 FOC_INCLUDES = -Ifoc \
@@ -14,20 +18,12 @@ FOC_INCLUDES = -Ifoc \
                -Ifoc/optimization -Ifoc/experimental \
                -Ifoc/app
 
-FOC_SOURCES = $(filter-out foc/app/phase_test.c \
-                             foc/experimental/foc_verify.c, \
-               $(wildcard foc/math/*.c)       \
-               $(wildcard foc/hal/*.c)         \
-               $(wildcard foc/motor/*.c)       \
-               $(wildcard foc/middleware/*.c)  \
-               $(wildcard foc/control/*.c)     \
-               $(wildcard foc/modulation/*.c)  \
-               $(wildcard foc/observer/*.c)    \
-               $(wildcard foc/optimization/*.c) \
-               $(wildcard foc/experimental/*.c) \
-               $(wildcard foc/app/*.c))
-
-# Hardware bring-up diagnostics are opt-in and excluded from production builds.
-ifeq ($(FOC_DIAGNOSTIC),1)
-FOC_SOURCES += $(wildcard foc/diagnostic/*.c)
-endif
+FOC_SOURCES = foc/math/foc_numeric.c \
+              foc/math/foc_angle.c \
+              foc/math/foc_trig_lut.c \
+              foc/math/foc_math.c \
+              foc/middleware/foc_core.c \
+              foc/control/foc_pid.c \
+              foc/modulation/foc_modulation.c \
+              foc/observer/foc_encoder.c \
+              foc/app/foc_app.c
