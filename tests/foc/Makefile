@@ -2,7 +2,7 @@ CC ?= clang
 CFLAGS = -std=gnu11 -Wall -Wextra -Werror -I. -I../../foc -I../../foc/math \
          -I../../foc/middleware -I../../foc/modulation -I../../foc/control \
          -I../../foc/hal -I../../foc/observer \
-         -I../../foc/app -I../../foc/experimental
+         -I../../foc/app -I../../foc/experimental -I../../foc/motor
 CFLAGS += -I../../foc/optimization
 CFLAGS += -I../../peripheral/driver -I../../peripheral/stm32g431 \
           -I../../modus/src -I../../modus/src/mdi -I../../modus/src/mdebug \
@@ -21,6 +21,7 @@ CFLAGS += $(STRICT_ALIAS_CFLAGS) $(EXTRA_CFLAGS)
 .PHONY: all minimal minimal-core minimal-core-float minimal-core-fixed \
         minimal-encoder minimal-encoder-float minimal-encoder-fixed \
         minimal-lifecycle minimal-lifecycle-float minimal-lifecycle-fixed \
+        motor-float motor-fixed as5600-float as5600-fixed \
         clean
 
 MINIMAL_CORE_SRCS = test_foc_minimal_core.c \
@@ -72,6 +73,7 @@ MINIMAL_LIFECYCLE_SRCS = test_foc_minimal_lifecycle.c \
                          ../../foc/control/foc_pid.c \
                          ../../foc/modulation/foc_modulation.c \
                          ../../foc/observer/foc_encoder.c \
+                         ../../foc/motor/motor.c \
                          ../../foc/app/foc_app.c
 
 minimal-lifecycle: minimal-lifecycle-float minimal-lifecycle-fixed
@@ -86,11 +88,51 @@ minimal-lifecycle-fixed:
 	    -lm -o minimal_lifecycle_fixed
 	./minimal_lifecycle_fixed
 
-minimal: minimal-core minimal-encoder minimal-lifecycle
+MOTOR_SRCS = test_motor.c \
+             ../../foc/math/foc_numeric.c \
+             ../../foc/math/foc_angle.c \
+             ../../foc/math/foc_trig_lut.c \
+             ../../foc/math/foc_math.c \
+             ../../foc/middleware/foc_core.c \
+             ../../foc/control/foc_pid.c \
+             ../../foc/modulation/foc_modulation.c \
+             ../../foc/motor/motor.c
+
+motor-float:
+	$(CC) $(CFLAGS) -DFOC_NUMERIC_FLOAT=1 $(MOTOR_SRCS) \
+	    -lm -o motor_float
+	./motor_float
+
+motor-fixed:
+	$(CC) $(CFLAGS) -DFOC_NUMERIC_FIXED=1 $(MOTOR_SRCS) \
+	    -lm -o motor_fixed
+	./motor_fixed
+
+AS5600_SRCS = test_as5600.c \
+              ../../foc/math/foc_numeric.c \
+              ../../foc/math/foc_angle.c \
+              ../../foc/math/foc_trig_lut.c \
+              ../../foc/math/foc_math.c \
+              ../../foc/observer/foc_encoder.c \
+              ../../peripheral/driver/as5600.c
+
+as5600-float:
+	$(CC) $(CFLAGS) -DFOC_NUMERIC_FLOAT=1 $(AS5600_SRCS) \
+	    -lm -o as5600_float
+	./as5600_float
+
+as5600-fixed:
+	$(CC) $(CFLAGS) -DFOC_NUMERIC_FIXED=1 $(AS5600_SRCS) \
+	    -lm -o as5600_fixed
+	./as5600_fixed
+
+minimal: minimal-core minimal-encoder minimal-lifecycle \
+         motor-float motor-fixed as5600-float as5600-fixed
 
 all: minimal
 
 clean:
 	$(RM) minimal_core_float minimal_core_fixed \
 	      minimal_encoder_float minimal_encoder_fixed \
-	      minimal_lifecycle_float minimal_lifecycle_fixed
+	      minimal_lifecycle_float minimal_lifecycle_fixed \
+      motor_float motor_fixed as5600_float as5600_fixed

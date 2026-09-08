@@ -55,11 +55,6 @@ void foc_core_Reset(foc_core_state_t *ptState)
     ptState->tVoltage = (foc_dq_t){FOC_ZERO, FOC_ZERO};
     ptState->tVoltageAlphaBeta = (foc_ab_t){FOC_ZERO, FOC_ZERO};
     ptState->tDuty = (foc_duty_abc_t){FOC_HALF, FOC_HALF, FOC_HALF};
-    ptState->tElectricalAngle = (foc_angle_t){0U};
-    ptState->qElectricalSpeed = FOC_ZERO;
-    ptState->qIu = FOC_ZERO;
-    ptState->qIv = FOC_ZERO;
-    ptState->qIw = FOC_ZERO;
 }
 
 foc_result_t foc_core_step(foc_core_state_t *ptState,
@@ -79,11 +74,6 @@ foc_result_t foc_core_step(foc_core_state_t *ptState,
     if (eResult != FOC_RESULT_OK) {
         return eResult;
     }
-    ptState->qIu = ptInput->qIu;
-    ptState->qIv = ptInput->qIv;
-    ptState->qIw = ptInput->qIw;
-    ptState->tElectricalAngle = ptInput->tElectricalAngle;
-    ptState->qElectricalSpeed = ptInput->qElectricalSpeed;
     foc_angle_sincos(ptInput->tElectricalAngle, &qSin, &qCos);
     eResult = foc_park_cached(&ptState->tCurrentAlphaBeta, qSin, qCos,
                               &ptState->tCurrent);

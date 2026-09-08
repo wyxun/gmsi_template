@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "mdi/mdi.h"
+#include "motor_position.h"
 
 /* AS5600 7 位从机地址（地址绑定在 mdi_iic_t 适配层） */
 #define AS5600_I2C_ADDR         0x36U
@@ -92,6 +93,9 @@ void    as5600_GetSample(const as5600_t *ptThis, as5600_sample_t *ptSample);
 typedef struct {
     as5600_t      tDriver;   /**< AS5600 硬件驱动 */
     foc_encoder_t tObserver; /**< 20 kHz 拍内外推与滤波观测器 */
+    motor_params_t tMotorParams;
+    foc_angle_t    tElectricalZero;
+    bool           bDirectionInverted;
 } as5600_sensor_t;
 
 /**
@@ -109,5 +113,8 @@ int32_t as5600_sensor_Init(as5600_sensor_t *ptSensor,
  * @brief AS5600 复合传感器的标准操作接口表
  */
 extern const foc_sensor_ops_t g_tAs5600SensorOps;
+
+/** @brief AS5600 provider ops for the Motor position contract. */
+extern const motor_position_ops_t g_tAs5600PositionOps;
 
 #endif /* __AS5600_H__ */

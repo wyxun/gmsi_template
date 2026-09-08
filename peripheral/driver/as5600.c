@@ -122,10 +122,11 @@ static int32_t as5600_sensor_Update(void *pPriv)
     return as5600_Update(&ptDev->tDriver);
 }
 
-static foc_result_t as5600_sensor_Read(void *pPriv,
-                                       foc_angle_t *ptMechanicalAngle,
-                                       foc_scalar_t *pqMechanicalSpeed,
-                                       bool *pbValid)
+static foc_result_t as5600_sensor_ReadMechanical(
+    void *pPriv,
+    foc_angle_t *ptMechanicalAngle,
+    foc_scalar_t *pqMechanicalSpeed,
+    bool *pbValid)
 {
     as5600_sensor_t *ptDev = (as5600_sensor_t *)pPriv;
     as5600_sample_t tSample = {0};
@@ -160,8 +161,115 @@ static foc_result_t as5600_sensor_Read(void *pPriv,
  * 避免两条 offset 计算路径口径漂移。 */
 const foc_sensor_ops_t g_tAs5600SensorOps = {
     .fnUpdate    = as5600_sensor_Update,
-    .fnRead      = as5600_sensor_Read,
+    .fnRead      = as5600_sensor_ReadMechanical,
     .fnCalibrate = NULL,
+};
+
+static foc_result_t as5600_position_Init(
+    void *pContext,
+    const motor_params_t *ptMotor,
+    foc_scalar_t qHighFrequencyPeriod)
+{
+    as5600_sensor_t *ptDev = (as5600_sensor_t *)pContext;
+    foc_encoder_params_t tParams = {0};
+
+    if (ptDev == NULL || ptMotor == NULL ||
+        ptMotor->chPolePairs == 0U ||
+        qHighFrequencyPeriod <= FOC_ZERO) {
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    tParams = ptDev->tObserver.tParams;
+    if (tParams.qSpeedFilterAlpha < FOC_ZERO ||
+        tParams.qSpeedFilterAlpha > FOC_ONE ||
+        tParams.hwInvalidTimeout == 0U) {
+        foc_encoder_DefaultParams(&tParams);
+    }
+    tParams.chPolePairs = ptMotor->chPolePairs;
+    tParams.qHighFrequencyPeriod = qHighFrequencyPeriod;
+    if (foc_encoder_Init(&ptDev->tObserver, &tParams) !=
+        FOC_RESULT_OK) {
+        return FOC_RESULT_INVALID_ARGUMENT;
+    }
+    ptDev->tMotorParams = *ptMotor;
+    ptDev->tElectricalZero = (foc_angle_t){0U};
+    return FOC_RESULT_OK;
+}
+
+static int32_t as5600_position_SlowUpdate(void *pContext)
+{
+    as5600_sensor_t *ptDev = (as5600_sensor_t *)pContext;
+
+    return ptDev == NULL ? -1 : as5600_Update(&ptDev->tDriver);
+}
+
+static void as5600_position_Reset(void *pContext)
+{
+    as5600_sensor_t *ptDev = (as5600_sensor_t *)pContext;
+
+    if (ptDev != NULL) {
+        foc_encoder_Reset(&ptDev->tObserver);
+    }
+}
+
+static foc_result_t as5600_position_Read(
+    void *pContext,
+    motor_position_feedback_t *ptFeedback)
+{
+    as5600_sensor_t *ptDev = (as5600_sensor_t *)pContext;
+    foc_angle_t tMechanicalAngle = {0U};
+    foc_scalar_t qMechanicalSpeed = FOC_ZERO;
+    bool bValid = false;
+    uint64_t llElectrical = 0U;
+    uint32_t wElectricalAngle = 0U;
+
+    if (ptDev == NULL || ptFeedback == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    if (as5600_sensor_ReadMechanical(
+            ptDev, &tMechanicalAngle, &qMechanicalSpeed,
+            &bValid) != FOC_RESULT_OK || !bValid) {
+        ptFeedback->bValid = false;
+        return FOC_RESULT_OK;
+    }
+    llElectrical = (uint64_t)tMechanicalAngle.wBam32 *
+                   (uint64_t)ptDev->tMotorParams.chPolePairs;
+    wElectricalAngle = (uint32_t)llElectrical;
+    if (ptDev->bDirectionInverted) {
+        wElectricalAngle = 0U - wElectricalAngle;
+    }
+    ptFeedback->tElectricalAngle = foc_angle_add(
+        (foc_angle_t){wElectricalAngle}, ptDev->tElectricalZero);
+    ptFeedback->qElectricalSpeed = foc_mul_wide(
+        qMechanicalSpeed,
+        FOC_SCALAR((float)ptDev->tMotorParams.chPolePairs));
+    ptFeedback->bValid = true;
+    return FOC_RESULT_OK;
+}
+
+static foc_result_t as5600_position_CaptureZero(void *pContext)
+{
+    as5600_sensor_t *ptDev = (as5600_sensor_t *)pContext;
+    motor_position_feedback_t tFeedback = {0};
+
+    if (ptDev == NULL) {
+        return FOC_RESULT_NULL;
+    }
+    if (as5600_position_Read(ptDev, &tFeedback) != FOC_RESULT_OK ||
+        !tFeedback.bValid) {
+        return FOC_RESULT_DISABLED;
+    }
+    ptDev->tElectricalZero.wBam32 =
+        0U - tFeedback.tElectricalAngle.wBam32;
+    return FOC_RESULT_OK;
+}
+
+const motor_position_ops_t g_tAs5600PositionOps = {
+    .fnInit = as5600_position_Init,
+    .fnReset = as5600_position_Reset,
+    .fnSlowUpdate = as5600_position_SlowUpdate,
+    .fnObserve = NULL,
+    .fnRead = as5600_position_Read,
+    .fnCaptureElectricalZero = as5600_position_CaptureZero,
 };
 
 int32_t as5600_sensor_Init(as5600_sensor_t *ptSensor,
@@ -171,6 +279,7 @@ int32_t as5600_sensor_Init(as5600_sensor_t *ptSensor,
     if (ptSensor == NULL || ptIic == NULL || ptParams == NULL) {
         return -1;
     }
+    memset(ptSensor, 0, sizeof(*ptSensor));
     if (as5600_Init(&ptSensor->tDriver, ptIic) != 0) {
         return -1;
     }

@@ -35,22 +35,26 @@ typedef enum {
 /* ===== PWM ops ===== */
 typedef struct {
     /** @brief Write all three PWM compare registers. */
-    foc_result_t (*fnDutyCommit)(const foc_duty_abc_t *ptDuty);
+    foc_result_t (*fnDutyCommit)(void *pContext,
+                                 const foc_duty_abc_t *ptDuty);
     /** @brief Enable or disable the power-stage PWM output. */
-    foc_result_t (*fnPwmEnable)(bool bEnable);
+    foc_result_t (*fnPwmEnable)(void *pContext, bool bEnable);
     /** @brief Disable the power stage immediately from any context. */
-    void         (*fnEmergencyStop)(void);
+    void         (*fnEmergencyStop)(void *pContext);
 } foc_pwm_ops_t;
 
 /* ===== ADC ops（三相电流采样 + 零偏校准） ===== */
 typedef struct {
     /** @brief Start a new three-phase current-offset calibration. */
-    void (*fnCalibrationBegin)(foc_adc_calib_t *ptCalibration);
+    void (*fnCalibrationBegin)(void *pContext,
+                               foc_adc_calib_t *ptCalibration);
     /** @brief Accumulate one current-offset sample. */
     foc_calibration_state_e (*fnCalibrationStep)(
+        void *pContext,
         foc_adc_calib_t *ptCalibration);
     /** @brief Read and normalize the three phase currents. */
     foc_result_t (*fnCurrentSample)(
+        void *pContext,
         const foc_adc_calib_t *ptCalibration,
         foc_core_input_t *ptInput);
 } foc_adc_ops_t;

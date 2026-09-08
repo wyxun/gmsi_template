@@ -15,6 +15,7 @@ typedef struct {
     bool bDutyCommitFailed;         /* 强制提交失败 */
     bool bPwmEnableFailed;          /* 强制使能失败 */
     bool bEncoderValid;             /* 位置反馈是否有效 */
+    foc_scalar_t qMechanicalSpeed;  /* 测试传感器机械速度 */
     bool bPwmEnabled;
     uint32_t wPwmEnableCalls;
     uint32_t wPwmDisableCalls;
@@ -50,7 +51,7 @@ static foc_result_t stub_sensor_read(void *pPriv,
         return FOC_RESULT_NULL;
     }
     *ptMechanicalAngle = foc_angle_from_turns(0.5f);
-    *pqMechanicalSpeed = FOC_ZERO;
+    *pqMechanicalSpeed = s_tFakePort.qMechanicalSpeed;
     *pbValid = s_tFakePort.bEncoderValid;
     return FOC_RESULT_OK;
 }
@@ -145,8 +146,10 @@ static void fake_port_reset(void)
 
 /* ===== ops stub 实现 ===== */
 
-static foc_result_t stub_duty_commit(const foc_duty_abc_t *ptDuty)
+static foc_result_t stub_duty_commit(void *pContext,
+                                     const foc_duty_abc_t *ptDuty)
 {
+    (void)pContext;
     if (ptDuty == NULL) {
         return FOC_RESULT_NULL;
     }
@@ -156,8 +159,9 @@ static foc_result_t stub_duty_commit(const foc_duty_abc_t *ptDuty)
                                          : FOC_RESULT_OK;
 }
 
-static foc_result_t stub_pwm_enable(bool bEnable)
+static foc_result_t stub_pwm_enable(void *pContext, bool bEnable)
 {
+    (void)pContext;
     if (bEnable) {
         s_tFakePort.wPwmEnableCalls++;
         s_tFakePort.bPwmEnabled = true;
@@ -169,14 +173,17 @@ static foc_result_t stub_pwm_enable(bool bEnable)
                                         : FOC_RESULT_OK;
 }
 
-static void stub_emergency_stop(void)
+static void stub_emergency_stop(void *pContext)
 {
+    (void)pContext;
     s_tFakePort.wEmergencyStopCalls++;
     s_tFakePort.bPwmEnabled = false;
 }
 
-static void stub_calibration_begin(foc_adc_calib_t *ptCalibration)
+static void stub_calibration_begin(void *pContext,
+                                   foc_adc_calib_t *ptCalibration)
 {
+    (void)pContext;
     if (ptCalibration != NULL) {
         ptCalibration->ullSumU = 0U;
         ptCalibration->ullSumV = 0U;
@@ -190,8 +197,10 @@ static void stub_calibration_begin(foc_adc_calib_t *ptCalibration)
 }
 
 static foc_calibration_state_e stub_calibration_step(
+    void *pContext,
     foc_adc_calib_t *ptCalibration)
 {
+    (void)pContext;
     if (ptCalibration == NULL) {
         return FOC_CALIBRATION_FAILED;
     }
@@ -208,9 +217,11 @@ static foc_calibration_state_e stub_calibration_step(
 }
 
 static foc_result_t stub_current_sample(
+    void *pContext,
     const foc_adc_calib_t *ptCalibration,
     foc_core_input_t *ptInput)
 {
+    (void)pContext;
     if (ptCalibration == NULL || ptInput == NULL) {
         return FOC_RESULT_NULL;
     }
@@ -613,6 +624,35 @@ static int test_start_validation(void)
                ? 0 : 1;
 }
 
+/* SPEED mode must use the measured electrical speed in its 1 kHz PI. */
+static int test_speed_loop_uses_encoder_speed(void)
+{
+    foc_core_command_t tCommand = {
+        .eMode = FOC_MODE_SPEED,
+        .qSpeedReference = FOC_SCALAR(100.0f),
+    };
+    foc_scalar_t qIqReference = FOC_ZERO;
+
+    s_tFakePort.qMechanicalSpeed = FOC_SCALAR(80.0f / 7.0f);
+    foc_app_TestMarkEncoderCalibrated(&s_tAppA);
+    if (foc_app_Start(&s_tAppA, &tCommand) != FOC_RESULT_OK) {
+        return 1;
+    }
+    if (foc_app_SetSpeedReference(&s_tAppA, FOC_SCALAR(90.0f)) !=
+            FOC_RESULT_OK ||
+        s_tAppA.tMotor.tCommand.qSpeedReference != FOC_SCALAR(90.0f)) {
+        return 1;
+    }
+    run_isr(&s_tAppA, 513U);
+    foc_app_TestRun1kHz(&s_tAppA);
+    qIqReference = foc_app_TestGetCurrentIqReference(&s_tAppA);
+    if (qIqReference == FOC_ZERO) {
+        return 1;
+    }
+    foc_app_Stop(&s_tAppA);
+    return check_state(&s_tAppA, FOC_STATE_IDLE, false);
+}
+
 /* New Class contract: App state must be supplied by the caller. */
 static int test_object_api_is_explicit(void)
 {
@@ -794,6 +834,10 @@ int main(void)
     test_init_app(&s_tAppA, s_chRingA);
     nSub = test_start_validation();
     printf("  start_validation: %s\n", nSub == 0 ? "PASS" : "FAIL");
+    nFailures += nSub;
+    test_init_app(&s_tAppA, s_chRingA);
+    nSub = test_speed_loop_uses_encoder_speed();
+    printf("  speed_loop_encoder: %s\n", nSub == 0 ? "PASS" : "FAIL");
     nFailures += nSub;
     nSub = test_object_api_is_explicit();
     printf("  object_api: %s\n", nSub == 0 ? "PASS" : "FAIL");

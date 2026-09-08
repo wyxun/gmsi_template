@@ -118,10 +118,10 @@ foc/
 
 | 通道 | 绑定变量（`tFocApp` 对象成员） |
 |---|---|
-| Iu / Iv / Iw | `tCore.qIu/qIv/qIw` |
+| Iu / Iv / Iw | `tDiagnostics.qIu/qIv/qIw` |
 | Id / Iq | `tCore.tCurrent.qD/qQ` |
 | Angle | `tDiagnostics.fElectricalAngleTurns`（ISR 唯一展示变量） |
-| Speed | `tCore.qElectricalSpeed` |
+| Speed | `tDiagnostics.qElectricalSpeed` |
 | Vd / Vq | `tCore.tVoltage.qD/qQ` |
 | EncMech | `tDiagnostics.fEncoderMechanicalTurns`（1 kHz 更新） |
 

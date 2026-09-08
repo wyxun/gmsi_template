@@ -16,6 +16,7 @@
 #include "foc_encoder.h"
 #include "foc_pid.h"
 #include "foc_port.h"
+#include "motor.h"
 
 typedef enum {
     FOC_APP_ANGLE_OPEN_LOOP = 0,
@@ -63,6 +64,11 @@ typedef struct {
     uint16_t hwConsecutivePollFails;
     uint32_t wLastReportMs;
     uint8_t chRunPt;
+    foc_angle_t tElectricalAngle;
+    foc_scalar_t qElectricalSpeed;
+    foc_scalar_t qIu;
+    foc_scalar_t qIv;
+    foc_scalar_t qIw;
 #if defined(FOC_NUMERIC_FLOAT)
     float fElectricalAngleTurns;
     float fEncoderMechanicalTurns;
@@ -100,6 +106,8 @@ typedef struct {
     foc_app_position_t tPosition;
     foc_app_encoder_calibration_t tEncoderCalibration;
     foc_app_diagnostics_t tDiagnostics;
+    motor_t tMotor;
+    bool bMotorControlPath;
 } foc_app_t;
 
 typedef struct {

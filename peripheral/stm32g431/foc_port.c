@@ -93,8 +93,10 @@ static bool port_store_calibration(foc_adc_calib_t *ptCalibration)
     return ptCalibration->bIsCalibrated;
 }
 
-static void port_calibration_begin(foc_adc_calib_t *ptCalibration)
+static void port_calibration_begin(void *pContext,
+                                   foc_adc_calib_t *ptCalibration)
 {
+    (void)pContext;
     if (ptCalibration == NULL) {
         return;
     }
@@ -110,12 +112,14 @@ static void port_calibration_begin(foc_adc_calib_t *ptCalibration)
 }
 
 static foc_calibration_state_e port_calibration_step(
+    void *pContext,
     foc_adc_calib_t *ptCalibration)
 {
     uint32_t wRawU = 0U;
     uint32_t wRawV = 0U;
     uint32_t wRawW = 0U;
 
+    (void)pContext;
     if (ptCalibration == NULL) {
         return FOC_CALIBRATION_FAILED;
     }
@@ -135,6 +139,7 @@ static foc_calibration_state_e port_calibration_step(
 }
 
 static foc_result_t port_current_sample(
+    void *pContext,
     const foc_adc_calib_t *ptCalibration,
     foc_core_input_t *ptInput)
 {
@@ -142,6 +147,7 @@ static foc_result_t port_current_sample(
     uint32_t wRawV;
     uint32_t wRawW;
 
+    (void)pContext;
     if (ptCalibration == NULL || ptInput == NULL) {
         return FOC_RESULT_NULL;
     }
@@ -160,8 +166,10 @@ static foc_result_t port_current_sample(
 
 /* ===== PWM：duty 提交 / 使能 / 急停 ===== */
 
-static foc_result_t port_duty_commit(const foc_duty_abc_t *ptDuty)
+static foc_result_t port_duty_commit(void *pContext,
+                                     const foc_duty_abc_t *ptDuty)
 {
+    (void)pContext;
     if (ptDuty == NULL) {
         return FOC_RESULT_NULL;
     }
@@ -172,8 +180,9 @@ static foc_result_t port_duty_commit(const foc_duty_abc_t *ptDuty)
         ? FOC_RESULT_OK : FOC_RESULT_INVALID_ARGUMENT;
 }
 
-static foc_result_t port_pwm_enable(bool bEnable)
+static foc_result_t port_pwm_enable(void *pContext, bool bEnable)
 {
+    (void)pContext;
     if (HW.ptMotorU == NULL) {
         return FOC_RESULT_INVALID_ARGUMENT;
     }
@@ -181,8 +190,9 @@ static foc_result_t port_pwm_enable(bool bEnable)
         ? FOC_RESULT_OK : FOC_RESULT_INVALID_ARGUMENT;
 }
 
-static void port_emergency_stop(void)
+static void port_emergency_stop(void *pContext)
 {
+    (void)pContext;
     if (HW.ptMotorU != NULL) {
         (void)MDI_Enable(HW.ptMotorU, false);
     }

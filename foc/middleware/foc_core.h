@@ -45,11 +45,6 @@ typedef struct {
     foc_dq_t       tVoltage;
     foc_ab_t       tVoltageAlphaBeta;
     foc_duty_abc_t tDuty;
-    foc_angle_t    tElectricalAngle;
-    foc_scalar_t   qElectricalSpeed;
-    foc_scalar_t   qIu;
-    foc_scalar_t   qIv;
-    foc_scalar_t   qIw;
 } foc_core_state_t;
 
 /**
